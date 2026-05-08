@@ -13,8 +13,16 @@ const config: HardhatUserConfig = {
     localhost: {
       url: 'http://127.0.0.1:8545',
     },
+    // 0G Chain Mainnet (Chain ID: 16661)
+    // Explorer: https://chainscan.0g.ai
+    'zerog-mainnet': {
+      url: process.env.ZEROG_EVM_RPC_MAINNET ?? 'https://evmrpc.0g.ai',
+      accounts: process.env.EVM_PRIVATE_KEY ? [process.env.EVM_PRIVATE_KEY] : [],
+      chainId: 16661,
+    },
+    // 0G Chain Testnet (Chain ID: 16600)
     'zerog-testnet': {
-      url: process.env.ZEROG_STORAGE_RPC ?? 'https://evmrpc-testnet.0g.ai',
+      url: process.env.ZEROG_EVM_RPC_TESTNET ?? 'https://evmrpc-testnet.0g.ai',
       accounts: process.env.EVM_PRIVATE_KEY ? [process.env.EVM_PRIVATE_KEY] : [],
       chainId: 16600,
     },

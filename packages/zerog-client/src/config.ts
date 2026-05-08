@@ -73,7 +73,7 @@ const TESTNET: Readonly<Partial<ZeroGConfig>> = {
 };
 
 export function getZeroGConfig(): ZeroGConfig {
-  const network = (process.env.ZEROG_NETWORK ?? 'testnet') as ZeroGNetwork;
+  const network = (process.env.ZEROG_NETWORK ?? 'mainnet') as ZeroGNetwork;
   const netDefaults = network === 'mainnet' ? MAINNET : TESTNET;
 
   return {

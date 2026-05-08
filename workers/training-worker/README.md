@@ -24,6 +24,8 @@ python -m src.main
 
 ```
 NATS_URL=nats://localhost:4222
-ZEROG_STORAGE_RPC=https://evmrpc-testnet.0g.ai
-ZEROG_STORAGE_KEY=...
+ZEROG_NETWORK=mainnet
+ZEROG_STORAGE_PRIVATE_KEY=0x_your_private_key
+ZEROG_FINETUNE_PROVIDER=0x_provider_address
+ZEROG_FINETUNE_DEFAULT_MODEL=Qwen2.5-0.5B-Instruct
 ```

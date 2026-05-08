@@ -210,7 +210,7 @@ Copy `.env.example` to `.env` and configure the following sections:
 - Fund wallet with 0G tokens for gas (testnet faucet available)
 
 **Network:**
-- `ZEROG_NETWORK=testnet` (default) or `mainnet`
+- `ZEROG_NETWORK=mainnet` (default) — set to `testnet` for development
 - 0G Chain mainnet: Chain ID `16661`, RPC `https://evmrpc.0g.ai`
 - 0G Chain testnet: Chain ID `16600`, RPC `https://evmrpc-testnet.0g.ai`
 

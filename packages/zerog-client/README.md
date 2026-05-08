@@ -255,7 +255,7 @@ Future: swap to `'op-stack'` or `'arbitrum-nitro'` for rollup deployment.
 ## Environment Variables
 
 ```bash
-ZEROG_NETWORK=testnet                        # mainnet | testnet
+ZEROG_NETWORK=mainnet                        # mainnet | testnet
 ZEROG_EVM_RPC_MAINNET=https://evmrpc.0g.ai
 ZEROG_EVM_RPC_TESTNET=https://evmrpc-testnet.0g.ai
 ZEROG_STORAGE_INDEXER_MAINNET=https://indexer-storage-turbo.0g.ai

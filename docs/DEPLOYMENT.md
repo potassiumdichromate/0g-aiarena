@@ -90,7 +90,7 @@ QDRANT_URL=http://localhost:6333
 # 0G Compute Router (OpenAI-compatible, same URL for mainnet + testnet)
 ZEROG_COMPUTE_BASE_URL=https://router-api.0g.ai/v1
 ZEROG_COMPUTE_API_KEY=sk-your-key-here
-ZEROG_NETWORK=testnet        # mainnet | testnet
+ZEROG_NETWORK=mainnet        # mainnet | testnet
 JWT_SECRET=generate_with_openssl_rand_hex_64
 ```
 
