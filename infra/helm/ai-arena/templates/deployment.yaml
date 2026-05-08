@@ -1,0 +1,56 @@
+{{- range $svcName, $svcConfig := .Values.services }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $svcName }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    app: {{ $svcName }}
+    chart: {{ $.Chart.Name }}-{{ $.Chart.Version }}
+    release: {{ $.Release.Name }}
+spec:
+  replicas: {{ index $.Values.replicaCount $svcConfig.replicaKey | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ $svcName }}
+  template:
+    metadata:
+      labels:
+        app: {{ $svcName }}
+        release: {{ $.Release.Name }}
+    spec:
+      serviceAccountName: {{ $.Values.serviceAccount.name }}
+      containers:
+        - name: {{ $svcName }}
+          image: "{{ $.Values.global.imageRegistry }}/{{ $svcName }}:{{ $.Values.image.tag }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ $svcConfig.port }}
+          envFrom:
+            - secretRef:
+                name: {{ $.Values.secrets.name }}
+          env:
+            - name: PORT
+              value: {{ $svcConfig.port | quote }}
+            - name: NODE_ENV
+              value: {{ $.Values.config.nodeEnv }}
+            - name: LOG_LEVEL
+              value: {{ $.Values.config.logLevel }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ $svcConfig.port }}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ $svcConfig.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml (index $.Values.resources $svcConfig.resourcesKey | default $.Values.resources.default) | nindent 12 }}
+{{- end }}

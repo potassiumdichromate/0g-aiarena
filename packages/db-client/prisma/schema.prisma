@@ -1,0 +1,387 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===== ENUMS =====
+
+enum ClanType {
+  CYBER
+  BIO
+  ARCANE
+  MECH
+  SHADOW
+}
+
+enum CombatArchetype {
+  BERSERKER
+  TACTICIAN
+  SUPPORT
+  ASSASSIN
+  DEFENDER
+  HYBRID
+}
+
+enum EvolutionStage {
+  GENESIS
+  AWAKENED
+  ASCENDED
+  LEGENDARY
+  MYTHIC
+}
+
+enum BattleMode {
+  RANKED
+  CASUAL
+  WAGER
+  TOURNAMENT
+  EXHIBITION
+}
+
+enum BattleStatus {
+  PENDING
+  INITIALIZING
+  IN_PROGRESS
+  COMPLETED
+  DISPUTED
+  CANCELLED
+}
+
+enum TrainingStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum TrainingType {
+  BEHAVIOUR_CLONING
+  REINFORCEMENT_LEARNING
+  LORA_FINETUNE
+}
+
+enum EscrowState {
+  OPEN
+  FUNDED
+  LOCKED
+  SETTLED
+  CANCELLED
+  DISPUTED
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  BATTLE_WAGER
+  BATTLE_REWARD
+  TOURNAMENT_ENTRY
+  TOURNAMENT_PRIZE
+  STAKE
+  UNSTAKE
+  TRANSFER
+}
+
+enum TransactionStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+  CANCELLED
+}
+
+enum TournamentStatus {
+  REGISTRATION
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// ===== MODELS =====
+
+model User {
+  id            String   @id @default(uuid())
+  walletAddress String   @unique
+  username      String?
+  email         String?  @unique
+  avatarUrl     String?
+  nonce         String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  agents        Agent[]
+
+  @@index([walletAddress])
+}
+
+model Agent {
+  id              String          @id @default(uuid())
+  userId          String
+  name            String
+  clan            ClanType
+  archetype       CombatArchetype @default(HYBRID)
+  evolutionStage  EvolutionStage  @default(GENESIS)
+  eloRating       Int             @default(1000)
+  wins            Int             @default(0)
+  losses          Int             @default(0)
+  draws           Int             @default(0)
+  inftTokenId     String?
+  activeModelId   String?
+  isRetired       Boolean         @default(false)
+  metadata        Json            @default("{}")
+  traits          Json            @default("{}")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  user            User            @relation(fields: [userId], references: [id])
+  aiModels        AIModel[]
+  trainingJobs    TrainingJob[]
+  memories        AgentMemory[]
+  wallet          AgentWallet?
+  stakingRecords  StakingRecord[]
+  leaderboardEntries LeaderboardEntry[]
+
+  @@index([userId])
+  @@index([eloRating])
+  @@index([clan])
+}
+
+model AIModel {
+  id              String   @id @default(uuid())
+  agentId         String
+  version         Int
+  baseModel       String
+  loraAdapterPath String?
+  checkpointPath  String?
+  trainingJobId   String?
+  performanceMetrics Json  @default("{}")
+  isActive        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  agent           Agent    @relation(fields: [agentId], references: [id])
+
+  @@index([agentId])
+  @@index([isActive])
+}
+
+model Battle {
+  id          String       @id @default(uuid())
+  gameId      String
+  mode        BattleMode
+  status      BattleStatus @default(PENDING)
+  agentIds    String[]
+  config      Json
+  result      Json?
+  replayId    String?
+  escrowId    String?
+  startedAt   DateTime?
+  endedAt     DateTime?
+  createdAt   DateTime     @default(now())
+
+  escrow      EscrowRecord? @relation(fields: [escrowId], references: [id])
+
+  @@index([status])
+  @@index([gameId])
+  @@index([createdAt])
+}
+
+model Tournament {
+  id            String           @id @default(uuid())
+  name          String
+  gameId        String
+  status        TournamentStatus @default(REGISTRATION)
+  maxParticipants Int
+  entryFee      Float            @default(0)
+  prizePool     Float            @default(0)
+  bracket       Json             @default("{}")
+  startDate     DateTime
+  endDate       DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+}
+
+model AgentWallet {
+  id            String   @id @default(uuid())
+  agentId       String   @unique
+  solanaAddress String   @unique
+  balanceArena  Float    @default(0)
+  balanceSol    Float    @default(0)
+  isFrozen      Boolean  @default(false)
+  policy        Json     @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  agent         Agent    @relation(fields: [agentId], references: [id])
+  ledgerEntries LedgerEntry[]
+
+  @@index([solanaAddress])
+}
+
+model TrainingJob {
+  id          String         @id @default(uuid())
+  agentId     String
+  type        TrainingType
+  status      TrainingStatus @default(QUEUED)
+  priority    Int            @default(5)
+  config      Json
+  metrics     Json           @default("{}")
+  errorLog    String?
+  modelId     String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime       @default(now())
+
+  agent       Agent          @relation(fields: [agentId], references: [id])
+
+  @@index([agentId])
+  @@index([status])
+  @@index([priority])
+}
+
+model AgentMemory {
+  id           String   @id @default(uuid())
+  agentId      String
+  type         String
+  content      String
+  importance   Float    @default(0.5)
+  accessCount  Int      @default(0)
+  lastAccessed DateTime @default(now())
+  embedding    Float[]
+  metadata     Json     @default("{}")
+  expiresAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  agent        Agent    @relation(fields: [agentId], references: [id])
+
+  @@index([agentId])
+  @@index([type])
+  @@index([importance])
+}
+
+model IntelligenceLayer {
+  id              String   @id @default(uuid())
+  gameId          String   @unique
+  name            String
+  actionSpace     Json
+  observationSpace Json
+  rewardConfig    Json
+  modelConfig     Json
+  version         Int      @default(1)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model EscrowRecord {
+  id            String      @id @default(uuid())
+  battleId      String?
+  tournamentId  String?
+  agentIds      String[]
+  amounts       Json
+  solanaAddress String      @unique
+  state         EscrowState @default(OPEN)
+  winnerId      String?
+  txHashes      Json        @default("{}")
+  settledAt     DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  battles       Battle[]
+
+  @@index([state])
+  @@index([solanaAddress])
+}
+
+model LedgerEntry {
+  id          String            @id @default(uuid())
+  walletId    String
+  type        TransactionType
+  amount      Float
+  currency    String
+  status      TransactionStatus @default(PENDING)
+  txHash      String?
+  metadata    Json              @default("{}")
+  createdAt   DateTime          @default(now())
+
+  wallet      AgentWallet       @relation(fields: [walletId], references: [id])
+
+  @@index([walletId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model StakingRecord {
+  id          String   @id @default(uuid())
+  agentId     String
+  amount      Float
+  stakedAt    DateTime @default(now())
+  unstakedAt  DateTime?
+  lockPeriod  Int      @default(0)
+  txHash      String?
+  isActive    Boolean  @default(true)
+
+  agent       Agent    @relation(fields: [agentId], references: [id])
+
+  @@index([agentId])
+  @@index([isActive])
+}
+
+model LeaderboardEntry {
+  id          String   @id @default(uuid())
+  agentId     String
+  gameId      String?
+  leaderboardId String
+  rank        Int
+  score       Float
+  eloRating   Int
+  updatedAt   DateTime @default(now())
+
+  agent       Agent    @relation(fields: [agentId], references: [id])
+
+  @@unique([leaderboardId, agentId])
+  @@index([leaderboardId, rank])
+}
+
+// 0G Storage content-addressing index.
+// 0G Storage is Merkle-root-addressed — files have no path on-chain.
+// This table maps logical paths used by services → rootHash returned by upload.
+// Pattern: upload → store rootHash here → download via rootHash.
+model StorageIndex {
+  id          String   @id @default(uuid())
+  logicalPath String   @unique   // e.g. "agents/{agentId}/memory/v3"
+  rootHash    String             // 0G Storage Merkle root hash (hex)
+  txHash      String?            // 0G chain transaction hash for the upload
+  mimeType    String?
+  sizeBytes   Int?
+  uploadedBy  String?            // service name or agent ID
+  tags        String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([rootHash])
+  @@index([uploadedBy])
+}
+
+// Tracks 0G fine-tuning jobs submitted via CLI.
+// Only Qwen2.5-0.5B-Instruct and Qwen3-32B are supported by 0G Compute.
+model ZeroGFineTuneJob {
+  id              String   @id @default(uuid())
+  agentId         String
+  trainingJobId   String   @unique
+  providerAddress String
+  baseModel       String             // Qwen2.5-0.5B-Instruct | Qwen3-32B
+  datasetRootHash String             // 0G Storage root hash of training JSONL
+  status          String   @default("SUBMITTED")  // SUBMITTED|RUNNING|DELIVERED|ACKNOWLEDGED|FAILED
+  outputRootHash  String?            // 0G Storage root hash of fine-tuned model (after delivery)
+  deliveredAt     DateTime?
+  acknowledgedAt  DateTime?          // Must acknowledge within 48h of DELIVERED to avoid 30% penalty
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([agentId])
+  @@index([status])
+}

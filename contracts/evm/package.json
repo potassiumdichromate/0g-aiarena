@@ -1,0 +1,20 @@
+{
+  "name": "@ai-arena/contracts-evm",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:testnet": "hardhat run scripts/deploy.ts --network zerog-testnet",
+    "deploy:local": "hardhat run scripts/deploy.ts --network localhost"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@openzeppelin/contracts": "^5.0.0",
+    "hardhat": "^2.22.0",
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0",
+    "ethers": "^6.11.0"
+  }
+}

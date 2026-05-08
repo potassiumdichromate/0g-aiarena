@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inference-service
+  namespace: ai-arena
+  labels:
+    app: inference-service
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: inference-service
+  template:
+    metadata:
+      labels:
+        app: inference-service
+    spec:
+      containers:
+        - name: inference-service
+          image: ai-arena/inference-service:latest
+          ports:
+            - containerPort: 3007
+          env:
+            - name: PORT
+              value: "3007"
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ai-arena-secrets
+                  key: redis-url
+            - name: ZEROG_COMPUTE_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: ai-arena-secrets
+                  key: zerog-compute-endpoint
+            - name: ZEROG_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ai-arena-secrets
+                  key: zerog-api-key
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3007
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3007
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inference-service
+  namespace: ai-arena
+spec:
+  selector:
+    app: inference-service
+  ports:
+    - port: 3007
+      targetPort: 3007
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: inference-service-hpa
+  namespace: ai-arena
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: inference-service
+  minReplicas: 4
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60

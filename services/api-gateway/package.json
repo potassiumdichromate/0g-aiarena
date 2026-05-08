@@ -1,0 +1,31 @@
+{
+  "name": "@ai-arena/api-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "@ai-arena/shared-types": "workspace:*",
+    "@ai-arena/shared-utils": "workspace:*",
+    "@ai-arena/cache": "workspace:*",
+    "fastify": "^4.26.0",
+    "@fastify/cors": "^9.0.0",
+    "@fastify/helmet": "^11.0.0",
+    "@fastify/jwt": "^8.0.0",
+    "@fastify/rate-limit": "^9.0.0",
+    "@fastify/http-proxy": "^9.0.0",
+    "@fastify/websocket": "^10.0.0",
+    "axios": "^1.6.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0",
+    "tsx": "^4.7.0"
+  }
+}

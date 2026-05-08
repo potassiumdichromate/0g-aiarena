@@ -1,0 +1,331 @@
+openapi: "3.1.0"
+info:
+  title: AI Arena API
+  version: "1.0.0"
+  description: |
+    AI Arena backend REST API. All endpoints require a Bearer JWT token
+    obtained via the /auth/login flow (Sign-In with Ethereum).
+  contact:
+    name: AI Arena Dev Team
+    url: https://aiarena.gg
+  license:
+    name: MIT
+
+servers:
+  - url: https://api.aiarena.gg/v1
+    description: Production
+  - url: https://api.staging.aiarena.gg/v1
+    description: Staging
+  - url: http://localhost:3000/v1
+    description: Local development
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Agent:
+      type: object
+      required: [id, name, clan, archetype, evolutionStage, elo]
+      properties:
+        id:          { type: string, format: uuid }
+        name:        { type: string }
+        clan:        { type: string, enum: [CYBER, BIO, ARCANE, MECH, SHADOW] }
+        archetype:   { type: string, enum: [BERSERKER, TACTICIAN, SUPPORT, ASSASSIN, DEFENDER, HYBRID] }
+        evolutionStage: { type: string, enum: [GENESIS, AWAKENED, ASCENDED, LEGENDARY, MYTHIC] }
+        elo:         { type: number }
+        traits:
+          type: object
+          properties:
+            aggression:    { type: number, minimum: 0, maximum: 100 }
+            patience:      { type: number, minimum: 0, maximum: 100 }
+            adaptability:  { type: number, minimum: 0, maximum: 100 }
+            riskTolerance: { type: number, minimum: 0, maximum: 100 }
+            teamwork:      { type: number, minimum: 0, maximum: 100 }
+            creativity:    { type: number, minimum: 0, maximum: 100 }
+            endurance:     { type: number, minimum: 0, maximum: 100 }
+            precision:     { type: number, minimum: 0, maximum: 100 }
+        inftTokenId:   { type: string, nullable: true }
+        createdAt:     { type: string, format: date-time }
+
+    Battle:
+      type: object
+      required: [id, status, agentIds]
+      properties:
+        id:          { type: string, format: uuid }
+        status:      { type: string, enum: [PENDING, IN_PROGRESS, COMPLETED, DISPUTED, CANCELLED] }
+        agentIds:    { type: array, items: { type: string, format: uuid } }
+        winnerId:    { type: string, format: uuid, nullable: true }
+        startedAt:   { type: string, format: date-time, nullable: true }
+        endedAt:     { type: string, format: date-time, nullable: true }
+        replayUrl:   { type: string, nullable: true }
+
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:   { type: string }
+        message: { type: string }
+
+    Pagination:
+      type: object
+      properties:
+        page:       { type: integer }
+        pageSize:   { type: integer }
+        total:      { type: integer }
+        totalPages: { type: integer }
+
+paths:
+  /auth/nonce:
+    get:
+      summary: Get SIWE nonce
+      tags: [Auth]
+      security: []
+      parameters:
+        - in: query
+          name: address
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Nonce for SIWE message construction
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nonce: { type: string }
+
+  /auth/login:
+    post:
+      summary: Authenticate with SIWE signature
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message, signature, walletAddress]
+              properties:
+                message:       { type: string }
+                signature:     { type: string }
+                walletAddress: { type: string }
+      responses:
+        "200":
+          description: JWT token pair
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:  { type: string }
+                  refreshToken: { type: string }
+                  expiresIn:    { type: integer }
+        "401":
+          description: Invalid signature
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /agents:
+    get:
+      summary: List agents for authenticated user
+      tags: [Agents]
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: pageSize
+          schema: { type: integer, default: 20 }
+        - in: query
+          name: clan
+          schema: { type: string }
+        - in: query
+          name: archetype
+          schema: { type: string }
+      responses:
+        "200":
+          description: Paginated agent list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agents: { type: array, items: { $ref: "#/components/schemas/Agent" } }
+                  pagination: { $ref: "#/components/schemas/Pagination" }
+    post:
+      summary: Create a new agent
+      tags: [Agents]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, clan, archetype, gameId]
+              properties:
+                name:      { type: string, minLength: 2, maxLength: 32 }
+                clan:      { type: string, enum: [CYBER, BIO, ARCANE, MECH, SHADOW] }
+                archetype: { type: string, enum: [BERSERKER, TACTICIAN, SUPPORT, ASSASSIN, DEFENDER, HYBRID] }
+                gameId:    { type: string, format: uuid }
+      responses:
+        "201":
+          description: Created agent
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Agent" }
+
+  /agents/{agentId}:
+    get:
+      summary: Get agent by ID
+      tags: [Agents]
+      parameters:
+        - in: path
+          name: agentId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Agent
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Agent" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /battles:
+    post:
+      summary: Create a battle
+      tags: [Battles]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agentIds, mode]
+              properties:
+                agentIds: { type: array, items: { type: string, format: uuid }, minItems: 2, maxItems: 2 }
+                mode:     { type: string, enum: [RANKED, UNRANKED, TOURNAMENT, SCRIMMAGE] }
+                stakeAmount: { type: number, minimum: 0 }
+      responses:
+        "201":
+          description: Created battle
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Battle" }
+
+  /battles/{battleId}:
+    get:
+      summary: Get battle by ID
+      tags: [Battles]
+      parameters:
+        - in: path
+          name: battleId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Battle
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Battle" }
+
+  /inference/action:
+    post:
+      summary: Get next combat action for an agent
+      tags: [Inference]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agentId, sessionId, observationState]
+              properties:
+                agentId:          { type: string, format: uuid }
+                sessionId:        { type: string, format: uuid }
+                observationState: { type: object }
+                availableActions: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: Combat action
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action:     { type: string }
+                  confidence: { type: number }
+                  latencyMs:  { type: number }
+                  cached:     { type: boolean }
+
+  /leaderboard/{leaderboardId}:
+    get:
+      summary: Get leaderboard entries
+      tags: [Leaderboard]
+      parameters:
+        - in: path
+          name: leaderboardId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 100 }
+        - in: query
+          name: offset
+          schema: { type: integer, default: 0 }
+      responses:
+        "200":
+          description: Leaderboard entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rank:    { type: integer }
+                        agentId: { type: string }
+                        score:   { type: number }
+                        name:    { type: string }
+
+  /sessions/{sessionId}/batch:
+    post:
+      summary: Submit telemetry batch
+      tags: [Telemetry]
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, events]
+              properties:
+                sessionId:  { type: string }
+                timestamp:  { type: integer }
+                eventCount: { type: integer }
+                events:     { type: array, items: { type: object } }
+      responses:
+        "202":
+          description: Batch accepted

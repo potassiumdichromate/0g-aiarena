@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "paths": {
+      "@ai-arena/shared-types": ["../../packages/shared-types/src"],
+      "@ai-arena/shared-utils": ["../../packages/shared-utils/src"],
+      "@ai-arena/db-client": ["../../packages/db-client/src"],
+      "@ai-arena/event-bus": ["../../packages/event-bus/src"],
+      "@ai-arena/cache": ["../../packages/cache/src"],
+      "@ai-arena/zerog-client": ["../../packages/zerog-client/src"],
+      "@ai-arena/solana-client": ["../../packages/solana-client/src"],
+      "@ai-arena/vector-db": ["../../packages/vector-db/src"]
+    }
+  }
+}

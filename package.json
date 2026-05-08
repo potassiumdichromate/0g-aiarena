@@ -1,0 +1,28 @@
+{
+  "name": "ai-arena",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "db:migrate": "pnpm --filter @ai-arena/db-client migrate",
+    "db:generate": "pnpm --filter @ai-arena/db-client generate",
+    "contracts:build": "pnpm --filter @ai-arena/contracts-solana build && pnpm --filter @ai-arena/contracts-evm build",
+    "docker:dev": "docker-compose up -d",
+    "docker:down": "docker-compose down"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0",
+    "prettier": "^3.2.0",
+    "eslint": "^8.57.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@ai-arena/embedding-service",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": { "dev": "ts-node-dev --respawn src/main.ts", "build": "tsc", "start": "node dist/main.js", "typecheck": "tsc --noEmit" },
+  "dependencies": {
+    "fastify": "^4.26.0", "@fastify/cors": "^9.0.0", "@fastify/helmet": "^11.1.0",
+    "@fastify/jwt": "^8.0.0", "@ai-arena/shared-types": "workspace:*",
+    "@ai-arena/db-client": "workspace:*", "@ai-arena/cache": "workspace:*", "@ai-arena/event-bus": "workspace:*"
+  },
+  "devDependencies": { "typescript": "^5.4.0", "@types/node": "^20.0.0", "ts-node-dev": "^2.0.0" }
+}

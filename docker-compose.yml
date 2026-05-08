@@ -1,0 +1,128 @@
+version: '3.9'
+
+networks:
+  ai-arena-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  timescale_data:
+  clickhouse_data:
+  redis_data:
+  qdrant_data:
+  nats_data:
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: ai-arena-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ai_arena
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ai_arena
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/init-scripts/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - ai-arena-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_arena"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: ai-arena-timescaledb
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ai_arena
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: telemetry
+    ports:
+      - "5433:5432"
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    networks:
+      - ai-arena-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_arena"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24
+    container_name: ai-arena-clickhouse
+    restart: unless-stopped
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_DB: ai_arena_analytics
+      CLICKHOUSE_USER: ai_arena
+      CLICKHOUSE_PASSWORD: password
+    networks:
+      - ai-arena-net
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai-arena-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - ai-arena-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: ai-arena-nats
+    restart: unless-stopped
+    command: ["-js", "-m", "8222", "--store_dir=/data"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats_data:/data
+    networks:
+      - ai-arena-net
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:v1.8.0
+    container_name: ai-arena-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - ai-arena-net
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:6333/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

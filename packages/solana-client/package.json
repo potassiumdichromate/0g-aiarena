@@ -1,0 +1,20 @@
+{
+  "name": "@ai-arena/solana-client",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.91.0",
+    "@coral-xyz/anchor": "^0.29.0",
+    "@solana/spl-token": "^0.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0"
+  }
+}

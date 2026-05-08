@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.next/
+.turbo/
+*.env
+!.env.example
+.DS_Store
+*.log
+target/
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+coverage/
+*.pem
+*.key

@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: matchmaking-service
+  namespace: ai-arena
+  labels:
+    app: matchmaking-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: matchmaking-service
+  template:
+    metadata:
+      labels:
+        app: matchmaking-service
+    spec:
+      containers:
+        - name: matchmaking-service
+          image: ai-arena/matchmaking-service:latest
+          ports:
+            - containerPort: 3005
+          env:
+            - name: PORT
+              value: "3005"
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ai-arena-secrets
+                  key: redis-url
+            - name: NATS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ai-arena-secrets
+                  key: nats-url
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3005
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3005
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: matchmaking-service
+  namespace: ai-arena
+spec:
+  selector:
+    app: matchmaking-service
+  ports:
+    - port: 3005
+      targetPort: 3005

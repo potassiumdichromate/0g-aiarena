@@ -1,0 +1,6 @@
+sentence-transformers==2.5.0
+numpy==1.26.4
+qdrant-client==1.8.0
+nats-py==2.6.0
+aiohttp==3.9.3
+torch==2.2.0

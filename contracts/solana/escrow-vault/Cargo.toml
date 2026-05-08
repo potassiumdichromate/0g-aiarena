@@ -1,0 +1,18 @@
+[package]
+name = "escrow-vault"
+version = "0.1.0"
+description = "AI Arena Battle Escrow Vault Anchor Program"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "escrow_vault"
+
+[features]
+no-entrypoint = []
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+anchor-lang = "0.29.0"
+anchor-spl = "0.29.0"

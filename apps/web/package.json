@@ -1,0 +1,36 @@
+{
+  "name": "@ai-arena/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "14.2.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "@tanstack/react-query": "^5.40.0",
+    "wagmi": "^2.10.0",
+    "viem": "^2.13.0",
+    "@rainbow-me/rainbowkit": "^2.1.3",
+    "siwe": "^2.3.2",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.3.0",
+    "@ai-arena/shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.19",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "14.2.3",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.4",
+    "typescript": "^5.4.5"
+  }
+}

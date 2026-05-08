@@ -1,0 +1,13 @@
+torch==2.2.0
+transformers==4.38.0
+peft==0.9.0
+trl==0.8.1
+ray[default]==2.9.3
+ray[air]==2.9.3
+datasets==2.17.0
+accelerate==0.27.2
+nats-py==2.6.0
+boto3==1.34.0
+numpy==1.26.4
+scipy==1.12.0
+scikit-learn==1.4.0

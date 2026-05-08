@@ -1,0 +1,24 @@
+{
+  "name": "@ai-arena/settlement-worker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "ts-node-dev --respawn src/main.ts",
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.91.0",
+    "@coral-xyz/anchor": "^0.29.0",
+    "nats": "^2.28.0",
+    "@ai-arena/solana-client": "workspace:*",
+    "@ai-arena/db-client": "workspace:*",
+    "@ai-arena/event-bus": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0",
+    "ts-node-dev": "^2.0.0"
+  }
+}

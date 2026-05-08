@@ -1,0 +1,18 @@
+apiVersion: v2
+name: ai-arena
+description: AI Arena - Web3 AI Battle Platform Helm Chart
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - ai-arena
+  - web3
+  - gaming
+  - ai
+home: https://github.com/0g-ai/0g-AIArena
+sources:
+  - https://github.com/0g-ai/0g-AIArena
+maintainers:
+  - name: AI Arena Team
+    email: dev@aiarena.gg
+dependencies: []

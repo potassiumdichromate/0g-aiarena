@@ -1,0 +1,30 @@
+global:
+  imageRegistry: gcr.io/ai-arena-prod
+
+replicaCount:
+  identityService: 3
+  agentService: 3
+  battleService: 5
+  matchmakingService: 3
+  inferenceService: 8
+  memoryService: 3
+  leaderboardService: 2
+  telemetryService: 5
+
+autoscaling:
+  enabled: true
+  inferenceService:
+    minReplicas: 8
+    maxReplicas: 40
+    targetCPUUtilizationPercentage: 60
+
+ingress:
+  hosts:
+    - host: api.aiarena.gg
+      paths:
+        - path: /
+          pathType: Prefix
+
+config:
+  nodeEnv: production
+  logLevel: warn

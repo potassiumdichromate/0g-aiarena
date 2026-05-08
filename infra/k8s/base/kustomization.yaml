@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ai-arena
+
+resources:
+  - namespace.yaml
+  - identity-service.yaml
+  - battle-service.yaml
+  - inference-service.yaml
+  - matchmaking-service.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: ai-arena
+  app.kubernetes.io/managed-by: kustomize
+
+images:
+  - name: ai-arena/identity-service
+    newTag: latest
+  - name: ai-arena/battle-service
+    newTag: latest
+  - name: ai-arena/inference-service
+    newTag: latest
+  - name: ai-arena/matchmaking-service
+    newTag: latest

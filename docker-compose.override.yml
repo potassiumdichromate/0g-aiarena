@@ -1,0 +1,10 @@
+version: '3.9'
+
+# Local development overrides - enables hot reload and debug ports
+services:
+  postgres:
+    environment:
+      POSTGRES_LOG_STATEMENT: all
+
+  redis:
+    command: redis-server --appendonly yes --loglevel verbose
