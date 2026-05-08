@@ -25,12 +25,37 @@ Authorization: Bearer <accessToken>
 
 ## Rate Limits
 
-| Endpoint group | Limit |
-|----------------|-------|
-| `/auth/*` | 20 req/min |
-| `/inference/action` | 200 req/min per agent |
-| `/sessions/*/batch` | 60 req/min |
-| All others | 100 req/min |
+Rate limit state is stored in Redis and shared across all gateway instances.
+
+| Endpoint group | Limit | Key |
+|----------------|-------|-----|
+| `/auth/*` | 10 req/min | IP address (brute-force protection) |
+| All others (global) | 200 req/min | Wallet address (`x-wallet-address` header) or IP |
+
+Configure via env vars: `RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_MS`, `AUTH_RATE_LIMIT_MAX`.
+
+On HTTP **429** the response includes:
+
+```json
+{
+  "statusCode": 429,
+  "error": "Too Many Requests",
+  "message": "Rate limit exceeded. Try again in 42s.",
+  "retryAfter": 42
+}
+```
+
+## Security Headers
+
+Every response from the API gateway includes:
+
+| Header | Value |
+|--------|-------|
+| `X-Frame-Options` | `DENY` |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-DNS-Prefetch-Control` | `off` |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` (production only) |
+| `Referrer-Policy` | `no-referrer` |
 
 ---
 

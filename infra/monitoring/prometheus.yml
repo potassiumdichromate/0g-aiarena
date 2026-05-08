@@ -1,0 +1,145 @@
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: 'ai-arena'
+
+# ── Alerting ──────────────────────────────────────────────────────────────────
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']
+
+# ── Scrape configs ─────────────────────────────────────────────────────────────
+scrape_configs:
+
+  # Prometheus self-monitoring
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Infrastructure
+  - job_name: redis
+    static_configs:
+      - targets: ['redis:6379']
+
+  # AI Arena microservices — each exposes GET /metrics (OTLP auto-instrumentation)
+  - job_name: api-gateway
+    static_configs:
+      - targets: ['host.docker.internal:8000']
+    metrics_path: /metrics
+
+  - job_name: identity-service
+    static_configs:
+      - targets: ['host.docker.internal:8001']
+    metrics_path: /metrics
+
+  - job_name: agent-service
+    static_configs:
+      - targets: ['host.docker.internal:8002']
+    metrics_path: /metrics
+
+  - job_name: financial-service
+    static_configs:
+      - targets: ['host.docker.internal:8003']
+    metrics_path: /metrics
+
+  - job_name: game-service
+    static_configs:
+      - targets: ['host.docker.internal:8004']
+    metrics_path: /metrics
+
+  - job_name: telemetry-service
+    static_configs:
+      - targets: ['host.docker.internal:8010']
+    metrics_path: /metrics
+
+  - job_name: behaviour-service
+    static_configs:
+      - targets: ['host.docker.internal:8011']
+    metrics_path: /metrics
+
+  - job_name: training-service
+    static_configs:
+      - targets: ['host.docker.internal:8012']
+    metrics_path: /metrics
+
+  - job_name: inference-service
+    static_configs:
+      - targets: ['host.docker.internal:8013']
+    metrics_path: /metrics
+
+  - job_name: memory-service
+    static_configs:
+      - targets: ['host.docker.internal:8014']
+    metrics_path: /metrics
+
+  - job_name: embedding-service
+    static_configs:
+      - targets: ['host.docker.internal:8015']
+    metrics_path: /metrics
+
+  - job_name: matchmaking-service
+    static_configs:
+      - targets: ['host.docker.internal:8020']
+    metrics_path: /metrics
+
+  - job_name: battle-service
+    static_configs:
+      - targets: ['host.docker.internal:8021']
+    metrics_path: /metrics
+
+  - job_name: replay-service
+    static_configs:
+      - targets: ['host.docker.internal:8022']
+    metrics_path: /metrics
+
+  - job_name: tournament-service
+    static_configs:
+      - targets: ['host.docker.internal:8023']
+    metrics_path: /metrics
+
+  - job_name: anticheat-service
+    static_configs:
+      - targets: ['host.docker.internal:8024']
+    metrics_path: /metrics
+
+  - job_name: wallet-service
+    static_configs:
+      - targets: ['host.docker.internal:8030']
+    metrics_path: /metrics
+
+  - job_name: escrow-service
+    static_configs:
+      - targets: ['host.docker.internal:8031']
+    metrics_path: /metrics
+
+  - job_name: inft-service
+    static_configs:
+      - targets: ['host.docker.internal:8032']
+    metrics_path: /metrics
+
+  - job_name: payment-service
+    static_configs:
+      - targets: ['host.docker.internal:8033']
+    metrics_path: /metrics
+
+  - job_name: analytics-service
+    static_configs:
+      - targets: ['host.docker.internal:8040']
+    metrics_path: /metrics
+
+  - job_name: leaderboard-service
+    static_configs:
+      - targets: ['host.docker.internal:8041']
+    metrics_path: /metrics
+
+  - job_name: storage-service
+    static_configs:
+      - targets: ['host.docker.internal:8042']
+    metrics_path: /metrics
+
+  - job_name: notification-service
+    static_configs:
+      - targets: ['host.docker.internal:8043']
+    metrics_path: /metrics

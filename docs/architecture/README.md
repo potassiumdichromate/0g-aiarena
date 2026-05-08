@@ -35,9 +35,15 @@ using on-chain verified ML pipelines. All AI compute, file storage, and NFT iden
                            │                    │                    │
               ┌────────────▼────────────────────▼────────────────────▼──────────────────┐
               │                       INFRASTRUCTURE                                     │
-              │  PostgreSQL 16  │ TimescaleDB │ ClickHouse │ Redis 7 │ NATS JetStream    │
+              │  PostgreSQL 16  │  ClickHouse 24  │  Redis 7  │  NATS JetStream         │
               │  Qdrant 1.8 (vector search)                                              │
               └──────────────────────────────────────────────────────────────────────────┘
+                           │
+              ┌────────────▼──────────────────────────────────────────────────────────┐
+              │                     OBSERVABILITY                                      │
+              │  Prometheus :9090 (metrics)  │  Grafana :3001 (dashboards)            │
+              │  Jaeger     :16686 (traces)  │  OTLP gRPC :4317 (trace ingest)        │
+              └───────────────────────────────────────────────────────────────────────┘
                            │                    │
               ┌────────────▼────────────────────▼──────────────────────────────────────┐
               │                       0G ECOSYSTEM (mainnet)                            │
@@ -140,7 +146,7 @@ POST /agents
 2.  Match found             → NATS: match.found       → battle-service
 3.  Battle created          → NATS: battle.created    → all subscribers
 4.  Unity: StartBattle      → battle-service POST      → returns battleId
-5.  Unity: TelemetryBatch   → telemetry-service POST   → TimescaleDB + NATS
+5.  Unity: TelemetryBatch   → telemetry-service POST   → ClickHouse + NATS
 6.  Unity: GetNextAction    → inference-service POST   → 0G Compute (GLM-5.1-FP8)
                                                        → tool_choice: required
                                                        → TEE proof if ZEROG_VERIFY_TEE=true
@@ -239,7 +245,7 @@ Tier 4 — Procedural (0G Storage)
 | agent-service | 8002 | Agent CRUD + 0G avatar/metadata upload |
 | financial-service | 8003 | Wallets, ledger, spending policies |
 | game-service | 8004 | Game registry, intelligence layer config |
-| telemetry-service | 8010 | Real-time event ingestion, TimescaleDB |
+| telemetry-service | 8010 | Real-time event ingestion → ClickHouse |
 | behaviour-service | 8011 | Trait analysis, archetype classification |
 | training-service | 8012 | Job queue + dataset upload to 0G Storage |
 | inference-service | 8013 | 0G Compute Router — combat action inference |
@@ -291,3 +297,71 @@ with on-chain anchoring, making agent memory verifiable and portable across owne
 0G Compute fine-tuning only supports **Qwen2.5-0.5B-Instruct** and **Qwen3-32B**.
 These are submitted via CLI (`@0gfoundation/0g-compute-ts-sdk`), not REST API.
 Fine-tuned model weights are uploaded to 0G Storage and the rootHash is anchored in the INFT.
+
+---
+
+## Database Strategy
+
+| Store | Role | Why |
+|-------|------|-----|
+| PostgreSQL 16 | Primary transactional store | ACID, Prisma ORM, relational integrity |
+| ClickHouse 24 | Time-series telemetry + analytics | Column-store, 100x faster aggregations over millions of events vs Postgres |
+| Redis 7 | Working memory, queues, leaderboards, distributed rate-limit store | Sub-ms access, sorted sets for ELO queues |
+| Qdrant 1.8 | Vector search | ANN index for RAG memory retrieval |
+| NATS JetStream | Event bus + durable messaging | At-least-once delivery, replay, fan-out |
+
+**TimescaleDB was removed** — it duplicated ClickHouse for time-series data with no added benefit.
+ClickHouse handles all time-series workloads (telemetry events, battle metrics, training runs) with
+far superior query performance on large datasets.
+
+---
+
+## Observability Stack
+
+```
+Service → OTLP gRPC (:4317) → Jaeger (distributed traces)
+Service → GET /metrics        → Prometheus (:9090) → Grafana (:3001)
+Service → Sentry DSN          → Sentry (error tracking)
+```
+
+| Tool | Port | Purpose |
+|------|------|---------|
+| Prometheus | 9090 | Metrics scrape + storage (30-day retention) |
+| Grafana | 3001 | Dashboards — latency, throughput, error rates, 0G usage |
+| Jaeger | 16686 | Distributed traces — full request lifecycle across services |
+
+Every service exports:
+- **Traces**: via `@opentelemetry/auto-instrumentations-node` → Jaeger OTLP gRPC
+- **Metrics**: `GET /metrics` endpoint scraped by Prometheus
+- **Logs**: structured JSON (pino) → captured by docker/k8s log driver
+
+---
+
+## Security Architecture
+
+### Rate Limiting (multi-layer)
+
+```
+Edge (Cloudflare / nginx)
+  └─ connection-rate limit per IP
+       └─ API Gateway (@fastify/rate-limit, Redis-backed)
+            ├─ Global:   200 req / 60s  per wallet address or IP
+            └─ /v1/auth: 10  req / 60s  per IP  (brute-force protection)
+                  └─ Per-service: 100 req / 60s  (independent service limits)
+```
+
+Rate limit state is stored in **Redis** — all gateway instances share the same counters,
+so limits are enforced correctly in horizontally-scaled deployments.
+
+### DDoS Protection
+- **Edge**: deploy behind Cloudflare (Free tier: L3/L4 volumetric DDoS, WAF rules)
+  or nginx `limit_conn` + `limit_req` modules before traffic reaches the gateway.
+- **Body size cap**: `bodyLimit: 1 MB` on the API gateway — oversized requests are
+  rejected before reaching service logic (memory-exhaustion protection).
+- **Timeouts**: `connectionTimeout: 30s`, `requestTimeout: 30s` — drops slow-loris connections.
+- **Helmet**: security headers on every response (X-Frame-Options, HSTS in production, etc.).
+
+### Auth
+- SIWE (Sign-In With Ethereum) — wallet-based, no password storage
+- Short-lived JWT access tokens (15 min) + refresh tokens (7 days)
+- JWT secret ≥ 32 chars, rotatable via env var

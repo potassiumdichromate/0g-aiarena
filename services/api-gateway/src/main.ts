@@ -3,6 +3,15 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import httpProxy from '@fastify/http-proxy';
+import Redis from 'ioredis';
+
+// ── Redis store for distributed rate limiting ─────────────────────────────────
+// Shared across all gateway instances so limits are enforced cluster-wide.
+const rateLimitRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+  maxRetriesPerRequest: 2,
+  enableReadyCheck: false,
+  lazyConnect: true,
+});
 
 const app = Fastify({
   logger: {
@@ -12,6 +21,12 @@ const app = Fastify({
       : undefined,
   },
   genReqId: () => crypto.randomUUID(),
+  // Cap request body at 1 MB — rejects oversized payloads before they reach
+  // services, protecting against memory-exhaustion DDoS vectors.
+  bodyLimit: parseInt(process.env.BODY_LIMIT_BYTES ?? String(1_048_576)),
+  // Keep-alive + header timeouts to drop slow-loris connections.
+  connectionTimeout: 30_000,
+  requestTimeout:    30_000,
 });
 
 // ── Security plugins ──────────────────────────────────────────────────────────
@@ -20,13 +35,52 @@ await app.register(cors, {
   credentials: true,
 });
 
-await app.register(helmet, { contentSecurityPolicy: false });
+await app.register(helmet, {
+  contentSecurityPolicy: false,
+  // Prevent clickjacking
+  frameguard: { action: 'deny' },
+  // Force HTTPS in production
+  hsts: process.env.NODE_ENV === 'production'
+    ? { maxAge: 31_536_000, includeSubDomains: true }
+    : false,
+});
 
+// ── Global rate limit (Redis-backed, distributed) ─────────────────────────────
+// Key = wallet address (authenticated) or IP (unauthenticated).
+// Behind a reverse proxy / load balancer set TRUSTED_PROXIES to honour
+// X-Forwarded-For; default trusts the immediate upstream only.
 await app.register(rateLimit, {
-  max: parseInt(process.env.RATE_LIMIT_MAX ?? '100'),
-  timeWindow: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? '60000'),
+  global:     true,
+  max:        parseInt(process.env.RATE_LIMIT_MAX        ?? '200'),
+  timeWindow: parseInt(process.env.RATE_LIMIT_WINDOW_MS  ?? '60000'),
+  redis:      rateLimitRedis,
   keyGenerator: (req) =>
-    req.headers['x-wallet-address'] as string ?? req.ip,
+    (req.headers['x-wallet-address'] as string | undefined) ?? req.ip ?? 'unknown',
+  errorResponseBuilder: (_req, context) => ({
+    statusCode: 429,
+    error: 'Too Many Requests',
+    message: `Rate limit exceeded. Try again in ${Math.ceil(context.ttl / 1000)}s.`,
+    retryAfter: Math.ceil(context.ttl / 1000),
+  }),
+});
+
+// ── Strict rate limit on authentication endpoints ─────────────────────────────
+// Credential-stuffing / brute-force protection: 10 req/min per IP on /v1/auth.
+app.addHook('onRequest', async (req, reply) => {
+  if (req.url.startsWith('/v1/auth')) {
+    const key   = `rl:auth:${req.ip ?? 'unknown'}`;
+    const limit = parseInt(process.env.AUTH_RATE_LIMIT_MAX ?? '10');
+    const win   = parseInt(process.env.AUTH_RATE_LIMIT_WINDOW_MS ?? '60000');
+    const count = await rateLimitRedis.incr(key);
+    if (count === 1) await rateLimitRedis.pexpire(key, win);
+    if (count > limit) {
+      reply.status(429).send({
+        statusCode: 429,
+        error: 'Too Many Requests',
+        message: 'Authentication rate limit exceeded. Try again in 60 seconds.',
+      });
+    }
+  }
 });
 
 // ── Health check ──────────────────────────────────────────────────────────────

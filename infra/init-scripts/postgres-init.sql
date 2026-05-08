@@ -23,7 +23,7 @@ $$;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO aiarena_readonly;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO aiarena_readonly;
 
--- TimescaleDB hypertable setup will be done via Prisma migrations
--- This script just ensures extensions and roles exist before Prisma runs
+-- Time-series telemetry data goes to ClickHouse (not PostgreSQL).
+-- This script ensures extensions and roles exist before Prisma runs.
 
 SELECT version() AS postgres_version;
