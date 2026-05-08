@@ -76,20 +76,25 @@ export class MemoryManager {
       },
     });
 
-    // Upsert to Qdrant for RAG retrieval
-    const vector = episode.vector ?? new Array(1024).fill(0).map(() => Math.random() - 0.5);
-    await this.qdrant.upsertVector(COLLECTIONS.AGENT_MEMORIES, {
-      id:      memory.id,
-      vector,
-      payload: {
-        agentId,
-        type:      'EPISODIC',
-        content:   episode.content,
-        battleId:  episode.battleId,
-        outcome:   episode.outcome,
-        importance,
-      },
-    });
+    // Upsert to Qdrant only when a real embedding vector is provided.
+    // Without a vector, the episode still lives in Postgres; callers must supply
+    // an embedding (e.g. from inference-service) for RAG retrieval to work.
+    if (episode.vector && episode.vector.length > 0) {
+      await this.qdrant.upsertVector(COLLECTIONS.AGENT_MEMORIES, {
+        id:      memory.id,
+        vector:  episode.vector,
+        payload: {
+          agentId,
+          type:      'EPISODIC',
+          content:   episode.content,
+          battleId:  episode.battleId,
+          outcome:   episode.outcome,
+          importance,
+        },
+      });
+    } else {
+      console.warn(`[MemoryManager] storeEpisode: no embedding vector for memory ${memory.id} — skipping Qdrant upsert`);
+    }
 
     // Upload episode snapshot to 0G Storage (async — don't block response)
     let snapshotRootHash: string | undefined;

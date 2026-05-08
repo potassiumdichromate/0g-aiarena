@@ -30,8 +30,10 @@ export class Matchmaker {
 
       if (candidateId === agentId) continue;
       if (Math.abs(candidateElo - elo) <= eloRange) {
-        // Match found!
-        await this.redis.del(queueKey);
+        // Match found! Remove only the two matched agents from the sorted set.
+        await this.redis.zrem(queueKey, agentId, candidateId);
+        await this.redis.del(CACHE_KEYS.queueEntry(agentId));
+        await this.redis.del(CACHE_KEYS.queueEntry(candidateId));
         const bus = await getEventBus();
         await bus.publish(SUBJECTS.MATCH_FOUND, {
           matchId: `${agentId}-${candidateId}-${Date.now()}`,
@@ -47,7 +49,7 @@ export class Matchmaker {
   async leaveQueue(agentId: string): Promise<void> {
     const entry = await this.redis.getJson<{ gameId: string; mode: string }>(CACHE_KEYS.queueEntry(agentId));
     if (entry) {
-      await this.redis.zrevrange(CACHE_KEYS.matchQueue(entry.gameId, entry.mode), 0, -1);
+      await this.redis.zrem(CACHE_KEYS.matchQueue(entry.gameId, entry.mode), agentId);
       await this.redis.del(CACHE_KEYS.queueEntry(agentId));
     }
   }

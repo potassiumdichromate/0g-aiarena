@@ -116,6 +116,10 @@ export class RedisClient {
     return this.redis.zscore(key, member);
   }
 
+  async zrem(key: string, ...members: string[]): Promise<number> {
+    return this.redis.zrem(key, ...members);
+  }
+
   async publish(channel: string, message: string): Promise<void> {
     await this.redis.publish(channel, message);
   }

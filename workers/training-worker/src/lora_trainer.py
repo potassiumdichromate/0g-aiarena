@@ -278,25 +278,16 @@ async def _run_local_finetune(config: TrainingConfig) -> Dict[str, object]:
         )
         logger.info(f"LoRA config: r={config.lora_r}, alpha={config.lora_alpha}")
 
-        # Placeholder — real implementation loads tokenizer, model, dataset
-        # and runs Trainer.train()
-        await asyncio.sleep(2)
+        # Local GPU training is not yet implemented.
+        # For supported fine-tuning use PATH 1 (use_zerog_compute=True).
+        raise NotImplementedError(
+            "Local GPU fine-tuning is not yet implemented. "
+            "Set use_zerog_compute=True and configure ZEROG_FINETUNE_PROVIDER "
+            "to use 0G Compute fine-tuning."
+        )
 
-        return {
-            'model_base':    config.model_base,
-            'loss':          0.28,
-            'perplexity':    3.4,
-            'steps':         config.max_steps,
-            'training_time_s': 90.0,
-            'model_root_hash': '',   # Set after uploading to 0G Storage
-        }
-
-    except ImportError:
-        logger.warning("peft/transformers not installed — returning dry-run metrics")
-        return {
-            'model_base':    config.model_base,
-            'loss':          0.35,
-            'steps':         config.max_steps,
-            'training_time_s': 5.0,
-            'model_root_hash': '',
-        }
+    except ImportError as e:
+        raise RuntimeError(
+            "peft/transformers are not installed. "
+            "Install them with: pip install peft transformers datasets"
+        ) from e
