@@ -197,12 +197,27 @@ pnpm --filter @ai-arena/shared-utils test
 
 Copy `.env.example` to `.env` and configure the following sections:
 
-### 0G Network
+### 0G Network (Official Partner)
 
-Register at [0g.ai](https://0g.ai) to obtain:
-- `ZEROG_COMPUTE_API_KEY` — for AI inference and fine-tuning
-- `ZEROG_STORAGE_KEY` — for decentralised file storage
-- `ZEROG_STORAGE_RPC` — defaults to testnet: `https://evmrpc-testnet.0g.ai`
+**Compute API key** (for all inference + image + audio calls):
+1. Go to **https://pc.0g.ai** → Dashboard → API Keys
+2. Create key with **inference** permission (format: `sk-xxxxxxxx`)
+3. Set `ZEROG_COMPUTE_API_KEY=sk-your-key`
+4. Deposit 0G tokens at pc.0g.ai → Dashboard → Deposit (billing in neuron units)
+
+**Storage private key** (signs upload transactions on 0G Chain):
+- Set `ZEROG_STORAGE_PRIVATE_KEY=0x_your_private_key`
+- Fund wallet with 0G tokens for gas (testnet faucet available)
+
+**Network:**
+- `ZEROG_NETWORK=testnet` (default) or `mainnet`
+- 0G Chain mainnet: Chain ID `16661`, RPC `https://evmrpc.0g.ai`
+- 0G Chain testnet: Chain ID `16600`, RPC `https://evmrpc-testnet.0g.ai`
+
+**Available inference models** (source: pc.0g.ai/api-reference):
+- Chat: `zai-org/GLM-5.1-FP8` *(default)*, `deepseek/deepseek-chat-v3-0324`, `qwen/qwen3-vl-30b-a3b-instruct`, `qwen3.6-plus`
+- Image: `z-image` (response_format: `b64_json` only)
+- Audio: `openai/whisper-large-v3`
 
 ### Solana
 
@@ -389,25 +404,48 @@ public class AIController : MonoBehaviour
 
 ## 0G Ecosystem Integration
 
-AI Arena is deeply integrated with the 0G decentralised AI network:
+AI Arena is an official 0G ecosystem partner. All AI infrastructure runs on 0G.
 
-### 0G Compute
+### 0G Compute Router
+**Endpoint:** `https://router-api.0g.ai/v1` (OpenAI-compatible)
+**Auth:** `sk-` API keys from pc.0g.ai → Dashboard → API Keys
 
 Used for:
-- **Agent Generation** — Generate personality traits and starter avatars using 0G-hosted models
-- **Inference** — Real-time combat action prediction via 0G Compute's OpenAI-compatible API
-- **Fine-tuning** — Submit LoRA fine-tuning jobs to 0G Compute for personalised agent models
-- **Embedding** — BGE-M3 embedding generation for memory and behaviour analysis
+- **Combat Inference** — Real-time action prediction via `inferCombatAction()`, structured output via `tool_choice: required`, TEE-verifiable with `verify_tee: true`
+- **Strategy Planning** — Multi-tick battle strategy at match start
+- **Agent Generation** — Personality traits + avatar generation at mint time
+- **Audio Transcription** — Battle commentary via Whisper
 
-The inference gateway (`inference-service`) routes requests to 0G Compute with automatic fallback to local GPU workers when 0G is unavailable.
+Available models (pc.0g.ai/api-reference): `zai-org/GLM-5.1-FP8`, `deepseek/deepseek-chat-v3-0324`, `qwen/qwen3-vl-30b-a3b-instruct`, `qwen3.6-plus`, `z-image`, `openai/whisper-large-v3`
 
 ### 0G Storage
+**SDK:** `@0gfoundation/0g-storage-ts-sdk`
+**Key fact:** Files are content-addressed by **Merkle root hash** — not path strings.
+
+Pattern: `upload(data) → rootHash` → store `logicalPath → rootHash` in PostgreSQL `storage_index` table → `download(rootHash)`
 
 Used for:
-- **Model Checkpoints** — LoRA adapter weights stored durably in 0G Storage
-- **Replay Data** — Deterministic battle replays archived in 0G Storage
-- **Agent Metadata** — Rich INFT metadata stored in 0G Storage, referenced by on-chain tokenURI
-- **Training Datasets** — Processed telemetry datasets for fine-tuning
+- **LoRA adapter weights** — fine-tuned model checkpoints (rootHash stored in INFT `modelRootHash`)
+- **Agent memory blobs** — episodic + semantic memory (rootHash anchored on-chain in `memoryRootHash`)
+- **Battle replays** — deterministic replay data for audit/anti-cheat
+- **Training datasets** — processed telemetry JSONL for fine-tuning submissions
+
+### 0G Chain (EVM)
+**Mainnet:** Chain ID `16661` | RPC `https://evmrpc.0g.ai` | Explorer `https://chainscan.0g.ai`
+
+The `AIArenaINFT.sol` contract implements **ERC-7857** (Living NFT standard):
+- `transfer(from, to, tokenId, sealedKey, proof)` — oracle TEE re-encrypts metadata for new owner
+- `clone(to, tokenId, sealedKey, proof)` — spawn child agent (max 3 per parent)
+- `authorizeUsage(tokenId, executor, permissions)` — grant inference rights to backend
+
+Storage contract (Flow): `0x62D4144dB0F0a6fBBaeb6296c785C71B3D57C526`
+
+### 0G Fine-tuning (CLI)
+Supported models: **Qwen2.5-0.5B-Instruct** and **Qwen3-32B** only.
+```bash
+0g-compute-cli fine-tuning create-task --provider <ADDR> --model Qwen2.5-0.5B-Instruct ...
+```
+**Important:** acknowledge delivered model within 48h or incur 30% fee penalty.
 
 ### 0G Chain (EVM)
 

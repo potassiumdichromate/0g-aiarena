@@ -30,9 +30,14 @@ export interface ZeroGConfig {
   computeBaseUrl: string;
   computeApiKey: string;         // Format: sk-xxxx (from pc.0g.ai Dashboard)
 
-  // 0G Compute — default models
-  modelChat: string;             // e.g. "zai-org/GLM-5-FP8"
-  modelImage: string;            // e.g. "z-image"
+  // 0G Compute — default models (source: pc.0g.ai/api-reference)
+  // Chat:   deepseek/deepseek-chat-v3-0324 | qwen/qwen3-vl-30b-a3b-instruct |
+  //         qwen3.6-plus | zai-org/GLM-5-FP8 | zai-org/GLM-5.1-FP8
+  // Image:  z-image
+  // Audio:  openai/whisper-large-v3
+  modelChat: string;
+  modelImage: string;
+  modelAudio: string;
 
   // 0G Compute — inference options
   verifyTee: boolean;            // Enable TEE verifiable execution proofs
@@ -85,8 +90,9 @@ export function getZeroGConfig(): ZeroGConfig {
     computeBaseUrl:     process.env.ZEROG_COMPUTE_BASE_URL ?? 'https://router-api.0g.ai/v1',
     computeApiKey:      process.env.ZEROG_COMPUTE_API_KEY  ?? '',
 
-    modelChat:          process.env.ZEROG_MODEL_CHAT  ?? 'zai-org/GLM-5-FP8',
+    modelChat:          process.env.ZEROG_MODEL_CHAT  ?? 'zai-org/GLM-5.1-FP8',
     modelImage:         process.env.ZEROG_MODEL_IMAGE ?? 'z-image',
+    modelAudio:         process.env.ZEROG_MODEL_AUDIO ?? 'openai/whisper-large-v3',
     verifyTee:          process.env.ZEROG_VERIFY_TEE === 'true',
     providerSort:       (process.env.ZEROG_PROVIDER_SORT as 'latency' | 'price') || null,
 

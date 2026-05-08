@@ -92,38 +92,69 @@ ARENA token staking with time-weighted reward accumulation.
 
 ## EVM Contracts (0G Chain)
 
-### AIArenaINFT.sol
+**0G Chain details:**
 
-ERC-721 NFT representing agent ownership. Extends ERC721URIStorage and ERC721Enumerable.
+| Field | Mainnet | Testnet |
+|-------|---------|---------|
+| Chain ID | 16661 | 16600 |
+| EVM RPC | `https://evmrpc.0g.ai` | `https://evmrpc-testnet.0g.ai` |
+| Explorer | `https://chainscan.0g.ai` | — |
 
-**Key features**:
-- On-chain trait registry (8 trait scores per agent, 0–100)
-- Evolution stage tracking (GENESIS → MYTHIC)
-- Memory root anchoring (Merkle root of agent memory tree)
-- Model version tracking (links to 0G Storage blob CID)
-- Battle result history (wins/losses)
-- `authorisedOperators` — whitelist for backend service accounts
+### 0G Infrastructure Contracts (deployed by 0G team)
 
-**Functions**:
+These are the underlying 0G protocol contracts used by AI Arena services.
+
+| Contract | Purpose | Mainnet Address |
+|----------|---------|-----------------|
+| Flow | 0G Storage — data submission entry point | `0x62D4144dB0F0a6fBBaeb6296c785C71B3D57C526` |
+| Mine | 0G Storage — mining / proof verification | `0xCd01c5Cd953971CE4C2c9bFb95610236a7F414fe` |
+| Reward | 0G Storage — miner reward distribution | `0x457aC76B58ffcDc118AABD6DbC63ff9072880870` |
+| Payment | 0G Compute — neuron billing deposits | `0xA3b15Bd2aD18BFB6b5f92D8AA9F444Dd59d1cE32` |
+| Payment | 0G Compute — neuron billing (testnet) | `0x0AD9690e0b34aB2d493DE02cDF149ee34f6C9939` |
+
+> Compute API reference: https://pc.0g.ai/api-reference
+> Storage indexer (mainnet): `https://indexer-storage-turbo.0g.ai`
+> Storage indexer (testnet): `https://indexer-storage-testnet-turbo.0g.ai`
+
+---
+
+### AIArenaINFT.sol — ERC-7857 Living Agent NFT
+
+Implements the [ERC-7857](https://eips.ethereum.org/EIPS/eip-7857) standard for AI agent NFTs.
+Source: `contracts/evm/contracts/AIArenaINFT.sol`
+
+**Key differences from standard ERC-721:**
+- `transfer(from, to, tokenId, sealedKey, proof)` — oracle TEE re-encrypts agent metadata for new owner
+- `clone(to, tokenId, sealedKey, proof)` — spawn child INFT (max 3 clones per parent)
+- `authorizeUsage(tokenId, executor, permissions)` — grant inference rights to a service account
+- `revokeUsage(tokenId, executor)` — revoke inference rights
+
+**Storage pattern (0G content-addressed):**
+- `encryptedMetadataHash` — Keccak256 of encrypted blob stored in 0G Storage
+- `memoryRootHash` — `bytes32` = 0G Storage Merkle root hash of agent memory blob
+- `modelRootHash` — `string` = 0G Storage root hash of LoRA adapter weights
+
+**Evolution stages:** `1=Genesis, 2=Recruit, 3=Veteran, 4=Elite, 5=Legend`
+
+**Key functions:**
 ```solidity
-function mintAgent(address to, AgentTraits calldata traits, string calldata tokenUri) external onlyOwner returns (uint256)
-function evolveAgent(uint256 tokenId, uint8 newStage, AgentTraits calldata newTraits) external onlyAuthorised
-function recordBattleResult(uint256 tokenId, bool won, uint256 eloChange) external onlyAuthorised
-function updateMemoryRoot(uint256 tokenId, bytes32 memoryRoot) external onlyAuthorised
-function updateModelVersion(uint256 tokenId, string calldata modelCid) external onlyAuthorised
+function mintAgent(address to, AgentTraits calldata traits, string calldata encryptedMetadataHash, bytes32 memoryRootHash, string calldata modelRootHash, bytes calldata initialSealedKey) external returns (uint256)
+function transfer(address from, address to, uint256 tokenId, bytes calldata sealedKey, bytes calldata proof) external
+function clone(address to, uint256 tokenId, bytes calldata sealedKey, bytes calldata proof) external returns (uint256)
+function authorizeUsage(uint256 tokenId, address executor, bytes calldata permissions) external
+function revokeUsage(uint256 tokenId, address executor) external
+function hasValidUsage(uint256 tokenId, address executor) external view returns (bool)
+function evolveAgent(uint256 tokenId, uint8 newStage, AgentTraits calldata newTraits) external
+function updateMemoryRoot(uint256 tokenId, bytes32 newMemoryRoot) external
+function updateModelRoot(uint256 tokenId, string calldata newModelRootHash) external
+function recordBattleResult(uint256 tokenId, bool won, uint256 eloChange) external
 ```
-
-**Events**:
-- `AgentMinted(tokenId, owner, traits)`
-- `AgentEvolved(tokenId, newStage, newTraits)`
-- `MemoryRootUpdated(tokenId, memoryRoot)`
-- `ModelVersionUpdated(tokenId, modelCid)`
 
 ---
 
 ### AgentRegistry.sol
 
-Maps agent UUIDs (off-chain) to INFT token IDs and stores on-chain ELO ratings.
+Maps agent UUIDs (off-chain) to INFT token IDs and on-chain ELO ratings.
 
 ```solidity
 function registerAgent(string calldata agentId, uint256 tokenId) external onlyOwner
@@ -136,10 +167,10 @@ function getTokenId(string calldata agentId) external view returns (uint256)
 
 ### ModuleMarketplace.sol
 
-Buy and sell AI agent skill modules (special ability packs stored on 0G Storage).
+Buy and sell AI agent skill modules. Module weights are stored on 0G Storage by rootHash.
 
 ```solidity
-function listModule(string calldata cid, uint256 price) external returns (uint256 listingId)
+function listModule(string calldata rootHash, uint256 price) external returns (uint256 listingId)
 function buyModule(uint256 listingId) external payable
 function applyModule(uint256 tokenId, uint256 listingId) external
 function delistModule(uint256 listingId) external
@@ -149,14 +180,15 @@ function delistModule(uint256 listingId) external
 
 ## Deployment Addresses
 
+Update this table after each deployment using `scripts/deploy.ts`.
+
 | Contract | Network | Address |
 |---|---|---|
-| AIArenaINFT | 0G Testnet | TBD |
+| AIArenaINFT | 0G Mainnet | TBD — set `ZEROG_INFT_CONTRACT_ADDRESS` |
+| AIArenaINFT | 0G Testnet | TBD — set `ZEROG_INFT_CONTRACT_ADDRESS` |
 | AgentRegistry | 0G Testnet | TBD |
 | ModuleMarketplace | 0G Testnet | TBD |
 | agent-wallet | Solana Devnet | AgWa111... |
 | escrow-vault | Solana Devnet | EscVa11... |
 | tournament | Solana Devnet | Tour111... |
 | staking | Solana Devnet | Stak111... |
-
-Update this table after each deployment using `scripts/deploy.ts`.

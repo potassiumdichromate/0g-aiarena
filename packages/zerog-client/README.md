@@ -85,11 +85,29 @@ OpenAI-compatible inference API. Base URL: `https://router-api.0g.ai/v1`
 
 ### Available Models
 Full list: `GET https://router-api.0g.ai/v1/models` (no auth required)
+Interactive reference: https://pc.0g.ai/api-reference
 
-| Model | Context | Use Case |
-|-------|---------|----------|
-| `zai-org/GLM-5-FP8` | 131,072 tokens | Chat, reasoning, strategy |
-| `z-image` | — | Avatar / image generation |
+**Chat / Reasoning**
+
+| Model | Use Case |
+|-------|----------|
+| `zai-org/GLM-5.1-FP8` | Default — chat, reasoning, strategy (recommended) |
+| `zai-org/GLM-5-FP8` | Older GLM-5 (FP8 quantised) |
+| `deepseek/deepseek-chat-v3-0324` | DeepSeek V3 — strong multi-step reasoning |
+| `qwen/qwen3-vl-30b-a3b-instruct` | Multimodal — vision + text (battle screenshots) |
+| `qwen3.6-plus` | Qwen3.6 Plus |
+
+**Image Generation**
+
+| Model | Notes |
+|-------|-------|
+| `z-image` | Avatar / image generation. Use `response_format: b64_json` only — URL format not yet supported |
+
+**Audio Transcription**
+
+| Model | Use Case |
+|-------|----------|
+| `openai/whisper-large-v3` | Multilingual audio-to-text (battle commentary, voice logs) |
 
 ### Verifiable Execution (TEE)
 Add `verify_tee: true` to any request. The response will include:
@@ -143,6 +161,9 @@ const { base64 } = await client.generateAvatar({
 
 // Check balance
 const { balance } = await client.getAccountBalance(); // in neuron units
+
+// Audio transcription (battle commentary, voice replay logs)
+const { text, language } = await client.transcribeAudio(audioBuffer, 'battle.mp3');
 ```
 
 ### Rate Limits

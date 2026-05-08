@@ -85,6 +85,12 @@ export interface ImageGenerationResult {
   traceInfo?: ZeroGTrace;
 }
 
+export interface AudioTranscriptionResult {
+  text: string;
+  language?: string;
+  duration?: number;       // seconds
+}
+
 export interface ProviderRoutingOptions {
   sort?: 'latency' | 'price';
   address?: string;        // Pin to specific on-chain provider address
@@ -285,6 +291,45 @@ Analyse the battle context and opponent profile, then produce a structured strat
     if (!b64) throw new Error('No image data returned from 0G Compute image generation');
 
     return { base64: b64, mimeType: 'image/png' };
+  }
+
+  // ── Audio Transcription ────────────────────────────────────────────────────
+
+  /**
+   * Transcribe audio using 0G Compute Router.
+   * Model: openai/whisper-large-v3
+   * Endpoint: POST /v1/audio/transcriptions (OpenAI-compatible)
+   * Use cases: battle voice commentary, agent audio logs
+   *
+   * @param audioBuffer  Raw audio bytes (mp3, mp4, wav, webm, etc.)
+   * @param filename     Filename with extension — used to detect MIME type
+   * @param language     ISO-639-1 language hint (optional, improves accuracy)
+   */
+  async transcribeAudio(
+    audioBuffer: Buffer,
+    filename: string,
+    language?: string,
+  ): Promise<AudioTranscriptionResult> {
+    const { toFile } = await import('openai');
+
+    const file = await toFile(audioBuffer, filename);
+
+    const response = await this.openai.audio.transcriptions.create({
+      model:    this.config.modelAudio,   // openai/whisper-large-v3
+      file,
+      ...(language && { language }),
+      response_format: 'verbose_json',
+    } as Parameters<typeof this.openai.audio.transcriptions.create>[0]);
+
+    const result = response as unknown as {
+      text: string; language?: string; duration?: number;
+    };
+
+    return {
+      text:     result.text,
+      language: result.language,
+      duration: result.duration,
+    };
   }
 
   // ── Account Balance ────────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ export type {
   StrategyPlanRequest,
   StrategicPlan,
   ImageGenerationResult,
+  AudioTranscriptionResult,
   ZeroGTrace,
   ZeroGChatCompletion,
   ProviderRoutingOptions,
