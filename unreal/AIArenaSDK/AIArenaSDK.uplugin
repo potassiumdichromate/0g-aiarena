@@ -1,0 +1,24 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "1.0.0",
+  "FriendlyName": "AI Arena SDK",
+  "Description": "Official Unreal Engine 5 plugin for AI Arena — Web3 AI gaming platform built on 0G. Provides agent inference, battle lifecycle, telemetry, and real-time WebSocket sync.",
+  "Category": "AI Arena",
+  "CreatedBy": "AI Arena",
+  "CreatedByURL": "https://aiarena.gg",
+  "DocsURL": "https://docs.aiarena.gg/sdks/unreal",
+  "MarketplaceURL": "",
+  "SupportURL": "https://discord.gg/aiarena",
+  "CanContainContent": false,
+  "IsBetaVersion": false,
+  "IsExperimentalVersion": false,
+  "Installed": false,
+  "Modules": [
+    {
+      "Name": "AIArenaSDK",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    }
+  ]
+}

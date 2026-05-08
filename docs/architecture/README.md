@@ -13,7 +13,7 @@ using on-chain verified ML pipelines. All AI compute, file storage, and NFT iden
 ```
                     ┌──────────────────────────────────────────────────────┐
                     │                    CLIENT LAYER                      │
-                    │    Next.js 14 Web App    │    Unity SDK (C#)         │
+                    │  Next.js 14 Web App  │  Unity SDK (C#)  │  Unreal SDK (C++)  │
                     └──────────┬───────────────┴──────────────┬────────────┘
                                │                               │
                     ┌──────────▼───────────────────────────────▼────────────┐
