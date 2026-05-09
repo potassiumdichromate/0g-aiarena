@@ -1,5 +1,9 @@
 import { HardhatUserConfig } from 'hardhat/config';
 import '@nomicfoundation/hardhat-toolbox';
+import * as dotenv from 'dotenv';
+dotenv.config({ path: '../../.env' });
+
+const DEPLOYER_KEY = process.env.EVM_DEPLOYER_PRIVATE_KEY ?? '';
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -9,29 +13,57 @@ const config: HardhatUserConfig = {
       viaIR: true,
     },
   },
+
   networks: {
     localhost: {
       url: 'http://127.0.0.1:8545',
     },
-    // 0G Chain Mainnet (Chain ID: 16661)
-    // Explorer: https://chainscan.0g.ai
+
+    // ── 0G Chain Mainnet ──────────────────────────────────────────────────────
+    // Chain ID : 16661
+    // Explorer : https://chainscan.0g.ai
+    // Tokens   : native 0G token only (no USDT/USDC on-chain yet)
     'zerog-mainnet': {
-      url: process.env.ZEROG_EVM_RPC_MAINNET ?? 'https://evmrpc.0g.ai',
-      accounts: process.env.EVM_PRIVATE_KEY ? [process.env.EVM_PRIVATE_KEY] : [],
-      chainId: 16661,
+      url:      process.env.ZEROG_EVM_RPC_MAINNET ?? 'https://evmrpc.0g.ai',
+      accounts: DEPLOYER_KEY ? [DEPLOYER_KEY] : [],
+      chainId:  16661,
+      gasPrice: 'auto',
     },
-    // 0G Chain Testnet (Chain ID: 16600)
-    'zerog-testnet': {
-      url: process.env.ZEROG_EVM_RPC_TESTNET ?? 'https://evmrpc-testnet.0g.ai',
-      accounts: process.env.EVM_PRIVATE_KEY ? [process.env.EVM_PRIVATE_KEY] : [],
-      chainId: 16600,
+
+    // ── Base Mainnet ──────────────────────────────────────────────────────────
+    // Chain ID : 8453
+    // Explorer : https://basescan.org
+    // Tokens   : USDC 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
+    //            USDT 0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2
+    'base-mainnet': {
+      url:      process.env.BASE_RPC_URL ?? 'https://mainnet.base.org',
+      accounts: DEPLOYER_KEY ? [DEPLOYER_KEY] : [],
+      chainId:  8453,
+      gasPrice: 'auto',
     },
   },
+
   paths: {
-    sources: './contracts',
-    tests: './test',
-    cache: './cache',
+    sources:   './contracts',
+    tests:     './test',
+    cache:     './cache',
     artifacts: './artifacts',
+  },
+
+  etherscan: {
+    apiKey: {
+      base: process.env.BASESCAN_API_KEY ?? '',
+    },
+    customChains: [
+      {
+        network:  'zerog-mainnet',
+        chainId:  16661,
+        urls: {
+          apiURL:      'https://chainscan.0g.ai/api',
+          browserURL:  'https://chainscan.0g.ai',
+        },
+      },
+    ],
   },
 };
 
