@@ -366,6 +366,65 @@ model StorageIndex {
   @@index([uploadedBy])
 }
 
+// ── $ARENA Token System ──────────────────────────────────────────────────────
+
+enum BridgeDepositStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+  MANUAL_REVIEW
+}
+
+/// Cross-chain bridge deposit record (Base → Solana, 0G → Solana)
+model BridgeDeposit {
+  id             String              @id @default(uuid())
+  userId         String?             // null when deposit arrives before auth
+  sourceChain    String              // "base" | "0g"
+  sourceTxHash   String
+  depositId      String              // on-chain depositNonce
+  depositorEvm   String?             // EVM msg.sender
+  solanaAddress  String              // Solana recipient (base58)
+  usdcAmount     String              // raw bigint as string (6 decimals)
+  solanaTxHash   String?             // Solana mint tx
+  status         BridgeDepositStatus @default(PENDING)
+  flagReason     String?
+  errorMessage   String?
+  confirmedAt    DateTime?
+  createdAt      DateTime            @default(now())
+
+  @@unique([sourceTxHash, sourceChain], name: "sourceTxHash_sourceChain")
+  @@index([solanaAddress])
+  @@index([status])
+  @@index([userId])
+}
+
+/// Protocol fee routing log — tracks every fee split event
+model TreasuryAllocation {
+  id              String   @id @default(uuid())
+  sourceType      String   // "battle_fee" | "tournament_fee" | "redemption_fee"
+  sourceTxHash    String?
+  totalUsdc       String   // raw bigint as string
+  reserveUsdc     String   // 80% → reserve
+  opsUsdc         String   // 20% → ops wallet
+  onChainTxHash   String?  // Solana tx that called add_protocol_revenue
+  createdAt       DateTime @default(now())
+
+  @@index([sourceType])
+  @@index([createdAt])
+}
+
+/// In-memory rebalancing audit log
+model ReserveRebalance {
+  id            String   @id @default(uuid())
+  triggerReason String   // "scheduled" | "drift_threshold"
+  usdcBefore    String
+  usdtBefore    String
+  usdcAfter     String
+  usdtAfter     String
+  txHash        String?
+  createdAt     DateTime @default(now())
+}
+
 // Tracks 0G fine-tuning jobs submitted via CLI.
 // Only Qwen2.5-0.5B-Instruct and Qwen3-32B are supported by 0G Compute.
 model ZeroGFineTuneJob {

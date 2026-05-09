@@ -110,6 +110,7 @@ const SERVICES: Array<{ prefix: string; upstream: string }> = [
   { prefix: '/v1/leaderboards',  upstream: process.env.LEADERBOARD_SERVICE_URL  ?? 'http://localhost:8041' },
   { prefix: '/v1/storage',       upstream: process.env.STORAGE_SERVICE_URL      ?? 'http://localhost:8042' },
   { prefix: '/v1/notifications', upstream: process.env.NOTIFICATION_SERVICE_URL ?? 'http://localhost:8043' },
+  { prefix: '/v1/token',         upstream: process.env.TOKEN_SERVICE_URL         ?? 'http://localhost:8050' },
 ];
 
 for (const { prefix, upstream } of SERVICES) {
