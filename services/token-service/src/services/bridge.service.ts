@@ -32,8 +32,9 @@ const DEPOSIT_VAULT_ABI = [
   'event DepositQueued(uint256 indexed depositId, address indexed depositor, bytes32 indexed solanaRecipient, uint8 asset, uint256 amount, uint256 fee, uint256 chain)',
 ];
 
-const RESERVE_PROGRAM_ID = new PublicKey(process.env.ARENA_RESERVE_PROGRAM_ID ?? 'ARsv11111111111111111111111111111111111111');
-const ARENA_MINT         = new PublicKey(process.env.ARENA_TOKEN_MINT          ?? '');
+const SYSTEM_PROGRAM_ID  = '11111111111111111111111111111111';
+const RESERVE_PROGRAM_ID = new PublicKey(process.env.ARENA_RESERVE_PROGRAM_ID || SYSTEM_PROGRAM_ID);
+const ARENA_MINT         = new PublicKey(process.env.ARENA_TOKEN_MINT          || SYSTEM_PROGRAM_ID);
 
 // Daily auto-approve limit: $50,000 expressed in USDC 6-decimal units
 const AUTO_APPROVE_DAILY_LIMIT = 50_000_000_000n;
@@ -266,7 +267,7 @@ export class BridgeService {
       // CoinGecko free API — 0G token ID
       const url = 'https://api.coingecko.com/api/v3/simple/price?ids=zero-gravity-2&vs_currencies=usd';
       const r = await fetch(url, { headers: { accept: 'application/json' } });
-      const d = await r.json();
+      const d = await r.json() as Record<string, { usd?: number }>;
       priceUsd = d['zero-gravity-2']?.usd ?? 0;
       if (priceUsd <= 0) throw new Error('zero price');
     } catch {

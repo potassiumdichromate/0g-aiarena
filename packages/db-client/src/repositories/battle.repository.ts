@@ -31,7 +31,7 @@ export class BattleRepository {
     return this.db.battle.update({
       where: { id },
       data: {
-        result,
+        result: result as any,
         status: 'COMPLETED',
         endedAt: new Date(),
       },

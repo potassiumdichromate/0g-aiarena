@@ -7,10 +7,12 @@ export async function inferenceRoutes(app: FastifyInstance): Promise<void> {
   app.post('/combat-action', async (req, reply) => {
     const body = req.body as {
       agentId: string;
-      modelId?: string;
-      observationState: Record<string, unknown>;
-      availableActions: string[];
-      memoryContext?: string;
+      battleId: string;
+      modelVersion?: string;
+      battleState: Record<string, unknown>;
+      opponentProfile?: Record<string, unknown>;
+      memoryContext?: string[];
+      timeoutMs?: number;
     };
     const action = await gateway.inferCombatAction(body);
     return { action };
@@ -21,13 +23,14 @@ export async function inferenceRoutes(app: FastifyInstance): Promise<void> {
       agentId: string;
       battleContext: Record<string, unknown>;
       opponentProfile?: Record<string, unknown>;
+      useMemory?: boolean;
     };
     const plan = await gateway.inferStrategyPlan(body);
     return { plan };
   });
 
   app.post('/personality', async (req, reply) => {
-    const { seed } = req.body as { seed: string };
+    const seed = req.body as { name: string; description: string; clan: string; hints?: Record<string, number> };
     const personality = await gateway.generatePersonality(seed);
     return { personality };
   });

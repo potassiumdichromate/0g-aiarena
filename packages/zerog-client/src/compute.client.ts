@@ -287,7 +287,7 @@ Analyse the battle context and opponent profile, then produce a structured strat
       response_format: 'b64_json',  // Only supported format on 0G currently
     } as OpenAI.ImageGenerateParams);
 
-    const b64 = response.data[0]?.b64_json;
+    const b64 = response.data?.[0]?.b64_json;
     if (!b64) throw new Error('No image data returned from 0G Compute image generation');
 
     return { base64: b64, mimeType: 'image/png' };

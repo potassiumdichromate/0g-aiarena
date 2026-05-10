@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-declare_id!("Tour11111111111111111111111111111111111111");
+declare_id!("31xMWgFzecP9FyXKxNEs6SKkSsB5PU4BY3whFeF6thTY");
 
 #[program]
 pub mod tournament {

@@ -21,7 +21,8 @@ import { prisma } from '@ai-arena/db-client';
 import { getRedisClient } from '@ai-arena/cache';
 import { getEventBus } from '@ai-arena/event-bus';
 
-const RESERVE_PROGRAM_ID = new PublicKey(process.env.ARENA_RESERVE_PROGRAM_ID ?? 'ARsv11111111111111111111111111111111111111');
+const SYSTEM_PROGRAM_ID  = '11111111111111111111111111111111';
+const RESERVE_PROGRAM_ID = new PublicKey(process.env.ARENA_RESERVE_PROGRAM_ID || SYSTEM_PROGRAM_ID);
 const USDC_MINT          = new PublicKey(process.env.USDC_MINT ?? 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
 const USDT_MINT          = new PublicKey(process.env.USDT_MINT ?? 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB');
 
@@ -51,8 +52,12 @@ export class TreasuryService {
     );
 
     const privKey = process.env.RELAYER_SOLANA_PRIVATE_KEY;
-    if (!privKey) throw new Error('RELAYER_SOLANA_PRIVATE_KEY not set');
-    this.relayerKeypair = Keypair.fromSecretKey(Buffer.from(privKey, 'base64'));
+    if (!privKey) {
+      console.warn('[TreasuryService] RELAYER_SOLANA_PRIVATE_KEY not set — using ephemeral keypair (dev only, treasury ops will fail)');
+      this.relayerKeypair = Keypair.generate();
+    } else {
+      this.relayerKeypair = Keypair.fromSecretKey(Buffer.from(privKey, 'base64'));
+    }
   }
 
   // ── Fee Routing ─────────────────────────────────────────────────────────────

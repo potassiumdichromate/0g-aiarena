@@ -168,11 +168,11 @@ export class MemoryManager {
     const logicalPath = `agents/${agentId}/memory/snapshot-latest`;
     await prisma.storageIndex.upsert({
       where:  { logicalPath },
-      update: { rootHash, txHash: txHash ?? null, sizeBytes: buf.byteLength },
+      update: { rootHash, txHash: [txHash].flat()[0] ?? null, sizeBytes: buf.byteLength },
       create: {
         logicalPath,
         rootHash,
-        txHash:     txHash ?? null,
+        txHash:     [txHash].flat()[0] ?? null,
         mimeType:   'application/json',
         sizeBytes:  buf.byteLength,
         uploadedBy: 'memory-service',
@@ -186,7 +186,7 @@ export class MemoryManager {
       data: {
         logicalPath: versionPath,
         rootHash,
-        txHash:     txHash ?? null,
+        txHash:     [txHash].flat()[0] ?? null,
         mimeType:   'application/json',
         sizeBytes:  buf.byteLength,
         uploadedBy: 'memory-service',
@@ -259,7 +259,7 @@ export class MemoryManager {
       data: {
         logicalPath: `agents/${agentId}/memory/episodes/${memoryId}`,
         rootHash,
-        txHash:     txHash ?? null,
+        txHash:     [txHash].flat()[0] ?? null,
         mimeType:   'application/json',
         sizeBytes:  buf.byteLength,
         uploadedBy: 'memory-service',

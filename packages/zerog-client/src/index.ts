@@ -1,5 +1,5 @@
 export { ZeroGStorageClient } from './storage.client';
-export type { UploadResult, StorageUploadOptions, AesEncryptionOptions, EciesEncryptionOptions } from './storage.client';
+export type { UploadResult } from './storage.client';
 
 export { ZeroGComputeClient } from './compute.client';
 export type {

@@ -1,0 +1,164 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "IERC7857",
+  "sourceName": "contracts/AIArenaINFT.sol",
+  "abi": [
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "metadataHash",
+          "type": "bytes32"
+        }
+      ],
+      "name": "MetadataUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "oldOracle",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "newOracle",
+          "type": "address"
+        }
+      ],
+      "name": "OracleUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "executor",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes",
+          "name": "permissions",
+          "type": "bytes"
+        }
+      ],
+      "name": "UsageAuthorized",
+      "type": "event"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "executor",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes",
+          "name": "permissions",
+          "type": "bytes"
+        }
+      ],
+      "name": "authorizeUsage",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes",
+          "name": "sealedKey",
+          "type": "bytes"
+        },
+        {
+          "internalType": "bytes",
+          "name": "proof",
+          "type": "bytes"
+        }
+      ],
+      "name": "clone",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "newTokenId",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "from",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "to",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes",
+          "name": "sealedKey",
+          "type": "bytes"
+        },
+        {
+          "internalType": "bytes",
+          "name": "proof",
+          "type": "bytes"
+        }
+      ],
+      "name": "transfer",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

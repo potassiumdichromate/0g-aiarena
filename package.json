@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "turbo run dev --parallel",
+    "dev": "dotenv -e .env -- turbo run dev --parallel --concurrency 100",
     "build": "turbo run build",
     "test": "turbo run test",
     "lint": "turbo run lint",
@@ -12,17 +12,36 @@
     "db:generate": "pnpm --filter @ai-arena/db-client generate",
     "contracts:build": "pnpm --filter @ai-arena/contracts-solana build && pnpm --filter @ai-arena/contracts-evm build",
     "docker:dev": "docker-compose up -d",
-    "docker:down": "docker-compose down"
+    "docker:down": "docker-compose down",
+    "postinstall": "pnpm rebuild @prisma/client @prisma/engines prisma esbuild bigint-buffer bufferutil keccak secp256k1 utf-8-validate unrs-resolver es5-ext"
   },
   "devDependencies": {
-    "turbo": "^2.0.0",
-    "typescript": "^5.4.0",
     "@types/node": "^20.0.0",
+    "dotenv-cli": "^7.4.4",
+    "eslint": "^8.57.0",
     "prettier": "^3.2.0",
-    "eslint": "^8.57.0"
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0"
   },
+  "packageManager": "pnpm@11.0.9",
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=9.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "@reown/appkit",
+      "bigint-buffer",
+      "bufferutil",
+      "es5-ext",
+      "esbuild",
+      "keccak",
+      "prisma",
+      "secp256k1",
+      "unrs-resolver",
+      "utf-8-validate"
+    ]
   }
 }

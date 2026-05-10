@@ -78,12 +78,14 @@ export class AgentService {
       const avatarBuf = Buffer.from(avatarResult.base64, 'base64');
       const uploadResult = await this.storage.uploadBuffer(avatarBuf);
       avatarRootHash = uploadResult.rootHash;
+      // txHash may be string | string[] — normalise to a single string or null
+      const avatarTxHash = [uploadResult.txHash].flat()[0] ?? null;
 
       // Index in storage_index so we can look it up by logical path later
       await prisma.storageIndex.upsert({
         where: { logicalPath: `agents/avatar-pending` },
-        update: { rootHash: avatarRootHash, txHash: uploadResult.txHash ?? null, mimeType: 'image/png', sizeBytes: avatarBuf.byteLength },
-        create: { logicalPath: `agents/avatar-pending`, rootHash: avatarRootHash, txHash: uploadResult.txHash ?? null, mimeType: 'image/png', sizeBytes: avatarBuf.byteLength },
+        update: { rootHash: avatarRootHash, txHash: avatarTxHash, mimeType: 'image/png', sizeBytes: avatarBuf.byteLength },
+        create: { logicalPath: `agents/avatar-pending`, rootHash: avatarRootHash, txHash: avatarTxHash, mimeType: 'image/png', sizeBytes: avatarBuf.byteLength },
       });
     } catch (err) {
       console.warn('[AgentService] Avatar generation/upload failed, continuing without avatar:', err);
@@ -117,13 +119,13 @@ export class AgentService {
       name:      params.name,
       clan:      params.clan as any,
       archetype: (params.archetype as any) ?? 'HYBRID',
-      traits,
+      traits:    traits as any,
       metadata: {
         backstory:        params.backstory ?? '',
         avatarRootHash,   // 0G Storage root hash for avatar PNG
         metadataRootHash, // 0G Storage root hash for metadata blob
         avatarBase64:     avatarBase64 ? avatarBase64.slice(0, 64) + '...' : null, // truncated for DB
-      },
+      } as any,
     });
 
     // Update storage_index with real agentId path now that we have it
@@ -166,7 +168,7 @@ export class AgentService {
   }
 
   async updateAgent(id: string, userId: string, data: { name?: string; metadata?: Record<string, unknown> }) {
-    return agentRepo.update(id, data);
+    return agentRepo.update(id, data as any);
   }
 
   async retireAgent(id: string, userId: string) {

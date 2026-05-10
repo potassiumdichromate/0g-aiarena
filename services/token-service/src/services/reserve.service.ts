@@ -18,8 +18,10 @@ import { getAssociatedTokenAddress } from '@solana/spl-token';
 import { prisma } from '@ai-arena/db-client';
 import { getRedisClient } from '@ai-arena/cache';
 
-const RESERVE_PROGRAM_ID = new PublicKey(process.env.ARENA_RESERVE_PROGRAM_ID ?? 'ARsv11111111111111111111111111111111111111');
-const ARENA_MINT         = new PublicKey(process.env.ARENA_TOKEN_MINT           ?? '');
+// Fallback to System Program ID (always valid) when mint not yet deployed
+const SYSTEM_PROGRAM = '11111111111111111111111111111111';
+const RESERVE_PROGRAM_ID = new PublicKey(process.env.ARENA_RESERVE_PROGRAM_ID || SYSTEM_PROGRAM);
+const ARENA_MINT         = new PublicKey(process.env.ARENA_TOKEN_MINT           || SYSTEM_PROGRAM);
 const USDC_MINT          = new PublicKey(process.env.USDC_MINT                  ?? 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
 const USDT_MINT          = new PublicKey(process.env.USDT_MINT                  ?? 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB');
 
@@ -208,3 +210,4 @@ export class ReserveService {
     });
   }
 }
+

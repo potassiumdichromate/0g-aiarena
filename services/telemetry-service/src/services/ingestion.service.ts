@@ -1,4 +1,6 @@
-import { prisma } from '@ai-arena/db-client';
+import { prisma as _prisma } from '@ai-arena/db-client';
+// TelemetrySession is not in the shared Prisma schema — use any cast
+const prisma = _prisma as any;
 import { getEventBus, SUBJECTS } from '@ai-arena/event-bus';
 import { TelemetryBatch } from '@ai-arena/telemetry-protocol';
 

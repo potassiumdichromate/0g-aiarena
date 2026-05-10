@@ -15,12 +15,10 @@ export class CircuitBreaker {
   private readonly options: CircuitBreakerOptions;
 
   constructor(options: CircuitBreakerOptions) {
-    this.options = {
-      failureThreshold: 5,
-      successThreshold: 2,
-      timeout: 30000,
-      ...options,
-    };
+    this.options = Object.assign(
+      { failureThreshold: 5, successThreshold: 2, timeout: 30000 },
+      options,
+    );
   }
 
   async execute<T>(fn: () => Promise<T>): Promise<T> {

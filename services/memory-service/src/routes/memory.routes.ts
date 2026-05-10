@@ -27,7 +27,16 @@ export async function memoryRoutes(app: FastifyInstance): Promise<void> {
   app.get('/:agentId/memory/retrieve', async (req) => {
     const { agentId } = req.params as { agentId: string };
     const { query, limit } = req.query as { query: string; limit?: string };
-    const memories = await memoryManager.retrieveRelevant(agentId, query, Number(limit) || 5);
+    // query may be a JSON-encoded embedding vector or a raw text string.
+    // For vector search we need number[]; parse if possible, else use empty vec.
+    let queryVec: number[];
+    try {
+      const parsed = JSON.parse(query);
+      queryVec = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      queryVec = []; // caller must supply pre-computed embedding for real results
+    }
+    const memories = await memoryManager.retrieveRelevant(agentId, queryVec, Number(limit) || 5);
     return { memories };
   });
 

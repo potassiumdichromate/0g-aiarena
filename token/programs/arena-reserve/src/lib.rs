@@ -4,7 +4,7 @@ use anchor_spl::{
     token::{self, Burn, Mint, MintTo, Token, TokenAccount, Transfer},
 };
 
-declare_id!("ARsv11111111111111111111111111111111111111");
+declare_id!("8BaXvkqwsrGp958P2YQjL4FxSqTHmW6kt69kiHst6dJ5");
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 

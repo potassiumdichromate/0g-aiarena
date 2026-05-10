@@ -12,7 +12,7 @@ export class FinancialOrchestrator {
     return finRepo.createWallet({
       agent: { connect: { id: agentId } },
       solanaAddress: 'placeholder',
-      policy,
+      policy: policy as any,
     });
   }
 

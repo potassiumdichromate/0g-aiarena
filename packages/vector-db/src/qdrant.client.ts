@@ -20,7 +20,7 @@ export class QdrantWrapper {
     url = process.env.QDRANT_URL ?? 'http://localhost:6333',
     apiKey = process.env.QDRANT_API_KEY
   ) {
-    this.client = new QdrantClient({ url, apiKey });
+    this.client = new QdrantClient({ url, apiKey, checkCompatibility: false });
   }
 
   async createCollection(name: CollectionName): Promise<void> {
@@ -30,7 +30,7 @@ export class QdrantWrapper {
         vectors: {
           size: config.vectorSize,
           distance: config.distance,
-        },
+        } as any,
         optimizers_config: {
           default_segment_number: 2,
         },

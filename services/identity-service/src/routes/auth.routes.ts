@@ -8,9 +8,16 @@
  * GET  /auth/me          — Current user profile (requires JWT)
  */
 
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { AuthService }     from '../services/auth.service';
 import { prisma }          from '@ai-arena/db-client';
+
+// Tell TypeScript that FastifyInstance has an authenticate decorator
+declare module 'fastify' {
+  interface FastifyInstance {
+    authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+  }
+}
 
 const authService = new AuthService();
 
@@ -34,11 +41,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         { expiresIn: process.env.JWT_ACCESS_EXPIRY ?? '15m' },
       );
       const refreshToken = app.jwt.sign(
-        { userId },
-        {
-          secret:    process.env.JWT_REFRESH_SECRET ?? 'refresh-secret',
-          expiresIn: process.env.JWT_REFRESH_EXPIRY ?? '7d',
-        },
+        { userId, type: 'refresh' },
+        { expiresIn: process.env.JWT_REFRESH_EXPIRY ?? '7d' },
       );
 
       return reply.send({
@@ -62,9 +66,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: 'refreshToken required' });
     }
     try {
-      const decoded = app.jwt.verify<{ userId: string }>(refreshToken, {
-        secret: process.env.JWT_REFRESH_SECRET ?? 'refresh-secret',
-      });
+      const decoded = app.jwt.verify<{ userId: string }>(refreshToken);
 
       const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
       if (!user || !user.isActive) {

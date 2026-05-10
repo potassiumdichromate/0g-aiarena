@@ -1,12 +1,15 @@
 import { FastifyInstance } from 'fastify';
-import { TrainingQueueService } from '../services/training-queue.service';
+import { TrainingQueueService, TrainingJobParams } from '../services/training-queue.service';
 
 const queue = new TrainingQueueService();
 
 export async function trainingRoutes(app: FastifyInstance): Promise<void> {
   app.post('/', async (req, reply) => {
     const body = req.body as { agentId: string; type?: string; priority?: number; config?: Record<string, unknown> };
-    const job = await queue.createJob(body);
+    const job = await queue.createJob({
+      ...body,
+      type: body.type as TrainingJobParams['type'],
+    });
     return reply.status(201).send({ job });
   });
 

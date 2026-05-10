@@ -50,7 +50,7 @@ export class TrainingQueueService {
         const result = await storage.uploadBuffer(buf);
 
         datasetRootHash = result.rootHash;
-        datasetTxHash   = result.txHash ?? null;
+        datasetTxHash   = [result.txHash].flat()[0] ?? null;
 
         // Index so we can retrieve it by agent + job context
         await prisma.storageIndex.create({
@@ -123,7 +123,7 @@ export class TrainingQueueService {
       data: {
         status:      'COMPLETED',
         completedAt: new Date(),
-        metrics:     result.metrics,
+        metrics:     result.metrics as any,
         modelId:     result.modelRootHash,
       },
     });
@@ -143,7 +143,7 @@ export class TrainingQueueService {
         baseModel:          (job.config as any)?.baseModel ?? 'Qwen2.5-0.5B-Instruct',
         loraAdapterPath:    result.modelRootHash,   // rootHash stored here
         trainingJobId:      jobId,
-        performanceMetrics: result.metrics,
+        performanceMetrics: result.metrics as any,
         isActive:           true,
       },
     });

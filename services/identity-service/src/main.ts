@@ -1,4 +1,4 @@
-import Fastify from 'fastify';
+import Fastify, { FastifyRequest, FastifyReply } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import jwt from '@fastify/jwt';
@@ -18,6 +18,11 @@ async function bootstrap(): Promise<void> {
     sign: { expiresIn: '1h' },
   });
   await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
+
+  // Expose app.authenticate as a preHandler shortcut for JWT verification
+  app.decorate('authenticate', async (request: FastifyRequest, reply: FastifyReply) => {
+    try { await request.jwtVerify(); } catch (err) { reply.send(err); }
+  });
 
   app.get('/health', async () => ({ status: 'ok', service: 'identity-service' }));
 

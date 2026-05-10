@@ -7,16 +7,17 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "generate": "prisma generate",
-    "migrate": "prisma migrate deploy",
-    "migrate:dev": "prisma migrate dev",
-    "studio": "prisma studio"
+    "generate": "dotenv -e ../../.env -- prisma generate",
+    "migrate": "dotenv -e ../../.env -- prisma migrate deploy",
+    "migrate:dev": "dotenv -e ../../.env -- prisma migrate dev",
+    "studio": "dotenv -e ../../.env -- prisma studio"
   },
   "dependencies": {
     "@prisma/client": "^5.12.0"
   },
   "devDependencies": {
     "prisma": "^5.12.0",
+    "dotenv-cli": "^7.4.2",
     "typescript": "^5.4.0",
     "@types/node": "^20.0.0"
   }

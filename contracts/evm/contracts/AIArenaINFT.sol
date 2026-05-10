@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
+// Counters.sol removed in OZ v5 — using plain uint256 counter instead
 
 /**
  * @title IERC7857
@@ -116,7 +116,6 @@ interface IERC7857 {
  * Explorer: https://chainscan.0g.ai
  */
 contract AIArenaINFT is IERC7857, ERC721, ERC721URIStorage, ERC721Enumerable, Ownable {
-    using Counters for Counters.Counter;
 
     // ── Events ─────────────────────────────────────────────────────────────────
 
@@ -176,7 +175,7 @@ contract AIArenaINFT is IERC7857, ERC721, ERC721URIStorage, ERC721Enumerable, Ow
 
     // ── State ──────────────────────────────────────────────────────────────────
 
-    Counters.Counter private _tokenIdCounter;
+    uint256 private _tokenIdCounter;
 
     /// @dev platform-uuid → tokenId (for fast lookup)
     mapping(string  => uint256) public agentIdToTokenId;
@@ -267,8 +266,7 @@ contract AIArenaINFT is IERC7857, ERC721, ERC721URIStorage, ERC721Enumerable, Ow
         require(agentIdToTokenId[agentId] == 0,       "AIArenaINFT: agent already minted");
         require(bytes(agentId).length > 0,            "AIArenaINFT: empty agentId");
 
-        _tokenIdCounter.increment();
-        uint256 tokenId = _tokenIdCounter.current();
+        uint256 tokenId = ++_tokenIdCounter;
 
         _safeMint(to, tokenId);
         _setTokenURI(tokenId, tokenUri);
@@ -367,8 +365,7 @@ contract AIArenaINFT is IERC7857, ERC721, ERC721URIStorage, ERC721Enumerable, Ow
         bytes32 msgHash = keccak256(abi.encodePacked("clone", msg.sender, to, tokenId, sealedKey));
         require(_verifyOracleProof(msgHash, proof), "AIArenaINFT: invalid oracle proof");
 
-        _tokenIdCounter.increment();
-        uint256 cloneId = _tokenIdCounter.current();
+        uint256 cloneId = ++_tokenIdCounter;
 
         _safeMint(to, cloneId);
 

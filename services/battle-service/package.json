@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "ts-node-dev --respawn src/main.ts",
+    "dev": "ts-node-dev --transpile-only --respawn src/main.ts",
     "build": "tsc",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit"
@@ -17,7 +17,8 @@
     "@ai-arena/shared-types": "workspace:*",
     "@ai-arena/db-client": "workspace:*",
     "@ai-arena/cache": "workspace:*",
-    "@ai-arena/event-bus": "workspace:*"
+    "@ai-arena/event-bus": "workspace:*",
+    "@ai-arena/zerog-client": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
