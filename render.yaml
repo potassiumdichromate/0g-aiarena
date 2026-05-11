@@ -1,34 +1,30 @@
 # AI Arena — Render Blueprint
-# Deploy everything with one click: Render Dashboard → New → Blueprint → connect repo
+# Render Dashboard → New → Blueprint → connect repo → fill in secret values in the wizard
 #
-# BEFORE deploying:
-#   1. Create an Environment Group called "aiarena-shared" in Render dashboard
-#   2. Add all secrets listed in docs/RENDER_DEPLOY.md to that group
-#   3. Push this file to your main branch
-#   4. After deploy: run DB migration via Render Shell on aiarena-agent service:
-#      npx prisma migrate deploy
+# After deploy: run DB migration once via Shell on aiarena-agent:
+#   npx prisma migrate deploy
 
 databases:
   - name: aiarena-db
     databaseName: aiarena
     user: aiarena_user
-    plan: free           # upgrade to paid via Render dashboard after deploy
+    plan: free
     region: oregon
 
 services:
-  # ── Redis ────────────────────────────────────────────────────────────────────
+  # ── Redis ─────────────────────────────────────────────────────────────────────
   - type: redis
     name: aiarena-redis
-    plan: starter        # valid for Redis (~$10/mo)
+    plan: starter
     region: oregon
     maxmemoryPolicy: allkeys-lru
-    ipAllowList: []      # empty = internal Render services only (most secure)
+    ipAllowList: []
 
-  # ── Identity Service (auth + Privy + custodial wallets) ──────────────────────
+  # ── Identity Service ──────────────────────────────────────────────────────────
   - type: web
     name: aiarena-identity
     env: node
-    plan: starter        # valid for web services (~$7/mo)
+    plan: starter
     region: oregon
     rootDir: services/identity-service
     buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @ai-arena/identity-service build
@@ -39,9 +35,33 @@ services:
         value: "8001"
       - key: NODE_ENV
         value: production
-      - fromGroup: aiarena-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: aiarena-redis
+          type: redis
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_ACCESS_EXPIRY
+        value: 15m
+      - key: JWT_REFRESH_EXPIRY
+        value: 7d
+      - key: PRIVY_APP_ID
+        sync: false
+      - key: PRIVY_APP_SECRET
+        sync: false
+      - key: CUSTODIAL_WALLET_ENCRYPTION_KEY
+        sync: false
+      - key: NATS_URL
+        sync: false
+      - key: SOLANA_RPC_URL
+        value: https://api.devnet.solana.com
 
-  # ── Agent Service (create/manage agents, 0G pipeline) ────────────────────────
+  # ── Agent Service ─────────────────────────────────────────────────────────────
   - type: web
     name: aiarena-agent
     env: node
@@ -58,9 +78,30 @@ services:
         value: production
       - key: ENABLE_AVATAR_GEN
         value: "false"
-      - fromGroup: aiarena-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
+      - key: NATS_URL
+        sync: false
+      - key: ZEROG_COMPUTE_BASE_URL
+        value: https://router-api.0g.ai/v1
+      - key: ZEROG_COMPUTE_API_KEY
+        sync: false
+      - key: ZEROG_MODEL_CHAT
+        value: zai-org/GLM-5.1-FP8
+      - key: ZEROG_MODEL_IMAGE
+        value: z-image
+      - key: ZEROG_NETWORK
+        value: mainnet
+      - key: ZEROG_STORAGE_PRIVATE_KEY
+        sync: false
+      - key: SOLANA_RPC_URL
+        value: https://api.devnet.solana.com
 
-  # ── Battle Service (battle lifecycle + 0G archival) ───────────────────────────
+  # ── Battle Service ────────────────────────────────────────────────────────────
   - type: web
     name: aiarena-battle
     env: node
@@ -75,9 +116,24 @@ services:
         value: "8003"
       - key: NODE_ENV
         value: production
-      - fromGroup: aiarena-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
+      - key: NATS_URL
+        sync: false
+      - key: ZEROG_COMPUTE_BASE_URL
+        value: https://router-api.0g.ai/v1
+      - key: ZEROG_COMPUTE_API_KEY
+        sync: false
+      - key: ZEROG_STORAGE_PRIVATE_KEY
+        sync: false
+      - key: ZEROG_NETWORK
+        value: mainnet
 
-  # ── Matchmaking Service (queue + direct challenge) ────────────────────────────
+  # ── Matchmaking Service ───────────────────────────────────────────────────────
   - type: web
     name: aiarena-matchmaking
     env: node
@@ -92,9 +148,21 @@ services:
         value: "8004"
       - key: NODE_ENV
         value: production
-      - fromGroup: aiarena-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: aiarena-redis
+          type: redis
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
+      - key: NATS_URL
+        sync: false
 
-  # ── Financial Service (wallets, deposits, withdrawals, staking) ───────────────
+  # ── Financial Service ─────────────────────────────────────────────────────────
   - type: web
     name: aiarena-financial
     env: node
@@ -109,9 +177,22 @@ services:
         value: "8005"
       - key: NODE_ENV
         value: production
-      - fromGroup: aiarena-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
+      - key: NATS_URL
+        sync: false
+      - key: SOLANA_RPC_URL
+        value: https://api.devnet.solana.com
+      - key: AGENT_WALLET_PROGRAM_ID
+        sync: false
+      - key: ESCROW_VAULT_PROGRAM_ID
+        sync: false
 
-  # ── Token Service ($ARENA reserve + bridge) ───────────────────────────────────
+  # ── Token Service ─────────────────────────────────────────────────────────────
   - type: web
     name: aiarena-token
     env: node
@@ -126,7 +207,20 @@ services:
         value: "8006"
       - key: NODE_ENV
         value: production
-      - fromGroup: aiarena-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
+      - key: NATS_URL
+        sync: false
+      - key: SOLANA_RPC_URL
+        value: https://api.devnet.solana.com
+      - key: ARENA_TOKEN_PROGRAM_ID
+        sync: false
+      - key: ARENA_RESERVE_PROGRAM_ID
+        sync: false
 
   # ── Leaderboard Service ───────────────────────────────────────────────────────
   - type: web
@@ -143,9 +237,16 @@ services:
         value: "8008"
       - key: NODE_ENV
         value: production
-      - fromGroup: aiarena-shared
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
+      - key: NATS_URL
+        sync: false
 
-  # ── API Gateway (public entry point — deploy LAST) ────────────────────────────
+  # ── API Gateway (public entry point) ─────────────────────────────────────────
   - type: web
     name: aiarena-gateway
     env: node
@@ -160,6 +261,13 @@ services:
         value: "8000"
       - key: NODE_ENV
         value: production
+      - key: REDIS_URL
+        fromService:
+          name: aiarena-redis
+          type: redis
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
       - key: IDENTITY_SERVICE_URL
         fromService:
           name: aiarena-identity
@@ -195,4 +303,3 @@ services:
           name: aiarena-leaderboard
           type: web
           property: host
-      - fromGroup: aiarena-shared
