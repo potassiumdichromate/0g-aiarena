@@ -124,7 +124,9 @@ export class ZeroGStorageClient {
     const [tree, err] = await file.merkleTree();
     await file.close();
     if (err !== null || !tree) throw new Error(`Merkle tree error: ${err}`);
-    return tree!.rootHash().toString();
+    const rootHash = tree.rootHash();
+    if (!rootHash) throw new Error('Could not compute Merkle root hash');
+    return rootHash.toString();
   }
 
   // ── Internal ──────────────────────────────────────────────────────────────
