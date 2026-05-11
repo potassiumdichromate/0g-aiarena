@@ -27,7 +27,7 @@ services:
     plan: starter
     region: oregon
     rootDir: services/identity-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && pnpm --filter @ai-arena/identity-service build
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && pnpm --filter @ai-arena/identity-service build
     startCommand: node dist/main.js
     healthCheckPath: /health
     envVars:
@@ -68,7 +68,7 @@ services:
     plan: starter
     region: oregon
     rootDir: services/agent-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && pnpm --filter @ai-arena/agent-service build
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && pnpm --filter @ai-arena/agent-service build
     startCommand: node dist/main.js
     healthCheckPath: /health
     envVars:
@@ -108,7 +108,7 @@ services:
     plan: starter
     region: oregon
     rootDir: services/battle-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && pnpm --filter @ai-arena/battle-service build
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && pnpm --filter @ai-arena/battle-service build
     startCommand: node dist/main.js
     healthCheckPath: /health
     envVars:
@@ -140,7 +140,7 @@ services:
     plan: starter
     region: oregon
     rootDir: services/matchmaking-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && pnpm --filter @ai-arena/matchmaking-service build
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && pnpm --filter @ai-arena/matchmaking-service build
     startCommand: node dist/main.js
     healthCheckPath: /health
     envVars:
@@ -169,7 +169,7 @@ services:
     plan: starter
     region: oregon
     rootDir: services/financial-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && pnpm --filter @ai-arena/financial-service build
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && pnpm --filter @ai-arena/financial-service build
     startCommand: node dist/main.js
     healthCheckPath: /health
     envVars:
@@ -199,7 +199,7 @@ services:
     plan: starter
     region: oregon
     rootDir: services/token-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && pnpm --filter @ai-arena/token-service build
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && pnpm --filter @ai-arena/token-service build
     startCommand: node dist/main.js
     healthCheckPath: /health
     envVars:
@@ -229,7 +229,7 @@ services:
     plan: starter
     region: oregon
     rootDir: services/leaderboard-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && pnpm --filter @ai-arena/leaderboard-service build
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && pnpm --filter @ai-arena/leaderboard-service build
     startCommand: node dist/main.js
     healthCheckPath: /health
     envVars:
@@ -253,7 +253,7 @@ services:
     plan: starter
     region: oregon
     rootDir: services/api-gateway
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && pnpm --filter @ai-arena/api-gateway build
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && pnpm --filter @ai-arena/api-gateway build
     startCommand: node dist/main.js
     healthCheckPath: /health
     envVars:
