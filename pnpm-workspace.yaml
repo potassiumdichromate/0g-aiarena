@@ -4,6 +4,7 @@ packages:
   - 'workers/*'
   - 'packages/*'
   - 'contracts/evm'
+
 onlyBuiltDependencies:
   - '@prisma/client'
   - '@prisma/engines'
