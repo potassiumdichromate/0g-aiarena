@@ -1,4 +1,4 @@
-﻿-- CreateEnum
+-- CreateEnum
 CREATE TYPE "ClanType" AS ENUM ('CYBER', 'BIO', 'ARCANE', 'MECH', 'SHADOW');
 
 -- CreateEnum
