@@ -22,6 +22,7 @@ services:
     plan: starter
     region: oregon
     maxmemoryPolicy: allkeys-lru
+    ipAllowList: []   # empty = internal Render services only (most secure)
 
   # ── Identity Service (auth + Privy + custodial wallets) ──────────────────────
   - type: web
