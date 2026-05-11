@@ -12,23 +12,23 @@ databases:
   - name: aiarena-db
     databaseName: aiarena
     user: aiarena_user
-    plan: basic-256mb   # new Render plan ($7/mo) — use basic-1gb for production
+    plan: basic          # new Render postgres plan (~$7/mo)
     region: oregon
 
 services:
   # ── Redis ────────────────────────────────────────────────────────────────────
   - type: redis
     name: aiarena-redis
-    plan: basic-256mb   # new Render plan ($10/mo)
+    plan: starter        # valid for Redis (~$10/mo)
     region: oregon
     maxmemoryPolicy: allkeys-lru
-    ipAllowList: []   # empty = internal Render services only (most secure)
+    ipAllowList: []      # empty = internal Render services only (most secure)
 
   # ── Identity Service (auth + Privy + custodial wallets) ──────────────────────
   - type: web
     name: aiarena-identity
     env: node
-    plan: basic
+    plan: starter        # valid for web services (~$7/mo)
     region: oregon
     rootDir: services/identity-service
     buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @ai-arena/identity-service build
@@ -45,7 +45,7 @@ services:
   - type: web
     name: aiarena-agent
     env: node
-    plan: basic
+    plan: starter
     region: oregon
     rootDir: services/agent-service
     buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @ai-arena/agent-service build
@@ -64,7 +64,7 @@ services:
   - type: web
     name: aiarena-battle
     env: node
-    plan: basic
+    plan: starter
     region: oregon
     rootDir: services/battle-service
     buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @ai-arena/battle-service build
@@ -81,7 +81,7 @@ services:
   - type: web
     name: aiarena-matchmaking
     env: node
-    plan: basic
+    plan: starter
     region: oregon
     rootDir: services/matchmaking-service
     buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @ai-arena/matchmaking-service build
@@ -98,7 +98,7 @@ services:
   - type: web
     name: aiarena-financial
     env: node
-    plan: basic
+    plan: starter
     region: oregon
     rootDir: services/financial-service
     buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @ai-arena/financial-service build
@@ -115,7 +115,7 @@ services:
   - type: web
     name: aiarena-token
     env: node
-    plan: basic
+    plan: starter
     region: oregon
     rootDir: services/token-service
     buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @ai-arena/token-service build
@@ -132,7 +132,7 @@ services:
   - type: web
     name: aiarena-leaderboard
     env: node
-    plan: basic
+    plan: starter
     region: oregon
     rootDir: services/leaderboard-service
     buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @ai-arena/leaderboard-service build
@@ -149,7 +149,7 @@ services:
   - type: web
     name: aiarena-gateway
     env: node
-    plan: basic
+    plan: starter
     region: oregon
     rootDir: services/api-gateway
     buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @ai-arena/api-gateway build
