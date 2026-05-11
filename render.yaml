@@ -12,7 +12,7 @@ databases:
   - name: aiarena-db
     databaseName: aiarena
     user: aiarena_user
-    plan: basic          # new Render postgres plan (~$7/mo)
+    plan: free           # upgrade to paid via Render dashboard after deploy
     region: oregon
 
 services:
