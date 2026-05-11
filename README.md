@@ -1,6 +1,6 @@
 # AI Arena — Web3 AI Gaming Platform
 
-AI Arena is a production-grade Web3 gaming platform where AI agents compete in strategic battles, evolve through machine learning, and are represented as on-chain assets. Built on the 0G decentralized AI network, Solana blockchain, and a microservices architecture.
+AI Arena is a production-grade Web3 gaming platform where AI agents compete in strategic battles, evolve through machine learning, and are represented as on-chain assets. Built on the 0G decentralised AI network, Solana blockchain, and a microservices architecture.
 
 ---
 
@@ -38,18 +38,18 @@ The platform is designed as a B2B SDK — game developers integrate the Unity SD
 
 | Layer | Technology |
 |---|---|
-| Frontend | Next.js 14, React 18, Tailwind CSS, wagmi/viem |
-| API Gateway | Kong (custom JWT auth plugin) |
+| Frontend | Next.js 14, React 18, Tailwind CSS, Privy (wallet auth) |
+| API Gateway | Fastify 4 + `@fastify/http-proxy` (Redis-optional rate limiting) |
 | Microservices | Node.js 20 + Fastify 4 + TypeScript 5 |
 | ML Workers | Python 3.11 + PyTorch 2 + Ray + PEFT/TRL |
 | Databases | PostgreSQL 16, TimescaleDB, ClickHouse 24 |
-| Cache | Redis 7 |
+| Cache | Redis 7 (optional for local dev — gateway falls back to in-memory) |
 | Message Bus | NATS 2.10 JetStream |
 | Vector DB | Qdrant v1.8 |
-| AI Compute | 0G Compute Network (OpenAI-compatible API) |
-| AI Storage | 0G Storage Network (decentralised file storage) |
-| Blockchain (L2) | 0G Chain (EVM) — INFT contracts |
-| Blockchain (L1) | Solana — wallets, escrow, tournament, staking |
+| AI Compute | 0G Compute Network (OpenAI-compatible router at `router-api.0g.ai`) |
+| AI Storage | 0G Storage Network (content-addressed by Merkle root hash) |
+| Blockchain (L2) | 0G Chain (EVM, Chain ID 16661) — INFT + agent registry contracts |
+| Blockchain (L1) | Solana (devnet/mainnet) — wallets, escrow, tournament, staking |
 | Smart Contracts | Anchor (Solana), Hardhat (EVM/Solidity) |
 | Unity SDK | C# (.NET Standard 2.1) |
 | Infrastructure | GKE, Terraform, Helm, Kustomize |
@@ -62,31 +62,32 @@ The platform is designed as a B2B SDK — game developers integrate the Unity SD
 ```
 0g-AIArena/
 ├── apps/
-│   └── web/                    # Next.js 14 dashboard + player portal
+│   └── web/                    # Next.js 14 dashboard + player portal (port 3000)
 ├── services/                   # 24 microservices (Node.js/Fastify)
-│   ├── identity-service/       # Auth (SIWE), JWT, user profiles
-│   ├── agent-service/          # Agent lifecycle, evolution, versioning
-│   ├── financial-service/      # Wallets, spending policies, ledger
-│   ├── game-service/           # Game registry, intelligence layers
-│   ├── telemetry-service/      # Real-time telemetry ingestion
-│   ├── behaviour-service/      # Behaviour analysis, trait extraction
-│   ├── training-service/       # Training job orchestration
-│   ├── inference-service/      # Real-time AI inference gateway
-│   ├── memory-service/         # Hybrid memory system (RAG)
-│   ├── embedding-service/      # Text/vector embedding proxy
-│   ├── matchmaking-service/    # ELO-based matchmaking
-│   ├── battle-service/         # Battle room orchestration
-│   ├── replay-service/         # Deterministic replay storage
-│   ├── tournament-service/     # Tournament brackets
-│   ├── anticheat-service/      # Action validation, anomaly detection
-│   ├── wallet-service/         # Solana PDA wallet management
-│   ├── escrow-service/         # Battle escrow lifecycle
-│   ├── inft-service/           # INFT minting and evolution
-│   ├── payment-service/        # x402 + cross-chain payments
-│   ├── analytics-service/      # ClickHouse analytics queries
-│   ├── leaderboard-service/    # Redis sorted set leaderboards
-│   ├── storage-service/        # 0G Storage file management
-│   └── notification-service/   # Push, WebSocket, email notifications
+│   ├── api-gateway/            # Central proxy, rate limiting, CORS (port 8000)
+│   ├── identity-service/       # Privy auth, JWT issuance, user profiles (port 8001)
+│   ├── agent-service/          # Agent lifecycle, 0G generation, evolution (port 8002)
+│   ├── financial-service/      # Wallets, spending policies, ledger (port 8003)
+│   ├── game-service/           # Game registry, intelligence layers (port 8004)
+│   ├── telemetry-service/      # Real-time telemetry ingestion (port 8010)
+│   ├── behaviour-service/      # Behaviour analysis, trait extraction (port 8011)
+│   ├── training-service/       # Training job orchestration (port 8012)
+│   ├── inference-service/      # Real-time AI inference gateway (port 8013)
+│   ├── memory-service/         # Hybrid memory system (RAG) (port 8014)
+│   ├── embedding-service/      # Text/vector embedding proxy (port 8015)
+│   ├── matchmaking-service/    # ELO-based matchmaking (port 8020)
+│   ├── battle-service/         # Battle room orchestration (port 8021)
+│   ├── replay-service/         # Deterministic replay storage (port 8022)
+│   ├── tournament-service/     # Tournament brackets (port 8023)
+│   ├── anticheat-service/      # Action validation, anomaly detection (port 8024)
+│   ├── wallet-service/         # Solana PDA wallet management (port 8030)
+│   ├── escrow-service/         # Battle escrow lifecycle (port 8031)
+│   ├── inft-service/           # INFT minting and evolution (port 8032)
+│   ├── payment-service/        # x402 + cross-chain payments (port 8033)
+│   ├── analytics-service/      # ClickHouse analytics queries (port 8040)
+│   ├── leaderboard-service/    # Redis sorted set leaderboards (port 8041)
+│   ├── storage-service/        # 0G Storage file management (port 8042)
+│   └── notification-service/   # Push, WebSocket, email notifications (port 8043)
 ├── workers/
 │   ├── training-worker/        # Python Ray GPU training worker
 │   ├── embedding-worker/       # Python BGE-M3 embedding worker
@@ -138,12 +139,10 @@ The platform is designed as a B2B SDK — game developers integrate the Unity SD
 
 - Node.js >= 20.0.0
 - pnpm >= 9.0.0
-- Docker + Docker Compose
-- Rust (for Solana contracts)
-- Anchor CLI (for Solana contracts)
-- Python 3.11+ (for ML workers)
+- Docker + Docker Compose (for PostgreSQL, Redis, NATS)
+- Rust + Anchor CLI (only if working on Solana contracts)
 
-### 1. Clone and install dependencies
+### 1. Clone and install
 
 ```bash
 git clone https://github.com/your-org/0g-AIArena.git
@@ -151,19 +150,19 @@ cd 0g-AIArena
 pnpm install
 ```
 
-### 2. Start infrastructure services
+### 2. Start infrastructure
 
 ```bash
 docker-compose up -d
-# Wait for all services to be healthy
-docker-compose ps
+# Starts: PostgreSQL, Redis, NATS, Qdrant
 ```
 
-### 3. Set up environment variables
+### 3. Configure environment
 
 ```bash
 cp .env.example .env
-# Edit .env with your values (especially 0G API keys, Solana keys)
+# Fill in at minimum: DATABASE_URL, JWT_SECRET
+# See Environment Setup section below for 0G keys
 ```
 
 ### 4. Run database migrations
@@ -173,21 +172,38 @@ pnpm db:migrate
 pnpm db:generate
 ```
 
-### 5. Start all services in development mode
+### 5. Start all services
 
 ```bash
 pnpm dev
+# Starts all services via Turborepo in parallel
+# Frontend: http://localhost:3000
+# API Gateway: http://localhost:8000
 ```
 
-This starts all services in parallel using Turborepo. The web app will be available at http://localhost:3000.
+### 6. Authenticate (Dev Login — no wallet needed)
 
-### 6. Individual service development
+The frontend includes a **⚡ Dev** button in the top-right nav bar. Click it to:
+- Auto-create a dev user in the database
+- Store a valid JWT in `localStorage`
+- Unlock all authenticated features (agent creation, battles, etc.)
+
+> **Note:** Dev login is only available when `NODE_ENV !== 'production'`. It calls `POST /v1/auth/dev-login` on the identity service.
+
+### 7. Create your first agent
+
+Navigate to `http://localhost:3000/agents` → **Create Agent** → fill in name, clan, archetype → submit.
+
+Agent creation flow:
+1. Personality traits generated via 0G Compute (10s timeout, falls back to defaults)
+2. Avatar generation **skipped** by default — set `ENABLE_AVATAR_GEN=true` in `.env` to enable (requires funded 0G Compute key)
+3. Agent persisted to PostgreSQL
+4. `AGENT_CREATED` event published → `inft-service` mints the ERC-7857 INFT on 0G Chain
+
+### 8. Individual service dev
 
 ```bash
-# Start only a specific service
 pnpm --filter @ai-arena/agent-service dev
-
-# Run tests for a package
 pnpm --filter @ai-arena/shared-utils test
 ```
 
@@ -195,46 +211,77 @@ pnpm --filter @ai-arena/shared-utils test
 
 ## Environment Setup
 
-Copy `.env.example` to `.env` and configure the following sections:
+Copy `.env.example` to `.env` and configure the following:
 
-### 0G Network (Official Partner)
+### Core (required for basic local dev)
 
-**Compute API key** (for all inference + image + audio calls):
-1. Go to **https://pc.0g.ai** → Dashboard → API Keys
-2. Create key with **inference** permission (format: `sk-xxxxxxxx`)
-3. Set `ZEROG_COMPUTE_API_KEY=sk-your-key`
-4. Deposit 0G tokens at pc.0g.ai → Dashboard → Deposit (billing in neuron units)
-
-**Storage private key** (signs upload transactions on 0G Chain):
-- Set `ZEROG_STORAGE_PRIVATE_KEY=0x_your_private_key`
-- Fund wallet with 0G tokens for gas (testnet faucet available)
-
-**Network:**
-- `ZEROG_NETWORK=mainnet` (default) — set to `testnet` for development
-- 0G Chain mainnet: Chain ID `16661`, RPC `https://evmrpc.0g.ai`
-- 0G Chain testnet: Chain ID `16600`, RPC `https://evmrpc-testnet.0g.ai`
-
-**Available inference models** (source: pc.0g.ai/api-reference):
-- Chat: `zai-org/GLM-5.1-FP8` *(default)*, `deepseek/deepseek-chat-v3-0324`, `qwen/qwen3-vl-30b-a3b-instruct`, `qwen3.6-plus`
-- Image: `z-image` (response_format: `b64_json` only)
-- Audio: `openai/whisper-large-v3`
-
-### Solana
-
-For development, use devnet:
 ```bash
-solana-keygen new --outfile ~/.config/solana/devnet.json
-solana config set --url https://api.devnet.solana.com
-solana airdrop 2
+DATABASE_URL=postgresql://aiarena:aiarena@localhost:5432/aiarena
+REDIS_URL=redis://localhost:6379
+NATS_URL=nats://localhost:4222
+JWT_SECRET=<run: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))">
 ```
 
-Set `SOLANA_PRIVATE_KEY` to the base58-encoded private key.
+> **Redis is optional for the API gateway** — it falls back to in-memory rate limiting automatically if Redis is unreachable.
 
-### JWT Secrets
+### 0G Compute (required for personality generation + avatar gen)
 
-Generate secure secrets:
+1. Go to **https://pc.0g.ai** → Dashboard → API Keys
+2. Create key with **inference** permission (format: `sk-xxxxxxxx`)
+3. Deposit 0G tokens for billing (neuron units: 1 0G = 1e18 neuron)
+
 ```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+ZEROG_COMPUTE_API_KEY=sk-your-key
+ZEROG_COMPUTE_BASE_URL=https://router-api.0g.ai/v1
+ZEROG_MODEL_CHAT=zai-org/GLM-5.1-FP8
+ZEROG_MODEL_IMAGE=z-image
+
+# Set to true to enable avatar image generation on agent creation (slow, uses credits)
+ENABLE_AVATAR_GEN=false
+```
+
+**Available inference models:**
+
+| Model | Type | Notes |
+|---|---|---|
+| `zai-org/GLM-5.1-FP8` | Chat | Default — recommended |
+| `deepseek/deepseek-chat-v3-0324` | Chat | Strong reasoning |
+| `qwen/qwen3-vl-30b-a3b-instruct` | Chat | Multimodal |
+| `z-image` | Image | Avatar generation (b64_json only) |
+| `openai/whisper-large-v3` | Audio | Transcription |
+
+### 0G Storage (required for avatar + metadata storage)
+
+```bash
+ZEROG_STORAGE_PRIVATE_KEY=0x_your_private_key
+ZEROG_NETWORK=mainnet   # or testnet
+```
+
+### EVM Contracts (deployed on 0G mainnet)
+
+```bash
+ZEROG_INFT_CONTRACT_ADDRESS=0x67493Bb91e904840d39397E350f4A7865B779E10
+ZEROG_INFT_ORACLE_ADDRESS=0x63F63DC442299cCFe470657a769fdC6591d65eCa
+AGENT_REGISTRY_ADDRESS=0x0891Df42835c87F7A9309Ce021941D17Bf684d86
+MODULE_MARKETPLACE_ADDRESS=0x69029db75c04B5322502bb82b78652f0273f8A12
+```
+
+### Solana Programs (deployed on devnet)
+
+```bash
+SOLANA_RPC_URL=https://api.devnet.solana.com
+SOLANA_PRIVATE_KEY=<base58 private key>
+USDC_MINT=6DnLV68ueFS1p36DW2ptcBVLMCnjPGAJrZ1RHzkgUw7J
+USDT_MINT=HF2WSuyjqHMYmCHQgyXFMWra6E2VFaLcnhS645BthRr2
+```
+
+### Frontend (.env.local in apps/web/)
+
+```bash
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_PRIVY_APP_ID=<from privy.io — optional, dev login works without it>
+NEXT_PUBLIC_ZEROG_INFT_ADDRESS=0x67493Bb91e904840d39397E350f4A7865B779E10
+NEXT_PUBLIC_AGENT_REGISTRY_ADDRESS=0x0891Df42835c87F7A9309Ce021941D17Bf684d86
 ```
 
 ---
@@ -245,8 +292,9 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 | Service | Port | Responsibility |
 |---|---|---|
-| identity-service | 8001 | SIWE auth, JWT issuance, user profiles |
-| agent-service | 8002 | Agent lifecycle, evolution, 0G generation |
+| api-gateway | 8000 | Central proxy, rate limiting (Redis-optional), CORS |
+| identity-service | 8001 | Privy auth, JWT issuance, user profiles, dev-login endpoint |
+| agent-service | 8002 | Agent lifecycle, 0G generation (with timeouts), evolution |
 | financial-service | 8003 | Wallets, spending policies, ledger |
 | game-service | 8004 | Game registry, intelligence layer config |
 
@@ -293,39 +341,42 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 ## Smart Contract Deployment
 
-### Solana Programs (Devnet)
+### EVM Contracts (deployed on 0G Chain mainnet)
 
-```bash
-cd contracts/solana/agent-wallet
-anchor build
-anchor deploy --provider.cluster devnet
-
-cd ../escrow-vault
-anchor build
-anchor deploy --provider.cluster devnet
-
-cd ../tournament
-anchor build
-anchor deploy --provider.cluster devnet
+```
+AIArenaINFT:        0x67493Bb91e904840d39397E350f4A7865B779E10
+AgentRegistry:      0x0891Df42835c87F7A9309Ce021941D17Bf684d86
+ModuleMarketplace:  0x69029db75c04B5322502bb82b78652f0273f8A12
+Oracle (deployer):  0x63F63DC442299cCFe470657a769fdC6591d65eCa
 ```
 
-After deployment, copy program IDs to `.env`:
-```
-AGENT_WALLET_PROGRAM_ID=<program_id>
-ESCROW_VAULT_PROGRAM_ID=<program_id>
-TOURNAMENT_PROGRAM_ID=<program_id>
-```
-
-### EVM Contracts (0G Testnet)
+To redeploy:
 
 ```bash
 cd contracts/evm
 pnpm install
 npx hardhat compile
-npx hardhat run scripts/deploy.ts --network zerog-testnet
+npx hardhat run scripts/deploy.ts --network zerog-mainnet
 ```
 
-The deployment script will output contract addresses. Add these to `.env`.
+### Solana Programs (deployed on devnet)
+
+All five programs are deployed. To initialise the token reserve (one-time setup):
+
+```bash
+cd packages/solana-client
+node init-reserve.cjs
+```
+
+This runs 3 sequential steps: `initialize_reserve` → `initialize_usdc_vault` → `initialize_usdt_vault`.
+
+To redeploy a program:
+
+```bash
+cd contracts/solana/arena-reserve  # or any other program dir
+anchor build
+anchor deploy --provider.cluster devnet
+```
 
 ---
 
@@ -353,7 +404,6 @@ public class GameManager : MonoBehaviour
             ApiKey = "your-api-key"
         });
 
-        // Start a game session
         await SessionManager.Instance.StartSession(agentId: "agent-uuid");
     }
 }
@@ -362,7 +412,6 @@ public class GameManager : MonoBehaviour
 ### Telemetry
 
 ```csharp
-// Record a combat action
 TelemetryCollector.Instance.RecordCombatAction(new CombatActionEvent
 {
     AgentId = currentAgent.Id,
@@ -372,32 +421,7 @@ TelemetryCollector.Instance.RecordCombatAction(new CombatActionEvent
     Timestamp = Time.time
 });
 
-// Flush at end of session
 await TelemetryCollector.Instance.FlushAll();
-```
-
-### AI Agent Controller
-
-```csharp
-public class AIController : MonoBehaviour
-{
-    private AgentBrain _brain;
-
-    async void Start()
-    {
-        _brain = gameObject.AddComponent<AgentBrain>();
-        await _brain.Initialize(agentId: "agent-uuid");
-    }
-
-    async void Update()
-    {
-        if (_brain.IsReady)
-        {
-            var action = await _brain.GetNextAction(GetCurrentGameState());
-            ExecuteAction(action);
-        }
-    }
-}
 ```
 
 ---
@@ -411,72 +435,37 @@ AI Arena is an official 0G ecosystem partner. All AI infrastructure runs on 0G.
 **Auth:** `sk-` API keys from pc.0g.ai → Dashboard → API Keys
 
 Used for:
-- **Combat Inference** — Real-time action prediction via `inferCombatAction()`, structured output via `tool_choice: required`, TEE-verifiable with `verify_tee: true`
-- **Strategy Planning** — Multi-tick battle strategy at match start
-- **Agent Generation** — Personality traits + avatar generation at mint time
-- **Audio Transcription** — Battle commentary via Whisper
-
-Available models (pc.0g.ai/api-reference): `zai-org/GLM-5.1-FP8`, `deepseek/deepseek-chat-v3-0324`, `qwen/qwen3-vl-30b-a3b-instruct`, `qwen3.6-plus`, `z-image`, `openai/whisper-large-v3`
+- **Personality Generation** — trait vectors at agent creation (`generatePersonality`) — 10s timeout
+- **Combat Inference** — real-time action prediction (`inferCombatAction`) — TEE-verifiable with `verify_tee: true`
+- **Strategy Planning** — multi-tick battle strategy at match start
+- **Avatar Generation** — PNG via `z-image` model at agent creation (`ENABLE_AVATAR_GEN=true`) — 20s timeout
+- **Audio Transcription** — battle commentary via Whisper
 
 ### 0G Storage
-**SDK:** `@0gfoundation/0g-storage-ts-sdk`
 **Key fact:** Files are content-addressed by **Merkle root hash** — not path strings.
 
-Pattern: `upload(data) → rootHash` → store `logicalPath → rootHash` in PostgreSQL `storage_index` table → `download(rootHash)`
+Pattern: `upload(data) → rootHash` → store `logicalPath → rootHash` in `storage_index` table → `download(rootHash)`
 
-Used for:
-- **LoRA adapter weights** — fine-tuned model checkpoints (rootHash stored in INFT `modelRootHash`)
-- **Agent memory blobs** — episodic + semantic memory (rootHash anchored on-chain in `memoryRootHash`)
-- **Battle replays** — deterministic replay data for audit/anti-cheat
-- **Training datasets** — processed telemetry JSONL for fine-tuning submissions
+Used for: agent avatar PNGs, metadata blobs, LoRA weights, battle replays, training datasets.
 
 ### 0G Chain (EVM)
 **Mainnet:** Chain ID `16661` | RPC `https://evmrpc.0g.ai` | Explorer `https://chainscan.0g.ai`
 
-The `AIArenaINFT.sol` contract implements **ERC-7857** (Living NFT standard):
-- `transfer(from, to, tokenId, sealedKey, proof)` — oracle TEE re-encrypts metadata for new owner
-- `clone(to, tokenId, sealedKey, proof)` — spawn child agent (max 3 per parent)
-- `authorizeUsage(tokenId, executor, permissions)` — grant inference rights to backend
-
-Storage contract (Flow): `0x62D4144dB0F0a6fBBaeb6296c785C71B3D57C526`
-
-### 0G Fine-tuning (CLI)
-Supported models: **Qwen2.5-0.5B-Instruct** and **Qwen3-32B** only.
-```bash
-0g-compute-cli fine-tuning create-task --provider <ADDR> --model Qwen2.5-0.5B-Instruct ...
-```
-**Important:** acknowledge delivered model within 48h or incur 30% fee penalty.
-
-### 0G Chain (EVM)
-
-The INFT contracts (`AIArenaINFT.sol`) deploy on 0G's EVM-compatible chain, enabling:
-- NFT ownership of AI agents
-- On-chain trait registry
-- Evolution events as on-chain transactions
-- Memory root hashes anchored on-chain
+`AIArenaINFT.sol` implements **ERC-7857** (Living NFT):
+- `transfer` — oracle TEE re-encrypts metadata for new owner
+- `clone` — spawn child agent (max 3 per parent)
+- `authorizeUsage` — grant inference rights to backend
 
 ---
 
 ## $ARENA Token Integration
 
-AI Arena integrates with the external $ARENA Finance backend for token operations:
-
-### Token Flows
-
 ```
 Player Stakes $ARENA → Solana Staking Program
-Battle Wager → Solana Escrow Vault
-Battle Win → Escrow Settle → Winner's Wallet
-Tournament Entry Fee → Tournament Program
-Tournament Win → Prize Pool Distribution
+Battle Wager         → Solana Escrow Vault
+Battle Win           → Escrow Settle → Winner's Wallet
+Tournament Win       → Prize Pool Distribution
 ```
-
-### x402 Payment Protocol
-
-AI Arena supports the x402 micro-payment standard for:
-- Per-inference billing (pay per AI action)
-- Subscription credits
-- Cross-chain deposits from any major chain
 
 Configure `ARENA_FINANCE_API_URL` and `ARENA_FINANCE_API_KEY` to connect to the $ARENA backend.
 
@@ -484,71 +473,28 @@ Configure `ARENA_FINANCE_API_URL` and `ARENA_FINANCE_API_KEY` to connect to the 
 
 ## Deployment Guide
 
-### Prerequisites
+See `docs/DEPLOYMENT.md` for the full Kubernetes/Helm production deployment guide.
 
-- GCP project with billing enabled
-- `gcloud` CLI configured
-- `kubectl` configured
-- `helm` 3.x installed
-
-### 1. Provision Infrastructure
+### Quick summary
 
 ```bash
-cd infra/terraform/gcp
-terraform init
-terraform plan -var="project_id=your-gcp-project"
-terraform apply
-```
+# 1. Provision GCP infrastructure
+cd infra/terraform/gcp && terraform apply
 
-This creates:
-- GKE cluster with 3 node pools (api, gpu-t4, data)
-- Cloud SQL PostgreSQL instances
-- Redis Memorystore
-- Secret Manager secrets
-
-### 2. Configure kubectl
-
-```bash
+# 2. Configure kubectl
 gcloud container clusters get-credentials ai-arena-cluster --region us-central1
-```
 
-### 3. Create Kubernetes secrets
-
-```bash
-kubectl create secret generic ai-arena-secrets \
-  --from-literal=database-url="$DATABASE_URL" \
-  --from-literal=jwt-secret="$JWT_SECRET" \
-  --from-literal=zerog-api-key="$ZEROG_COMPUTE_API_KEY"
-```
-
-### 4. Deploy with Helm
-
-```bash
-cd infra/helm/ai-arena
-helm upgrade --install ai-arena . \
-  -f values.yaml \
-  -f values.prod.yaml \
-  --namespace ai-arena \
-  --create-namespace
-```
-
-### 5. Verify deployment
-
-```bash
-kubectl get pods -n ai-arena
-kubectl get svc -n ai-arena
+# 3. Deploy with Helm
+helm upgrade --install ai-arena infra/helm/ai-arena \
+  -f infra/helm/ai-arena/values.prod.yaml \
+  --namespace ai-arena --create-namespace
 ```
 
 ---
 
 ## Architecture Diagrams
 
-See `docs/architecture/README.md` for full ASCII architecture diagrams including:
-- System overview
-- Service communication flow
-- Data flow diagrams
-- AI pipeline flow
-- Financial transaction flow
+See `docs/architecture/README.md` for full system architecture diagrams.
 
 ---
 

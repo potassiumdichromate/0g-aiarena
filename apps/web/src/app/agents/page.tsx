@@ -38,7 +38,7 @@ export default function AgentsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [newAgent, setNewAgent] = useState({ name: '', clan: 'CYBER', archetype: 'STRATEGIST', gameId: 'standard' });
+  const [newAgent, setNewAgent] = useState({ name: '', clan: 'CYBER', archetype: 'TACTICIAN', gameId: 'standard' });
 
   useEffect(() => {
     setLoading(true);
@@ -220,7 +220,7 @@ export default function AgentsPage() {
                   value={newAgent.archetype}
                   onChange={e => setNewAgent(p => ({ ...p, archetype: e.target.value }))}
                 >
-                  {['STRATEGIST','BERSERKER','DEFENDER','ASSASSIN','SUPPORT','WILDCARD'].map(a => (
+                  {['BERSERKER','TACTICIAN','DEFENDER','ASSASSIN','SUPPORT','HYBRID'].map(a => (
                     <option key={a} value={a}>{a}</option>
                   ))}
                 </select>

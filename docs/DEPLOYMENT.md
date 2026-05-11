@@ -18,21 +18,46 @@ docker-compose up -d
 
 This starts: PostgreSQL 16, TimescaleDB, ClickHouse, Redis 7, NATS 2.10, Qdrant 1.8.
 
+> **Redis is optional for the API gateway.** If Redis is unreachable, the gateway falls back to in-memory rate limiting and logs a warning. All other functionality is unaffected.
+
 Run database migrations:
 
 ```bash
-cd packages/db-client
-pnpm prisma migrate dev
-pnpm prisma generate
+pnpm db:migrate
+pnpm db:generate
 ```
 
 Start all services in dev mode:
 
 ```bash
-pnpm dev  # runs turbo dev across all services
+pnpm dev  # runs turbo dev across all services via Turborepo
 ```
 
-Services will start on ports 3001–3020. The API gateway proxies port 8080.
+Key ports:
+- Frontend: `http://localhost:3000`
+- API Gateway: `http://localhost:8000`
+- Identity service: `http://localhost:8001`
+- Agent service: `http://localhost:8002`
+
+### Dev Login (no wallet / Privy required)
+
+For local testing without a real Privy App ID or MetaMask:
+
+1. Open `http://localhost:3000`
+2. Click the **⚡ Dev** button in the top-right nav
+3. A dev user is created in the DB and a JWT is stored in your browser
+
+This calls `POST /v1/auth/dev-login` on the identity-service (disabled in `NODE_ENV=production`).
+
+### Avatar Generation
+
+Avatar generation via 0G Compute `z-image` is **disabled by default** to avoid slow startup and unnecessary credit usage during development. Enable it explicitly in `.env`:
+
+```bash
+ENABLE_AVATAR_GEN=true
+```
+
+Without this flag, agents are created with default trait values and no avatar — they appear in the UI immediately.
 
 ## Environment Variables
 

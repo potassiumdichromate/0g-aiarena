@@ -39,8 +39,8 @@ async function main() {
     },
     genReqId: () => crypto.randomUUID(),
     bodyLimit:         parseInt(process.env.BODY_LIMIT_BYTES ?? String(1_048_576)),
-    connectionTimeout: 30_000,
-    requestTimeout:    30_000,
+    connectionTimeout: 60_000,
+    requestTimeout:    60_000,
   });
 
   // ── Security plugins ────────────────────────────────────────────────────────

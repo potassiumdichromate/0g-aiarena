@@ -28,6 +28,16 @@ import {
 
 const agentRepo = new AgentRepository(prisma);
 
+/** Run a promise with a timeout — rejects with TimeoutError if it takes too long. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout: ${label} took longer than ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
 export class AgentService {
   private readonly compute = new ZeroGComputeClient(getZeroGConfig());
   private readonly storage = new ZeroGStorageClient(getZeroGConfig());
@@ -47,48 +57,59 @@ export class AgentService {
     };
 
     try {
-      traits = await this.compute.generatePersonality({
-        name:        params.name,
-        description: params.backstory ?? `A ${archetype} agent from the ${params.clan} clan`,
-        clan:        params.clan,
-        hints:       { aggression: 50, intelligence: 50 },
-      });
+      traits = await withTimeout(
+        this.compute.generatePersonality({
+          name:        params.name,
+          description: params.backstory ?? `A ${archetype} agent from the ${params.clan} clan`,
+          clan:        params.clan,
+          hints:       { aggression: 50, intelligence: 50 },
+        }),
+        10_000, // 10-second timeout
+        'generatePersonality',
+      );
     } catch (err) {
       console.warn('[AgentService] 0G Compute unavailable for personality generation, using defaults:', err);
     }
 
     // ── Step 2: Generate avatar image via 0G Compute ─────────────────────────
+    // Skipped unless ENABLE_AVATAR_GEN=true (image gen is slow — skip in local dev)
     let avatarRootHash: string | null = null;
     let avatarBase64: string | null = null;
 
-    try {
-      const tempId = `temp-${Date.now()}`;
-      const avatarResult = await this.compute.generateAvatar({
-        agentId:         tempId,
-        name:            params.name,
-        combatArchetype: archetype,
-        clan:            params.clan,
-        aggressionScore: (traits.aggression as number) ?? 50,
-        evolutionStage:  1,
-      });
+    if (process.env.ENABLE_AVATAR_GEN === 'true') {
+      try {
+        const tempId = `temp-${Date.now()}`;
+        const avatarResult = await withTimeout(
+          this.compute.generateAvatar({
+            agentId:         tempId,
+            name:            params.name,
+            combatArchetype: archetype,
+            clan:            params.clan,
+            aggressionScore: (traits.aggression as number) ?? 50,
+            evolutionStage:  1,
+          }),
+          20_000,
+          'generateAvatar',
+        );
 
-      avatarBase64 = avatarResult.base64;
+        avatarBase64 = avatarResult.base64;
 
-      // ── Step 3: Upload avatar PNG to 0G Storage ───────────────────────────
-      const avatarBuf = Buffer.from(avatarResult.base64, 'base64');
-      const uploadResult = await this.storage.uploadBuffer(avatarBuf);
-      avatarRootHash = uploadResult.rootHash;
-      // txHash may be string | string[] — normalise to a single string or null
-      const avatarTxHash = [uploadResult.txHash].flat()[0] ?? null;
+        // ── Step 3: Upload avatar PNG to 0G Storage ─────────────────────────
+        const avatarBuf = Buffer.from(avatarResult.base64, 'base64');
+        const uploadResult = await this.storage.uploadBuffer(avatarBuf);
+        avatarRootHash = uploadResult.rootHash;
+        const avatarTxHash = [uploadResult.txHash].flat()[0] ?? null;
 
-      // Index in storage_index so we can look it up by logical path later
-      await prisma.storageIndex.upsert({
-        where: { logicalPath: `agents/avatar-pending` },
-        update: { rootHash: avatarRootHash, txHash: avatarTxHash, mimeType: 'image/png', sizeBytes: avatarBuf.byteLength },
-        create: { logicalPath: `agents/avatar-pending`, rootHash: avatarRootHash, txHash: avatarTxHash, mimeType: 'image/png', sizeBytes: avatarBuf.byteLength },
-      });
-    } catch (err) {
-      console.warn('[AgentService] Avatar generation/upload failed, continuing without avatar:', err);
+        await prisma.storageIndex.upsert({
+          where:  { logicalPath: `agents/avatar-pending` },
+          update: { rootHash: avatarRootHash, txHash: avatarTxHash, mimeType: 'image/png', sizeBytes: avatarBuf.byteLength },
+          create: { logicalPath: `agents/avatar-pending`, rootHash: avatarRootHash, txHash: avatarTxHash, mimeType: 'image/png', sizeBytes: avatarBuf.byteLength },
+        });
+      } catch (err) {
+        console.warn('[AgentService] Avatar generation/upload failed, continuing without avatar:', err);
+      }
+    } else {
+      console.info('[AgentService] Avatar generation skipped (set ENABLE_AVATAR_GEN=true to enable)');
     }
 
     // ── Step 4: Build + upload metadata blob to 0G Storage ───────────────────
@@ -107,7 +128,11 @@ export class AgentService {
       };
 
       const metaBuf = Buffer.from(JSON.stringify(metadataBlob), 'utf8');
-      const metaUpload = await this.storage.uploadBuffer(metaBuf);
+      const metaUpload = await withTimeout(
+        this.storage.uploadBuffer(metaBuf),
+        10_000,
+        'uploadMetadata',
+      );
       metadataRootHash = metaUpload.rootHash;
     } catch (err) {
       console.warn('[AgentService] Metadata upload to 0G Storage failed:', err);
