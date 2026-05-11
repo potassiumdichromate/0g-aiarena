@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-declare_id!("31xMWgFzecP9FyXKxNEs6SKkSsB5PU4BY3whFeF6thTY");
+declare_id!("74MfozGiX8QcJPm9GjA7QFnhXYuVBP1U7hX5jUjWHgrv");
 
 #[program]
 pub mod tournament {
@@ -27,7 +27,7 @@ pub mod tournament {
 
     pub fn enter_tournament(ctx: Context<EnterTournament>, agent_id: String) -> Result<()> {
         let tournament = &mut ctx.accounts.tournament;
-        require_eq!(tournament.status, TournamentStatus::Registration, TournamentError::NotInRegistration);
+        require!(tournament.status == TournamentStatus::Registration, TournamentError::NotInRegistration);
         require!(tournament.participant_count < tournament.max_participants, TournamentError::TournamentFull);
         tournament.participant_count += 1;
         Ok(())
@@ -39,7 +39,7 @@ pub mod tournament {
     }
 
     pub fn distribute_prizes(ctx: Context<ManageTournament>, winner_ids: Vec<String>, prize_amounts: Vec<u64>) -> Result<()> {
-        require_eq!(ctx.accounts.tournament.status, TournamentStatus::InProgress, TournamentError::InvalidStatus);
+        require!(ctx.accounts.tournament.status == TournamentStatus::InProgress, TournamentError::InvalidStatus);
         ctx.accounts.tournament.status = TournamentStatus::Completed;
         Ok(())
     }

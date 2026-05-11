@@ -164,19 +164,26 @@ export interface Agent {
 }
 
 export const agentApi = {
-  list: (params?: { page?: number; pageSize?: number; clan?: string }) => {
+  list: async (params?: { page?: number; pageSize?: number; clan?: string }): Promise<{ agents: Agent[]; pagination: { page: number; total: number } }> => {
     const qs = new URLSearchParams(
       Object.entries(params ?? {})
         .filter(([, v]) => v !== undefined)
         .map(([k, v]) => [k, String(v)]),
     ).toString();
-    return request<{ agents: Agent[]; pagination: { page: number; total: number } }>(
+    const res = await request<{ agents: Agent[]; pagination?: { page: number; total: number }; total?: number }>(
       `/agents${qs ? `?${qs}` : ''}`,
     );
+    return {
+      agents: res.agents ?? [],
+      pagination: res.pagination ?? { page: params?.page ?? 1, total: res.total ?? (res.agents?.length ?? 0) },
+    };
   },
   get:    (id: string) => request<Agent>(`/agents/${id}`),
-  create: (body: { name: string; clan: string; archetype: string; gameId: string }) =>
-    request<Agent>('/agents', { method: 'POST', body: JSON.stringify(body) }),
+  create: async (body: { name: string; clan: string; archetype: string; gameId: string }): Promise<Agent> => {
+    const res = await request<{ agent: Agent } | Agent>('/agents', { method: 'POST', body: JSON.stringify(body) });
+    // Agent service returns { agent: {...} } — unwrap if needed
+    return ('agent' in res && res.agent) ? (res as { agent: Agent }).agent : res as Agent;
+  },
 };
 
 // ── Battles ───────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-declare_id!("Dwksja1neBrS4Y2hntN2evkvpYp3Rw5QYQ1XUW8Po57H");
+declare_id!("39W71ucMvVTxGMegur7XhfPUJU9m8Bqmh4qvRgykHMzk");
 
 #[program]
 pub mod agent_wallet {
@@ -119,6 +119,8 @@ pub struct FreezeWallet<'info> {
 
 #[derive(Accounts)]
 pub struct UpdatePolicy<'info> {
+    // wallet must appear before policy because policy's seeds reference wallet.key()
+    pub wallet: Account<'info, AgentWallet>,
     #[account(
         init_if_needed,
         payer = authority,
@@ -127,7 +129,6 @@ pub struct UpdatePolicy<'info> {
         bump,
     )]
     pub policy: Account<'info, SpendingPolicy>,
-    pub wallet: Account<'info, AgentWallet>,
     #[account(mut)]
     pub authority: Signer<'info>,
     pub system_program: Program<'info, System>,

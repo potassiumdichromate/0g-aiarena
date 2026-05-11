@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
-declare_id!("29zNbzvFbbmJ9BpzS6vS1Rm825kG4GUnwL2QdfusztsR");
+declare_id!("ANc1L4vjTTQfUn2f3GoYWVTBVXCSSKS74enicqbVNYpn");
 
 #[program]
 pub mod escrow_vault {
@@ -40,7 +40,7 @@ pub mod escrow_vault {
         agent_index: u8,   // index into escrow.agent_ids / escrow.amounts
     ) -> Result<()> {
         let escrow = &mut ctx.accounts.escrow;
-        require_eq!(escrow.state, EscrowState::Open, EscrowError::InvalidState);
+        require!(escrow.state == EscrowState::Open, EscrowError::InvalidState);
         require!(
             (agent_index as usize) < escrow.amounts.len(),
             EscrowError::InvalidParams
@@ -73,7 +73,7 @@ pub mod escrow_vault {
 
     /// Lock the escrow when the battle starts. No tokens move.
     pub fn lock_escrow(ctx: Context<LockEscrow>) -> Result<()> {
-        require_eq!(ctx.accounts.escrow.state, EscrowState::Funded, EscrowError::InvalidState);
+        require!(ctx.accounts.escrow.state == EscrowState::Funded, EscrowError::InvalidState);
         ctx.accounts.escrow.state = EscrowState::Locked;
         Ok(())
     }
@@ -82,7 +82,7 @@ pub mod escrow_vault {
     /// Authority must be the escrow authority (backend settlement service).
     pub fn settle_escrow(ctx: Context<SettleEscrow>, winner_id: String) -> Result<()> {
         let escrow = &ctx.accounts.escrow;
-        require_eq!(escrow.state, EscrowState::Locked, EscrowError::InvalidState);
+        require!(escrow.state == EscrowState::Locked, EscrowError::InvalidState);
         require!(escrow.agent_ids.contains(&winner_id), EscrowError::InvalidWinner);
 
         // Total pool = sum of all amounts

@@ -2,24 +2,194 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
 :root {
-  --foreground-rgb: 255, 255, 255;
-  --background-start-rgb: 9, 9, 14;
-  --background-end-rgb: 9, 9, 14;
+  --bg:         #09090e;
+  --bg-card:    #0f0f1a;
+  --bg-card2:   #13131f;
+  --border:     #1e1e2e;
+  --border-dim: #161624;
+  --cyan:       #06b6d4;
+  --cyan-dim:   rgba(6,182,212,0.15);
+  --cyan-glow:  rgba(6,182,212,0.4);
+  --purple:     #a855f7;
+  --purple-dim: rgba(168,85,247,0.12);
+  --green:      #22c55e;
+  --orange:     #f97316;
+  --text:       #f0f0ff;
+  --text-muted: #6b7280;
+  --text-dim:   #374151;
 }
 
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
 body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    rgb(var(--background-end-rgb))
-  )
-  rgb(var(--background-start-rgb));
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-image:
+    radial-gradient(ellipse 80% 40% at 50% -5%, rgba(6,182,212,0.08) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 30% at 85% 20%, rgba(168,85,247,0.05) 0%, transparent 60%);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar              { width: 6px; }
+::-webkit-scrollbar-track        { background: var(--bg); }
+::-webkit-scrollbar-thumb        { background: #1e1e2e; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover  { background: #2a2a3e; }
+
+/* Selection */
+::selection { background: rgba(6,182,212,0.25); color: white; }
+
+/* Grid bg pattern */
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(6,182,212,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(6,182,212,0.03) 1px, transparent 1px);
+  background-size: 64px 64px;
+}
+
+/* Glow effects */
+.glow-cyan   { box-shadow: 0 0 20px rgba(6,182,212,0.2), 0 0 60px rgba(6,182,212,0.05); }
+.glow-purple { box-shadow: 0 0 20px rgba(168,85,247,0.2), 0 0 60px rgba(168,85,247,0.05); }
+
+/* Card base */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+.card:hover {
+  border-color: rgba(6,182,212,0.3);
+  box-shadow: 0 0 30px rgba(6,182,212,0.06);
+}
+
+/* Neon text */
+.neon-cyan   { color: var(--cyan); text-shadow: 0 0 20px rgba(6,182,212,0.5); }
+.neon-purple { color: var(--purple); text-shadow: 0 0 20px rgba(168,85,247,0.5); }
+
+/* Clan badge colours */
+.clan-CYBER   { color: #06b6d4; background: rgba(6,182,212,0.1); border-color: rgba(6,182,212,0.25); }
+.clan-BIO     { color: #22c55e; background: rgba(34,197,94,0.1);  border-color: rgba(34,197,94,0.25); }
+.clan-ARCANE  { color: #a855f7; background: rgba(168,85,247,0.1); border-color: rgba(168,85,247,0.25); }
+.clan-MECH    { color: #f97316; background: rgba(249,115,22,0.1); border-color: rgba(249,115,22,0.25); }
+.clan-SHADOW  { color: #94a3b8; background: rgba(148,163,184,0.1);border-color: rgba(148,163,184,0.2); }
+
+/* Trait bars */
+.trait-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+.trait-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--cyan), var(--purple));
+}
+
+/* Stat ring */
+.stat-ring {
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  width: 52px; height: 52px;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+/* Button variants */
+.btn-primary {
+  background: linear-gradient(135deg, #0891b2, #06b6d4);
+  color: #000;
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 10px 24px;
+  transition: all 0.2s;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(6,182,212,0.25);
+}
+.btn-primary:hover {
+  background: linear-gradient(135deg, #06b6d4, #22d3ee);
+  box-shadow: 0 6px 30px rgba(6,182,212,0.4);
+  transform: translateY(-1px);
+}
+
+.btn-outline {
+  background: transparent;
+  color: var(--cyan);
+  border: 1px solid rgba(6,182,212,0.4);
+  border-radius: 10px;
+  padding: 10px 24px;
+  font-weight: 600;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+.btn-outline:hover {
+  border-color: var(--cyan);
+  background: rgba(6,182,212,0.08);
+}
+
+/* Input */
+.input-dark {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: white;
+  padding: 12px 16px;
+  font-size: 14px;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.input-dark:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(6,182,212,0.1); }
+.input-dark::placeholder { color: var(--text-muted); }
+
+/* Status badges */
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid; }
+.badge-pending   { color: #fbbf24; background: rgba(251,191,36,0.1);  border-color: rgba(251,191,36,0.25); }
+.badge-active    { color: #06b6d4; background: rgba(6,182,212,0.1);   border-color: rgba(6,182,212,0.25); }
+.badge-completed { color: #22c55e; background: rgba(34,197,94,0.1);   border-color: rgba(34,197,94,0.25); }
+.badge-error     { color: #ef4444; background: rgba(239,68,68,0.1);   border-color: rgba(239,68,68,0.25); }
+
+/* Rank numbers */
+.rank-1 { color: #fbbf24; }
+.rank-2 { color: #94a3b8; }
+.rank-3 { color: #f97316; }
+
+/* Skeleton loading */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-card2) 50%, var(--bg-card) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 8px;
+}
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* VS divider */
+.vs-badge {
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--cyan-dim), var(--purple-dim));
+  border: 1px solid var(--border);
+  font-weight: 800; font-size: 13px;
+  color: white;
+  flex-shrink: 0;
 }
 
 @layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+  .text-balance { text-wrap: balance; }
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+  .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 }

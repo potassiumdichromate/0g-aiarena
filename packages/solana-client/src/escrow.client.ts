@@ -2,7 +2,7 @@ import { PublicKey } from '@solana/web3.js';
 import { getSolanaConnection } from './connection';
 
 const ESCROW_PROGRAM_ID = new PublicKey(
-  process.env.ESCROW_VAULT_PROGRAM_ID ?? '11111111111111111111111111111111'
+  process.env.ESCROW_VAULT_PROGRAM_ID || '11111111111111111111111111111111'
 );
 
 export interface EscrowParams {

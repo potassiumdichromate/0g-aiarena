@@ -13,7 +13,7 @@ async function bootstrap(): Promise<void> {
   await app.register(jwt, { secret: process.env.JWT_SECRET ?? 'dev-secret' });
   app.get('/health', async () => ({ status: 'ok', service: SERVICE_NAME }));
   await app.listen({ port: PORT, host: '0.0.0.0' });
-  app.log.info('${SERVICE_NAME} running on port ${PORT}');
+  app.log.info(`${SERVICE_NAME} running on port ${PORT}`);
 }
 
 bootstrap().catch(err => { console.error(err); process.exit(1); });

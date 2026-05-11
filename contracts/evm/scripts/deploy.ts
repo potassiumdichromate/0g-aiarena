@@ -5,9 +5,10 @@ async function main() {
   console.log('Deploying contracts with account:', deployer.address);
   console.log('Account balance:', ethers.formatEther(await ethers.provider.getBalance(deployer.address)));
 
-  // Deploy AIArenaINFT
+  // Deploy AIArenaINFT — oracle address can be updated later via setOracle()
+  // Using deployer as placeholder oracle until the TEE oracle is operational.
   const AIArenaINFT = await ethers.getContractFactory('AIArenaINFT');
-  const inft = await AIArenaINFT.deploy();
+  const inft = await AIArenaINFT.deploy(deployer.address);
   await inft.waitForDeployment();
   const inftAddress = await inft.getAddress();
   console.log('AIArenaINFT deployed to:', inftAddress);

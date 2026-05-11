@@ -14,7 +14,6 @@
 import { PrivyProvider as BasePrivyProvider } from '@privy-io/react-auth';
 import { ReactNode, useEffect } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { apiClient } from '../lib/api-client';
 
 // 0G chain definition for wagmi/viem
 const zeroGChain = {

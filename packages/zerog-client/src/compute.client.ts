@@ -170,15 +170,29 @@ Decide the next action.`;
     }) as ZeroGChatCompletion;
 
     const toolCall = response.choices[0]?.message?.tool_calls?.[0];
-    if (!toolCall) throw new Error('No tool call returned from 0G Compute');
+    const content   = response.choices[0]?.message?.content ?? '';
 
-    const parsed = JSON.parse(toolCall.function.arguments) as CombatAction;
+    // Primary: structured tool call
+    if (toolCall?.function?.arguments) {
+      try {
+        const parsed = parseToolArguments<CombatAction>(toolCall.function.arguments);
+        return { action: parsed, latencyMs: Date.now() - start, traceInfo: response.x_0g_trace };
+      } catch {
+        // fall through to content extraction
+      }
+    }
 
-    return {
-      action: parsed,
-      latencyMs: Date.now() - start,
-      traceInfo: response.x_0g_trace,
-    };
+    // Fallback: extract JSON object from message content (for models that ignore tool_choice)
+    if (content) {
+      try {
+        const parsed = parseToolArguments<CombatAction>(content);
+        return { action: parsed, latencyMs: Date.now() - start, traceInfo: response.x_0g_trace };
+      } catch {
+        // fall through to error
+      }
+    }
+
+    throw new Error('No parseable combat action in 0G Compute response');
   }
 
   // ── Inference: Strategic Plan ──────────────────────────────────────────────
@@ -205,8 +219,23 @@ Analyse the battle context and opponent profile, then produce a structured strat
     }) as ZeroGChatCompletion;
 
     const toolCall = response.choices[0]?.message?.tool_calls?.[0];
-    if (!toolCall) throw new Error('No tool call returned from 0G Compute');
-    return JSON.parse(toolCall.function.arguments) as StrategicPlan;
+    const content  = response.choices[0]?.message?.content ?? '';
+
+    // Primary: structured tool call
+    if (toolCall?.function?.arguments) {
+      try {
+        return parseToolArguments<StrategicPlan>(toolCall.function.arguments);
+      } catch {
+        // fall through to content extraction
+      }
+    }
+
+    // Fallback: extract JSON from message content (models that return XML or free-text)
+    if (content) {
+      return parseToolArguments<StrategicPlan>(content);
+    }
+
+    throw new Error('No parseable strategic plan in 0G Compute response');
   }
 
   // ── Agent Personality Generation ──────────────────────────────────────────
@@ -394,6 +423,52 @@ Analyse the battle context and opponent profile, then produce a structured strat
   private buildProviderField(): Record<string, unknown> | null {
     if (!this.config.providerSort) return null;
     return { sort: this.config.providerSort, allow_fallbacks: true };
+  }
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+/**
+ * Some 0G compute "thinking" models (e.g. GLM-5.1-FP8) prepend chain-of-thought
+ * text or <think>...</think> blocks before the JSON in tool_call.function.arguments.
+ * This helper strips any leading non-JSON text and extracts the first valid JSON object.
+ */
+function parseToolArguments<T>(raw: string): T {
+  // Fast path: already valid JSON
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    // Strip <think>...</think> reasoning blocks (GLM/Qwen thinking models)
+    let cleaned = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+    try {
+      return JSON.parse(cleaned) as T;
+    } catch {
+      // Extract the first {...} block from whatever text remains
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try { return JSON.parse(jsonMatch[0]) as T; } catch { /* fall through */ }
+      }
+
+      // Handle XML tool_call format some models return:
+      // <tool_call>name<arg_key>k</arg_key><arg_value>v</arg_value>...
+      if (cleaned.includes('<tool_call>') || cleaned.includes('<arg_key>')) {
+        const obj: Record<string, unknown> = {};
+        const kv = /<arg_key>([\s\S]*?)<\/arg_key>\s*<arg_value>([\s\S]*?)<\/arg_value>/gi;
+        let m: RegExpExecArray | null;
+        while ((m = kv.exec(cleaned)) !== null) {
+          const key = m[1].trim();
+          const valStr = m[2].trim();
+          // Try to parse nested JSON (arrays, numbers, booleans)
+          let val: unknown;
+          try { val = JSON.parse(valStr); } catch { val = valStr; }
+          obj[key] = val;
+        }
+        if (Object.keys(obj).length > 0) return obj as T;
+      }
+
+      throw new SyntaxError(`Cannot parse tool arguments as JSON: ${raw.substring(0, 120)}`);
+    }
   }
 }
 

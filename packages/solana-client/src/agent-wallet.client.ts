@@ -3,7 +3,7 @@ import { Program, BN } from '@coral-xyz/anchor';
 import { getSolanaConnection, getProvider } from './connection';
 
 const AGENT_WALLET_PROGRAM_ID = new PublicKey(
-  process.env.AGENT_WALLET_PROGRAM_ID ?? '11111111111111111111111111111111'
+  process.env.AGENT_WALLET_PROGRAM_ID || '11111111111111111111111111111111'
 );
 
 export interface AgentWalletAccount {

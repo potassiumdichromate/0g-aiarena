@@ -90,7 +90,7 @@ export function getZeroGConfig(): ZeroGConfig {
     computeBaseUrl:     process.env.ZEROG_COMPUTE_BASE_URL ?? 'https://router-api.0g.ai/v1',
     computeApiKey:      process.env.ZEROG_COMPUTE_API_KEY  ?? '',
 
-    modelChat:          process.env.ZEROG_MODEL_CHAT  ?? 'zai-org/GLM-5.1-FP8',
+    modelChat:          process.env.ZEROG_MODEL_CHAT  ?? 'deepseek/deepseek-chat-v3-0324',
     modelImage:         process.env.ZEROG_MODEL_IMAGE ?? 'z-image',
     modelAudio:         process.env.ZEROG_MODEL_AUDIO ?? 'openai/whisper-large-v3',
     verifyTee:          process.env.ZEROG_VERIFY_TEE === 'true',

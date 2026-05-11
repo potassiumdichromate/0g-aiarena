@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-declare_id!("C2imVK4kCxVSDs4FG9N3fXG6k45ueJARbVzbKy6A7kF8");
+declare_id!("7eAFYSQ7FyPXWBcxR5XiJFcPBdt4VHN6S3u4oZfahVWC");
 
 #[program]
 pub mod staking {

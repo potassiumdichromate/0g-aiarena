@@ -1,21 +1,21 @@
 [toolchain]
-anchor_version = "0.29.0"
+anchor_version = "0.30.1"
 
 [features]
 resolution = true
 skip-lint = false
 
 [programs.devnet]
-escrow_vault  = "29zNbzvFbbmJ9BpzS6vS1Rm825kG4GUnwL2QdfusztsR"
-tournament    = "31xMWgFzecP9FyXKxNEs6SKkSsB5PU4BY3whFeF6thTY"
-agent_wallet  = "Dwksja1neBrS4Y2hntN2evkvpYp3Rw5QYQ1XUW8Po57H"
-staking       = "C2imVK4kCxVSDs4FG9N3fXG6k45ueJARbVzbKy6A7kF8"
+escrow_vault  = "ANc1L4vjTTQfUn2f3GoYWVTBVXCSSKS74enicqbVNYpn"
+tournament    = "74MfozGiX8QcJPm9GjA7QFnhXYuVBP1U7hX5jUjWHgrv"
+agent_wallet  = "39W71ucMvVTxGMegur7XhfPUJU9m8Bqmh4qvRgykHMzk"
+staking       = "7eAFYSQ7FyPXWBcxR5XiJFcPBdt4VHN6S3u4oZfahVWC"
 
 [programs.mainnet]
-escrow_vault  = "29zNbzvFbbmJ9BpzS6vS1Rm825kG4GUnwL2QdfusztsR"
-tournament    = "31xMWgFzecP9FyXKxNEs6SKkSsB5PU4BY3whFeF6thTY"
-agent_wallet  = "Dwksja1neBrS4Y2hntN2evkvpYp3Rw5QYQ1XUW8Po57H"
-staking       = "C2imVK4kCxVSDs4FG9N3fXG6k45ueJARbVzbKy6A7kF8"
+escrow_vault  = "ANc1L4vjTTQfUn2f3GoYWVTBVXCSSKS74enicqbVNYpn"
+tournament    = "74MfozGiX8QcJPm9GjA7QFnhXYuVBP1U7hX5jUjWHgrv"
+agent_wallet  = "39W71ucMvVTxGMegur7XhfPUJU9m8Bqmh4qvRgykHMzk"
+staking       = "7eAFYSQ7FyPXWBcxR5XiJFcPBdt4VHN6S3u4oZfahVWC"
 
 [registry]
 url = "https://api.apr.dev"

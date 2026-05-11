@@ -13,4 +13,4 @@ default = []
 cpi = []
 
 [dependencies]
-anchor-lang = "0.29.0"
+anchor-lang = "0.30.1"

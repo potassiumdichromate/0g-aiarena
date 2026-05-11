@@ -121,4 +121,51 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const nonce = await authService.getNonce(address);
     return reply.send({ nonce });
   });
+
+  // ── POST /auth/dev-login ──────────────────────────────────────────────────
+  // DEV ONLY — bypasses Privy, creates/upserts a dev user, returns JWT.
+  // Disabled in production via NODE_ENV check.
+  app.post('/dev-login', async (req, reply) => {
+    if (process.env.NODE_ENV === 'production') {
+      return reply.status(403).send({ error: 'Dev login disabled in production' });
+    }
+
+    const { username } = (req.body as { username?: string }) ?? {};
+    const devWallet = `0xdev-${(username ?? 'player').toLowerCase().replace(/\s+/g, '-')}-local`;
+
+    try {
+      // Upsert dev user
+      const user = await prisma.user.upsert({
+        where:  { walletAddress: devWallet },
+        update: { username: username ?? 'DevPlayer' },
+        create: {
+          walletAddress:          devWallet,
+          username:               username ?? 'DevPlayer',
+          custodialSolanaAddress: `DevSolana${Date.now()}`,
+        },
+      });
+
+      const accessToken = app.jwt.sign(
+        { userId: user.id, walletAddress: user.walletAddress },
+        { expiresIn: '24h' },
+      );
+      const refreshToken = app.jwt.sign(
+        { userId: user.id, type: 'refresh' },
+        { expiresIn: '7d' },
+      );
+
+      return reply.send({
+        accessToken,
+        refreshToken,
+        expiresIn:              86400,
+        userId:                 user.id,
+        walletAddress:          user.walletAddress,
+        custodialSolanaAddress: user.custodialSolanaAddress ?? '',
+        isNewUser:              false,
+        isDev:                  true,
+      });
+    } catch (err: any) {
+      return reply.status(500).send({ error: err.message });
+    }
+  });
 }

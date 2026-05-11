@@ -3,7 +3,7 @@ import { getAssociatedTokenAddress, getAccount, TOKEN_PROGRAM_ID } from '@solana
 import { getSolanaConnection } from './connection';
 
 const ARENA_TOKEN_MINT = new PublicKey(
-  process.env.ARENA_TOKEN_MINT ?? '11111111111111111111111111111111'
+  process.env.ARENA_TOKEN_MINT || '11111111111111111111111111111111'
 );
 
 export class TokenClient {

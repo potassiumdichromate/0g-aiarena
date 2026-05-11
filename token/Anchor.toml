@@ -1,15 +1,15 @@
 [toolchain]
-anchor_version = "0.29.0"
+anchor_version = "0.30.1"
 
 [features]
 resolution = true
 skip-lint = false
 
 [programs.devnet]
-arena_reserve = "8BaXvkqwsrGp958P2YQjL4FxSqTHmW6kt69kiHst6dJ5"
+arena_reserve = "5BzJy7xd1MuUfg5aRGohUgZTwCP4VgQ7YnrLmavaN2BG"
 
 [programs.mainnet]
-arena_reserve = "8BaXvkqwsrGp958P2YQjL4FxSqTHmW6kt69kiHst6dJ5"
+arena_reserve = "5BzJy7xd1MuUfg5aRGohUgZTwCP4VgQ7YnrLmavaN2BG"
 
 [registry]
 url = "https://api.apr.dev"
