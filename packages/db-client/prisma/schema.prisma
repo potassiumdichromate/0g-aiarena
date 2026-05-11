@@ -10,11 +10,11 @@ datasource db {
 // ===== ENUMS =====
 
 enum ClanType {
-  CYBER
-  BIO
-  ARCANE
-  MECH
-  SHADOW
+  ZEROG
+  BASE
+  SOLANA
+  ETHEREUM
+  COSMOS
 }
 
 enum CombatArchetype {

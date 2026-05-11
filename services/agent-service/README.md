@@ -42,8 +42,8 @@ ENABLE_AVATAR_GEN=true   # in .env
 
 ## Valid Enum Values
 
-### `clan` (ClanType)
-`CYBER` | `BIO` | `ARCANE` | `MECH` | `SHADOW`
+### `clan` (ClanType) — blockchain ecosystem factions
+`ZEROG` | `BASE` | `SOLANA` | `ETHEREUM` | `COSMOS`
 
 ### `archetype` (CombatArchetype)
 `BERSERKER` | `TACTICIAN` | `DEFENDER` | `ASSASSIN` | `SUPPORT` | `HYBRID`
@@ -57,7 +57,7 @@ ENABLE_AVATAR_GEN=true   # in .env
 
 ```json
 {
-  "agents": [ { "id": "...", "name": "...", "clan": "CYBER", "eloRating": 1000, ... } ],
+  "agents": [ { "id": "...", "name": "...", "clan": "ZEROG", "eloRating": 1000, ... } ],
   "total": 42
 }
 ```

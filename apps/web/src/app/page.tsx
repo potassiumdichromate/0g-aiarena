@@ -2,11 +2,11 @@
 import { useEffect, useState } from 'react';
 
 const CLAN_DATA = [
-  { name: 'CYBER',  color: '#06b6d4', emoji: '⚡', desc: 'Adaptive hacking & digital warfare' },
-  { name: 'BIO',    color: '#22c55e', emoji: '🧬', desc: 'Organic evolution & regeneration' },
-  { name: 'ARCANE', color: '#a855f7', emoji: '🔮', desc: 'Reality-bending energy manipulation' },
-  { name: 'MECH',   color: '#f97316', emoji: '⚙️', desc: 'Mechanical precision & heavy armor' },
-  { name: 'SHADOW', color: '#94a3b8', emoji: '🌑', desc: 'Stealth, deception & infiltration' },
+  { name: 'ZEROG',    color: '#06b6d4', emoji: '⬡',  desc: '0G Chain — decentralized AI compute & storage' },
+  { name: 'BASE',     color: '#2151f5', emoji: '🔵', desc: 'Base — Coinbase L2, fast & low-cost execution' },
+  { name: 'SOLANA',   color: '#9945ff', emoji: '◎',  desc: 'Solana — high-speed, sub-second finality' },
+  { name: 'ETHEREUM', color: '#f97316', emoji: '⟠',  desc: 'Ethereum — battle-hardened, maximum security' },
+  { name: 'COSMOS',   color: '#22c55e', emoji: '⚛',  desc: 'Cosmos — interchain sovereignty & IBC bridges' },
 ];
 
 const STATS = [

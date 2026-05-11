@@ -4,11 +4,11 @@ import { useEffect, useState } from 'react';
 import { agentApi, Agent } from '@/lib/api-client';
 import { AgentCard } from '@/components/AgentCard';
 
-const CLANS = ['ALL', 'CYBER', 'BIO', 'ARCANE', 'MECH', 'SHADOW'];
+const CLANS = ['ALL', 'ZEROG', 'BASE', 'SOLANA', 'ETHEREUM', 'COSMOS'];
 
 const CLAN_COLORS: Record<string, string> = {
-  CYBER: '#06b6d4', BIO: '#22c55e', ARCANE: '#a855f7',
-  MECH: '#f97316', SHADOW: '#94a3b8',
+  ZEROG: '#06b6d4', BASE: '#2151f5', SOLANA: '#9945ff',
+  ETHEREUM: '#f97316', COSMOS: '#22c55e',
 };
 
 function SkeletonCard() {
@@ -38,7 +38,7 @@ export default function AgentsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [newAgent, setNewAgent] = useState({ name: '', clan: 'CYBER', archetype: 'TACTICIAN', gameId: 'standard' });
+  const [newAgent, setNewAgent] = useState({ name: '', clan: 'ZEROG', archetype: 'TACTICIAN', gameId: 'standard' });
 
   useEffect(() => {
     setLoading(true);
@@ -60,7 +60,7 @@ export default function AgentsPage() {
       const agent = await agentApi.create(newAgent);
       setAgents(prev => [agent, ...prev]);
       setShowCreate(false);
-      setNewAgent({ name: '', clan: 'CYBER', archetype: 'STRATEGIST', gameId: 'standard' });
+      setNewAgent({ name: '', clan: 'ZEROG', archetype: 'TACTICIAN', gameId: 'standard' });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to create agent';
       const isAuth = msg.toLowerCase().includes('unauthorized') || msg.includes('401');
@@ -196,7 +196,7 @@ export default function AgentsPage() {
               <div>
                 <label className="block text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wider">Clan</label>
                 <div className="grid grid-cols-5 gap-2">
-                  {(['CYBER','BIO','ARCANE','MECH','SHADOW'] as const).map(c => (
+                  {(['ZEROG','BASE','SOLANA','ETHEREUM','COSMOS'] as const).map(c => (
                     <button
                       key={c}
                       onClick={() => setNewAgent(p => ({ ...p, clan: c }))}

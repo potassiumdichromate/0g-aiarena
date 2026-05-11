@@ -1,11 +1,11 @@
 import type { Agent } from '@/lib/api-client';
 
 const CLAN_META: Record<string, { color: string; glow: string; emoji: string; cls: string }> = {
-  CYBER:  { color: '#06b6d4', glow: 'rgba(6,182,212,0.2)',   emoji: '⚡', cls: 'clan-CYBER' },
-  BIO:    { color: '#22c55e', glow: 'rgba(34,197,94,0.2)',   emoji: '🧬', cls: 'clan-BIO' },
-  ARCANE: { color: '#a855f7', glow: 'rgba(168,85,247,0.2)',  emoji: '🔮', cls: 'clan-ARCANE' },
-  MECH:   { color: '#f97316', glow: 'rgba(249,115,22,0.2)',  emoji: '⚙️', cls: 'clan-MECH' },
-  SHADOW: { color: '#94a3b8', glow: 'rgba(148,163,184,0.15)',emoji: '🌑', cls: 'clan-SHADOW' },
+  ZEROG:    { color: '#06b6d4', glow: 'rgba(6,182,212,0.2)',   emoji: '⬡',  cls: 'clan-ZEROG' },
+  BASE:     { color: '#2151f5', glow: 'rgba(33,81,245,0.2)',   emoji: '🔵', cls: 'clan-BASE' },
+  SOLANA:   { color: '#9945ff', glow: 'rgba(153,69,255,0.2)',  emoji: '◎',  cls: 'clan-SOLANA' },
+  ETHEREUM: { color: '#f97316', glow: 'rgba(249,115,22,0.2)',  emoji: '⟠',  cls: 'clan-ETHEREUM' },
+  COSMOS:   { color: '#22c55e', glow: 'rgba(34,197,94,0.2)',   emoji: '⚛',  cls: 'clan-COSMOS' },
 };
 
 const STAGE_LABELS: Record<string, { label: string; stars: number }> = {
@@ -33,7 +33,7 @@ interface AgentCardProps {
 }
 
 export function AgentCard({ agent, onClick }: AgentCardProps) {
-  const meta  = CLAN_META[agent.clan] ?? CLAN_META.SHADOW;
+  const meta  = CLAN_META[agent.clan] ?? CLAN_META.ZEROG;
   const stage = STAGE_LABELS[agent.evolutionStage] ?? { label: agent.evolutionStage, stars: 1 };
   const elo   = (agent as any).eloRating ?? (agent as any).elo ?? 1200;
   const traits = agent.traits ? Object.entries(agent.traits).slice(0, 5) : [];
