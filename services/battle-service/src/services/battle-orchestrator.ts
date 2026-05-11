@@ -100,16 +100,18 @@ export class BattleOrchestrator {
       };
 
       const buf = Buffer.from(JSON.stringify(summary), 'utf8');
-      const { rootHash, txHash } = await storage.uploadBuffer(buf);
+      const { rootHash, txHash: txHashRaw } = await storage.uploadBuffer(buf);
       resultRootHash = rootHash;
+      // txHash may be string | string[] — serialize array to comma-joined string for DB
+      const txHash = Array.isArray(txHashRaw) ? txHashRaw.join(',') : (txHashRaw ?? null);
 
       await prisma.storageIndex.upsert({
         where:  { logicalPath: `battles/${id}/result` },
-        update: { rootHash, txHash: txHash ?? null },
+        update: { rootHash, txHash },
         create: {
           logicalPath: `battles/${id}/result`,
           rootHash,
-          txHash:      txHash ?? null,
+          txHash,
           mimeType:    'application/json',
           sizeBytes:   buf.byteLength,
           uploadedBy:  'battle-service',

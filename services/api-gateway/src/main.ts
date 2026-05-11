@@ -10,7 +10,7 @@ let rateLimitRedis: import('ioredis').Redis | undefined;
 
 async function tryConnectRedis() {
   try {
-    const Redis = (await import('ioredis')).default;
+    const { Redis } = await import('ioredis');
     const client = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
       maxRetriesPerRequest: 1,
       enableReadyCheck:     true,
