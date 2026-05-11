@@ -1,5 +1,5 @@
 -- CreateEnum
-CREATE TYPE "ClanType" AS ENUM ('CYBER', 'BIO', 'ARCANE', 'MECH', 'SHADOW');
+CREATE TYPE "ClanType" AS ENUM ('ZEROG', 'BASE', 'SOLANA');
 
 -- CreateEnum
 CREATE TYPE "CombatArchetype" AS ENUM ('BERSERKER', 'TACTICIAN', 'SUPPORT', 'ASSASSIN', 'DEFENDER', 'HYBRID');

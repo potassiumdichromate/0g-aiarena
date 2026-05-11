@@ -13,8 +13,6 @@ enum ClanType {
   ZEROG
   BASE
   SOLANA
-  ETHEREUM
-  COSMOS
 }
 
 enum CombatArchetype {
