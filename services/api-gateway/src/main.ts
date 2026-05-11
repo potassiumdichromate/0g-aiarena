@@ -107,30 +107,36 @@ async function main() {
   }));
 
   // ── Service routing table ───────────────────────────────────────────────────
+  // Render's fromService.host gives bare hostname (no scheme). Add https:// when missing.
+  const toUrl = (raw: string | undefined, fallback: string): string => {
+    if (!raw) return fallback;
+    return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  };
+
   const SERVICES: Array<{ prefix: string; upstream: string; rewritePrefix: string }> = [
-    { prefix: '/v1/auth',          upstream: process.env.IDENTITY_SERVICE_URL     ?? 'http://localhost:8001', rewritePrefix: '/auth'        },
-    { prefix: '/v1/users',         upstream: process.env.IDENTITY_SERVICE_URL     ?? 'http://localhost:8001', rewritePrefix: '/users'       },
-    { prefix: '/v1/agents',        upstream: process.env.AGENT_SERVICE_URL        ?? 'http://localhost:8002', rewritePrefix: '/agents'      },
-    { prefix: '/v1/financial',     upstream: process.env.FINANCIAL_SERVICE_URL    ?? 'http://localhost:8003', rewritePrefix: ''             },
-    { prefix: '/v1/games',         upstream: process.env.GAME_SERVICE_URL         ?? 'http://localhost:8004', rewritePrefix: ''             },
-    { prefix: '/v1/telemetry',     upstream: process.env.TELEMETRY_SERVICE_URL    ?? 'http://localhost:8010', rewritePrefix: '/sessions'    },
-    { prefix: '/v1/behaviour',     upstream: process.env.BEHAVIOUR_SERVICE_URL    ?? 'http://localhost:8011', rewritePrefix: ''             },
-    { prefix: '/v1/training',      upstream: process.env.TRAINING_SERVICE_URL     ?? 'http://localhost:8012', rewritePrefix: '/jobs'        },
-    { prefix: '/v1/inference',     upstream: process.env.INFERENCE_SERVICE_URL    ?? 'http://localhost:8013', rewritePrefix: ''             },
-    { prefix: '/v1/memory',        upstream: process.env.MEMORY_SERVICE_URL       ?? 'http://localhost:8014', rewritePrefix: '/agents'      },
-    { prefix: '/v1/matchmaking',   upstream: process.env.MATCHMAKING_SERVICE_URL  ?? 'http://localhost:8020', rewritePrefix: '/queue'       },
-    { prefix: '/v1/battles',       upstream: process.env.BATTLE_SERVICE_URL       ?? 'http://localhost:8021', rewritePrefix: '/battles'     },
-    { prefix: '/v1/replays',       upstream: process.env.REPLAY_SERVICE_URL       ?? 'http://localhost:8022', rewritePrefix: ''             },
-    { prefix: '/v1/tournaments',   upstream: process.env.TOURNAMENT_SERVICE_URL   ?? 'http://localhost:8023', rewritePrefix: ''             },
-    { prefix: '/v1/wallets',       upstream: process.env.WALLET_SERVICE_URL       ?? 'http://localhost:8030', rewritePrefix: ''             },
-    { prefix: '/v1/escrow',        upstream: process.env.ESCROW_SERVICE_URL       ?? 'http://localhost:8031', rewritePrefix: ''             },
-    { prefix: '/v1/inft',          upstream: process.env.INFT_SERVICE_URL         ?? 'http://localhost:8032', rewritePrefix: ''             },
-    { prefix: '/v1/payments',      upstream: process.env.PAYMENT_SERVICE_URL      ?? 'http://localhost:8033', rewritePrefix: ''             },
-    { prefix: '/v1/analytics',     upstream: process.env.ANALYTICS_SERVICE_URL    ?? 'http://localhost:8040', rewritePrefix: ''             },
-    { prefix: '/v1/leaderboards',  upstream: process.env.LEADERBOARD_SERVICE_URL  ?? 'http://localhost:8041', rewritePrefix: '/leaderboards'},
-    { prefix: '/v1/storage',       upstream: process.env.STORAGE_SERVICE_URL      ?? 'http://localhost:8042', rewritePrefix: ''             },
-    { prefix: '/v1/notifications', upstream: process.env.NOTIFICATION_SERVICE_URL ?? 'http://localhost:8043', rewritePrefix: ''             },
-    { prefix: '/v1/token',         upstream: process.env.TOKEN_SERVICE_URL        ?? 'http://localhost:8050', rewritePrefix: '/v1/token'    },
+    { prefix: '/v1/auth',          upstream: toUrl(process.env.IDENTITY_SERVICE_URL,    'http://localhost:8001'), rewritePrefix: '/auth'        },
+    { prefix: '/v1/users',         upstream: toUrl(process.env.IDENTITY_SERVICE_URL,    'http://localhost:8001'), rewritePrefix: '/users'       },
+    { prefix: '/v1/agents',        upstream: toUrl(process.env.AGENT_SERVICE_URL,       'http://localhost:8002'), rewritePrefix: '/agents'      },
+    { prefix: '/v1/financial',     upstream: toUrl(process.env.FINANCIAL_SERVICE_URL,   'http://localhost:8003'), rewritePrefix: ''             },
+    { prefix: '/v1/games',         upstream: toUrl(process.env.GAME_SERVICE_URL,        'http://localhost:8004'), rewritePrefix: ''             },
+    { prefix: '/v1/telemetry',     upstream: toUrl(process.env.TELEMETRY_SERVICE_URL,   'http://localhost:8010'), rewritePrefix: '/sessions'    },
+    { prefix: '/v1/behaviour',     upstream: toUrl(process.env.BEHAVIOUR_SERVICE_URL,   'http://localhost:8011'), rewritePrefix: ''             },
+    { prefix: '/v1/training',      upstream: toUrl(process.env.TRAINING_SERVICE_URL,    'http://localhost:8012'), rewritePrefix: '/jobs'        },
+    { prefix: '/v1/inference',     upstream: toUrl(process.env.INFERENCE_SERVICE_URL,   'http://localhost:8013'), rewritePrefix: ''             },
+    { prefix: '/v1/memory',        upstream: toUrl(process.env.MEMORY_SERVICE_URL,      'http://localhost:8014'), rewritePrefix: '/agents'      },
+    { prefix: '/v1/matchmaking',   upstream: toUrl(process.env.MATCHMAKING_SERVICE_URL, 'http://localhost:8020'), rewritePrefix: '/queue'       },
+    { prefix: '/v1/battles',       upstream: toUrl(process.env.BATTLE_SERVICE_URL,      'http://localhost:8021'), rewritePrefix: '/battles'     },
+    { prefix: '/v1/replays',       upstream: toUrl(process.env.REPLAY_SERVICE_URL,      'http://localhost:8022'), rewritePrefix: ''             },
+    { prefix: '/v1/tournaments',   upstream: toUrl(process.env.TOURNAMENT_SERVICE_URL,  'http://localhost:8023'), rewritePrefix: ''             },
+    { prefix: '/v1/wallets',       upstream: toUrl(process.env.WALLET_SERVICE_URL,      'http://localhost:8030'), rewritePrefix: ''             },
+    { prefix: '/v1/escrow',        upstream: toUrl(process.env.ESCROW_SERVICE_URL,      'http://localhost:8031'), rewritePrefix: ''             },
+    { prefix: '/v1/inft',          upstream: toUrl(process.env.INFT_SERVICE_URL,        'http://localhost:8032'), rewritePrefix: ''             },
+    { prefix: '/v1/payments',      upstream: toUrl(process.env.PAYMENT_SERVICE_URL,     'http://localhost:8033'), rewritePrefix: ''             },
+    { prefix: '/v1/analytics',     upstream: toUrl(process.env.ANALYTICS_SERVICE_URL,   'http://localhost:8040'), rewritePrefix: ''             },
+    { prefix: '/v1/leaderboards',  upstream: toUrl(process.env.LEADERBOARD_SERVICE_URL, 'http://localhost:8041'), rewritePrefix: '/leaderboards'},
+    { prefix: '/v1/storage',       upstream: toUrl(process.env.STORAGE_SERVICE_URL,     'http://localhost:8042'), rewritePrefix: ''             },
+    { prefix: '/v1/notifications', upstream: toUrl(process.env.NOTIFICATION_SERVICE_URL,'http://localhost:8043'), rewritePrefix: ''             },
+    { prefix: '/v1/token',         upstream: toUrl(process.env.TOKEN_SERVICE_URL,       'http://localhost:8050'), rewritePrefix: '/v1/token'    },
   ];
 
   for (const { prefix, upstream, rewritePrefix } of SERVICES) {
