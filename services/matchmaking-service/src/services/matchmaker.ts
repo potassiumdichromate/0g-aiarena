@@ -1,7 +1,6 @@
 import { getRedisClient, CACHE_KEYS } from '@ai-arena/cache';
 import { getEventBus, SUBJECTS } from '@ai-arena/event-bus';
 import { prisma } from '@ai-arena/db-client';
-import { calculateElo } from '@ai-arena/shared-utils';
 
 export class Matchmaker {
   private readonly redis = getRedisClient();
@@ -62,7 +61,53 @@ export class Matchmaker {
     return { inQueue: true, waitTimeMs: Date.now() - entry.joinedAt, ...entry };
   }
 
+  /**
+   * Direct challenge — skips matchmaking queue and creates a battle immediately.
+   * Both agents must exist. Publishes MATCH_FOUND + BATTLE_CREATED events.
+   */
   async directChallenge(agentId: string, opponentId: string, gameId: string, mode: string) {
-    return { agentId, opponentId, gameId, mode, status: 'PENDING_ACCEPTANCE' };
+    const [agent, opponent] = await Promise.all([
+      prisma.agent.findUnique({ where: { id: agentId } }),
+      prisma.agent.findUnique({ where: { id: opponentId } }),
+    ]);
+    if (!agent)    throw new Error(`Agent ${agentId} not found`);
+    if (!opponent) throw new Error(`Opponent ${opponentId} not found`);
+
+    // Create battle record directly
+    const battle = await prisma.battle.create({
+      data: {
+        gameId,
+        mode:     mode as any,
+        status:   'PENDING',
+        agentIds: [agentId, opponentId],
+        config:   { directChallenge: true, maxRounds: 10, timeoutMs: 30000, recordReplay: true },
+      },
+    });
+
+    // Publish events so battle-service picks up and starts the fight
+    try {
+      const bus = await getEventBus();
+      await bus.publish(SUBJECTS.MATCH_FOUND, {
+        matchId:    battle.id,
+        agentIds:   [agentId, opponentId],
+        eloRatings: { [agentId]: agent.eloRating, [opponentId]: opponent.eloRating },
+        occurredAt: new Date(),
+      });
+      await bus.publish(SUBJECTS.BATTLE_CREATED, {
+        battleId: battle.id,
+        agentIds: [agentId, opponentId],
+        gameId,
+      });
+    } catch (err) {
+      console.warn('[Matchmaker] NATS unavailable for directChallenge events:', err);
+    }
+
+    return {
+      battleId:   battle.id,
+      agentIds:   [agentId, opponentId],
+      gameId,
+      mode,
+      status:     'PENDING',
+    };
   }
 }

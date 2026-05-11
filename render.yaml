@@ -1,0 +1,197 @@
+# AI Arena — Render Blueprint
+# Deploy everything with one click: Render Dashboard → New → Blueprint → connect repo
+#
+# BEFORE deploying:
+#   1. Create an Environment Group called "aiarena-shared" in Render dashboard
+#   2. Add all secrets listed in docs/RENDER_DEPLOY.md to that group
+#   3. Push this file to your main branch
+#   4. After deploy: run DB migration via Render Shell on aiarena-agent service:
+#      npx prisma migrate deploy
+
+databases:
+  - name: aiarena-db
+    databaseName: aiarena
+    user: aiarena_user
+    plan: starter
+    region: oregon
+
+services:
+  # ── Redis ────────────────────────────────────────────────────────────────────
+  - type: redis
+    name: aiarena-redis
+    plan: starter
+    region: oregon
+    maxmemoryPolicy: allkeys-lru
+
+  # ── Identity Service (auth + Privy + custodial wallets) ──────────────────────
+  - type: web
+    name: aiarena-identity
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: services/identity-service
+    buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @ai-arena/identity-service build
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8001"
+      - key: NODE_ENV
+        value: production
+      - fromGroup: aiarena-shared
+
+  # ── Agent Service (create/manage agents, 0G pipeline) ────────────────────────
+  - type: web
+    name: aiarena-agent
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: services/agent-service
+    buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @ai-arena/agent-service build
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8002"
+      - key: NODE_ENV
+        value: production
+      - key: ENABLE_AVATAR_GEN
+        value: "false"
+      - fromGroup: aiarena-shared
+
+  # ── Battle Service (battle lifecycle + 0G archival) ───────────────────────────
+  - type: web
+    name: aiarena-battle
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: services/battle-service
+    buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @ai-arena/battle-service build
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8003"
+      - key: NODE_ENV
+        value: production
+      - fromGroup: aiarena-shared
+
+  # ── Matchmaking Service (queue + direct challenge) ────────────────────────────
+  - type: web
+    name: aiarena-matchmaking
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: services/matchmaking-service
+    buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @ai-arena/matchmaking-service build
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8004"
+      - key: NODE_ENV
+        value: production
+      - fromGroup: aiarena-shared
+
+  # ── Financial Service (wallets, deposits, withdrawals, staking) ───────────────
+  - type: web
+    name: aiarena-financial
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: services/financial-service
+    buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @ai-arena/financial-service build
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8005"
+      - key: NODE_ENV
+        value: production
+      - fromGroup: aiarena-shared
+
+  # ── Token Service ($ARENA reserve + bridge) ───────────────────────────────────
+  - type: web
+    name: aiarena-token
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: services/token-service
+    buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @ai-arena/token-service build
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8006"
+      - key: NODE_ENV
+        value: production
+      - fromGroup: aiarena-shared
+
+  # ── Leaderboard Service ───────────────────────────────────────────────────────
+  - type: web
+    name: aiarena-leaderboard
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: services/leaderboard-service
+    buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @ai-arena/leaderboard-service build
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8008"
+      - key: NODE_ENV
+        value: production
+      - fromGroup: aiarena-shared
+
+  # ── API Gateway (public entry point — deploy LAST) ────────────────────────────
+  - type: web
+    name: aiarena-gateway
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: services/api-gateway
+    buildCommand: cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @ai-arena/api-gateway build
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: NODE_ENV
+        value: production
+      - key: IDENTITY_SERVICE_URL
+        fromService:
+          name: aiarena-identity
+          type: web
+          property: host
+      - key: AGENT_SERVICE_URL
+        fromService:
+          name: aiarena-agent
+          type: web
+          property: host
+      - key: BATTLE_SERVICE_URL
+        fromService:
+          name: aiarena-battle
+          type: web
+          property: host
+      - key: MATCHMAKING_SERVICE_URL
+        fromService:
+          name: aiarena-matchmaking
+          type: web
+          property: host
+      - key: FINANCIAL_SERVICE_URL
+        fromService:
+          name: aiarena-financial
+          type: web
+          property: host
+      - key: TOKEN_SERVICE_URL
+        fromService:
+          name: aiarena-token
+          type: web
+          property: host
+      - key: LEADERBOARD_SERVICE_URL
+        fromService:
+          name: aiarena-leaderboard
+          type: web
+          property: host
+      - fromGroup: aiarena-shared
