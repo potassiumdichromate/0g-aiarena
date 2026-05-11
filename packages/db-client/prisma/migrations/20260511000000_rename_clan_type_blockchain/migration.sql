@@ -10,11 +10,11 @@ ALTER TYPE "ClanType" ADD VALUE IF NOT EXISTS 'ETHEREUM';
 ALTER TYPE "ClanType" ADD VALUE IF NOT EXISTS 'COSMOS';
 
 -- Step 2: Migrate existing data — map old clans to nearest blockchain equivalent
-UPDATE "Agent" SET "clan" = 'ZEROG'::\"ClanType\"    WHERE "clan" = 'CYBER'::\"ClanType\";
-UPDATE "Agent" SET "clan" = 'COSMOS'::\"ClanType\"   WHERE "clan" = 'BIO'::\"ClanType\";
-UPDATE "Agent" SET "clan" = 'SOLANA'::\"ClanType\"   WHERE "clan" = 'ARCANE'::\"ClanType\";
-UPDATE "Agent" SET "clan" = 'ETHEREUM'::\"ClanType\" WHERE "clan" = 'MECH'::\"ClanType\";
-UPDATE "Agent" SET "clan" = 'BASE'::\"ClanType\"     WHERE "clan" = 'SHADOW'::\"ClanType\";
+UPDATE "Agent" SET "clan" = 'ZEROG'::"ClanType"    WHERE "clan" = 'CYBER'::"ClanType";
+UPDATE "Agent" SET "clan" = 'COSMOS'::"ClanType"   WHERE "clan" = 'BIO'::"ClanType";
+UPDATE "Agent" SET "clan" = 'SOLANA'::"ClanType"   WHERE "clan" = 'ARCANE'::"ClanType";
+UPDATE "Agent" SET "clan" = 'ETHEREUM'::"ClanType" WHERE "clan" = 'MECH'::"ClanType";
+UPDATE "Agent" SET "clan" = 'BASE'::"ClanType"     WHERE "clan" = 'SHADOW'::"ClanType";
 
 -- Step 3: Recreate enum with only the new values
 -- PostgreSQL requires recreating the type; we use a temp column approach
