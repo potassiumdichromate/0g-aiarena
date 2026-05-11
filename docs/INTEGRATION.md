@@ -3,16 +3,31 @@
 Full API reference following the canonical user flow:  
 **Login → Create Agent → Fund Wallet → Find Match → Battle → Collect Rewards**
 
-All requests go through the **API Gateway at `http://localhost:8000`** (or your deployed URL).
+All requests go through the **API Gateway** — one URL for everything.
 
 ---
 
 ## Base URL
 
 ```
+Production: https://aiarena-gateway.onrender.com
 Local:      http://localhost:8000
-Production: https://api.aiarena.gg   (update when deployed)
 ```
+
+## Live Service URLs
+
+| Service | URL |
+|---------|-----|
+| **API Gateway** (use this for everything) | `https://aiarena-gateway.onrender.com` |
+| Identity Service | `https://aiarena-identity.onrender.com` |
+| Agent Service | `https://aiarena-agent.onrender.com` |
+| Battle Service | `https://aiarena-battle.onrender.com` |
+| Matchmaking Service | `https://aiarena-matchmaking.onrender.com` |
+| Financial Service | `https://aiarena-financial.onrender.com` |
+| Token Service | `https://aiarena-token.onrender.com` |
+| Leaderboard Service | `https://aiarena-leaderboard.onrender.com` |
+
+> ⚠️ **Always use the Gateway URL in your frontend.** Direct service URLs are for debugging only. The gateway handles auth, rate limiting, and routing.
 
 ## Authentication
 
@@ -142,7 +157,7 @@ Content-Type: application/json
 }
 ```
 
-**Valid `clan` values:** `ZEROG` | `BASE` | `SOLANA` | `ETHEREUM` | `COSMOS`
+**Valid `clan` values:** `ZEROG` | `BASE` | `SOLANA`
 
 **Valid `archetype` values:** `BERSERKER` | `TACTICIAN` | `DEFENDER` | `ASSASSIN` | `SUPPORT` | `HYBRID`
 
@@ -562,7 +577,8 @@ GET /v1/battles/:battleId
 Connect to the battle WebSocket for live round-by-round updates:
 
 ```
-ws://localhost:8000/v1/battles/ws/battle/:battleId
+Production: wss://aiarena-gateway.onrender.com/v1/battles/ws/battle/:battleId
+Local:      ws://localhost:8000/v1/battles/ws/battle/:battleId
 ```
 
 **Messages received:**
@@ -684,24 +700,20 @@ All errors follow this shape:
 
 ---
 
-## Service Port Map
+## Service Map
 
-| Service | Port | Prefix |
-|---------|------|--------|
-| API Gateway | 8000 | `/v1/*` — all requests go here |
-| Identity Service | 8001 | `/v1/auth/*`, `/v1/users/*` |
-| Agent Service | 8002 | `/v1/agents/*` |
-| Battle Service | 8003 | `/v1/battles/*` |
-| Matchmaking | 8004 | `/v1/matchmaking/*` |
-| Financial Service | 8005 | `/v1/wallets/*`, `/v1/transactions/*` |
-| Token Service | 8006 | `/v1/token/*` |
-| Training Service | 8007 | `/v1/training/*` |
-| Leaderboard | 8008 | `/v1/leaderboard/*` |
-| Inference Service | 8009 | `/v1/inference/*` |
-| Memory Service | 8010 | `/v1/memory/*` |
-| Telemetry | 8011 | `/v1/telemetry/*` |
+| Service | Production URL | Gateway Prefix |
+|---------|---------------|----------------|
+| **API Gateway** | `https://aiarena-gateway.onrender.com` | `/v1/*` — use this |
+| Identity Service | `https://aiarena-identity.onrender.com` | `/v1/auth/*`, `/v1/users/*` |
+| Agent Service | `https://aiarena-agent.onrender.com` | `/v1/agents/*` |
+| Battle Service | `https://aiarena-battle.onrender.com` | `/v1/battles/*` |
+| Matchmaking | `https://aiarena-matchmaking.onrender.com` | `/v1/matchmaking/*` |
+| Financial Service | `https://aiarena-financial.onrender.com` | `/v1/financial/*`, `/v1/wallets/*` |
+| Token Service | `https://aiarena-token.onrender.com` | `/v1/token/*` |
+| Leaderboard | `https://aiarena-leaderboard.onrender.com` | `/v1/leaderboards/*` |
 
-> **Always call port 8000 in your client.** The gateway proxies to the right service. Direct service ports are for internal service-to-service calls only.
+> **Always use the Gateway URL in your frontend.** Direct service URLs are for debugging only.
 
 ---
 
