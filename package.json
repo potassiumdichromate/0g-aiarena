@@ -13,7 +13,7 @@
     "contracts:build": "pnpm --filter @ai-arena/contracts-solana build && pnpm --filter @ai-arena/contracts-evm build",
     "docker:dev": "docker-compose up -d",
     "docker:down": "docker-compose down",
-    "postinstall": "pnpm rebuild @prisma/client @prisma/engines prisma esbuild bigint-buffer bufferutil keccak secp256k1 utf-8-validate unrs-resolver es5-ext"
+    "postinstall": "echo 'skipping rebuild in CI — use pnpm install --ignore-scripts'"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
