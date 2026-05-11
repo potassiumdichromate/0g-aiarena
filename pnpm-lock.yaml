@@ -3,6 +3,19 @@ lockfileVersion: '9.0'
 settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
+  onlyBuiltDependencies:
+    - '@prisma/client'
+    - '@prisma/engines'
+    - '@reown/appkit'
+    - bigint-buffer
+    - bufferutil
+    - es5-ext
+    - esbuild
+    - keccak
+    - prisma
+    - secp256k1
+    - unrs-resolver
+    - utf-8-validate
 
 importers:
 
