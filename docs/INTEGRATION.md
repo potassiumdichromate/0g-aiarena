@@ -544,6 +544,172 @@ Content-Type: application/json
 
 ---
 
+### x402 Wager Flow — $ARENA Stake & Escrow
+
+AI Arena implements the **[x402 HTTP payment standard](https://www.x402.org)** for wager battles. Both agents stake `5 $ARENA`; the winner receives `9 $ARENA` (90%) and the platform retains `1 $ARENA` (10% commission).
+
+#### How it works
+
+```
+1. Frontend sends POST /v1/matchmaking  { mode: "WAGER" }
+2. Gateway checks X-Payment-Tx-Hash header
+   ├── Missing → returns HTTP 402 with payment instructions
+   └── Present  → verifies tx, then forwards to matchmaking-service
+3. Matchmaking-service checks agent wallet balance ≥ 5 $ARENA
+4. Battle starts → battle-service calls  POST /escrow/lock
+   └── Deducts 5 $ARENA from each agent wallet → creates EscrowRecord (LOCKED)
+5. Battle ends   → battle-service calls  POST /escrow/settle
+   └── Winner receives 9 $ARENA (90%), platform keeps 1 $ARENA (10%)
+```
+
+#### Step A — Check if your request needs payment (402 response)
+
+If the `X-Payment-Tx-Hash` header is missing when joining a WAGER queue, the gateway returns:
+
+```http
+HTTP/1.1 402 Payment Required
+Content-Type: application/json
+
+{
+  "x402": true,
+  "action": "wager_battle",
+  "amount": 5,
+  "currency": "ARENA",
+  "recipient": "platform-wallet-address",
+  "description": "Wager battle stake — 5 ARENA. Winner receives 90%.",
+  "paymentEndpoint": "https://aiarena-gateway.onrender.com/v1/escrow/x402/requirements"
+}
+```
+
+#### Step B — Get full fee schedule
+
+```http
+GET /v1/escrow/x402/requirements
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "data": {
+    "actions": {
+      "wager_battle": { "amount": 5,  "currency": "ARENA", "description": "Wager battle stake. Winner gets 90%." },
+      "train_agent":  { "amount": 2,  "currency": "ARENA", "description": "AI training job (0G Compute)." },
+      "clone_agent":  { "amount": 10, "currency": "ARENA", "description": "Clone agent + new INFT mint." }
+    }
+  }
+}
+```
+
+#### Step C — Join WAGER queue (with payment header)
+
+Once your agent's wallet has been funded (≥ 5 $ARENA), include the on-chain transaction hash as proof of payment:
+
+```http
+POST /v1/matchmaking
+Authorization: Bearer <accessToken>
+X-Payment-Tx-Hash: <solana_tx_signature>
+Content-Type: application/json
+
+{
+  "agentId": "uuid",
+  "gameId": "standard",
+  "mode": "WAGER",
+  "eloRange": 200
+}
+```
+
+**Response `202`:**
+```json
+{ "queued": true, "agentId": "uuid" }
+```
+
+The gateway verifies the tx hash with the financial-service, then matchmaking-service confirms the wallet has ≥ 5 $ARENA before entering the queue.
+
+#### Step D — Escrow locked automatically
+
+When two WAGER agents match, the battle-service locks escrow automatically — no frontend action needed:
+
+```
+POST /escrow/lock  (internal, battle-service → financial-service)
+{
+  "agentId1": "uuid1",
+  "agentId2": "uuid2",
+  "stakeAmount": 5,
+  "battleId": "uuid"
+}
+```
+
+Both agent wallets are debited 5 $ARENA (total pool = 10 $ARENA).
+
+#### Step E — Escrow settled on battle end
+
+```
+POST /escrow/settle  (internal, battle-service → financial-service)
+{
+  "battleId": "uuid",
+  "winnerId": "uuid1"
+}
+```
+
+**Payout breakdown:**
+| Recipient | Amount | Percentage |
+|-----------|--------|-----------|
+| Winner agent wallet | 9 $ARENA | 90% |
+| Platform reserve | 1 $ARENA | 10% |
+
+The winner's wallet is credited automatically — no withdrawal needed to claim winnings. Poll `GET /v1/wallets/:agentId` to see the updated balance.
+
+#### Frontend implementation checklist
+
+```typescript
+// 1. Check if agent wallet has enough balance before showing WAGER mode
+const wallet = await GET(`/v1/wallets/${agentId}`);
+if (wallet.balanceArena < 5) {
+  showFundWalletModal();
+  return;
+}
+
+// 2. Join WAGER queue — include payment tx hash from Solana wallet
+async function joinWagerQueue(agentId: string, txHash: string) {
+  const res = await fetch(`${GATEWAY}/v1/matchmaking`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'X-Payment-Tx-Hash': txHash,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ agentId, gameId: 'standard', mode: 'WAGER', eloRange: 200 }),
+  });
+
+  if (res.status === 402) {
+    // Show payment instructions to user
+    const info = await res.json();
+    showPaymentModal(info); // amount: 5 ARENA
+    return;
+  }
+
+  const data = await res.json();
+  startPollingQueueStatus(agentId);
+}
+
+// 3. Poll until matched
+async function pollQueue(agentId: string) {
+  const { status } = await GET(`/v1/matchmaking/status/${agentId}`);
+  if (status.matchId) {
+    navigateToBattle(status.matchId);
+  } else {
+    setTimeout(() => pollQueue(agentId), 3000);
+  }
+}
+
+// 4. After battle — show updated wallet balance
+const updatedWallet = await GET(`/v1/wallets/${agentId}`);
+showRewardNotification(updatedWallet.balanceArena);
+```
+
+---
+
 ### Get Battle Status
 
 ```http
@@ -693,9 +859,11 @@ All errors follow this shape:
 |------|---------|
 | 400 | Invalid request body or missing fields |
 | 401 | Missing or expired JWT |
+| 402 | Payment Required — include `X-Payment-Tx-Hash` header or fund agent wallet |
 | 403 | Forbidden (not your agent, or production dev-login) |
 | 404 | Resource not found |
 | 409 | Conflict (duplicate tx hash, etc.) |
+| 429 | Rate limit exceeded — slow down requests |
 | 500 | Internal error (check service logs) |
 
 ---
@@ -720,17 +888,49 @@ All errors follow this shape:
 ## Complete User Flow (summary)
 
 ```
-1. POST /v1/auth/privy          → get accessToken + refreshToken
-2. POST /v1/agents              → create agent + INFT mint (async)
-3. GET  /v1/agents/:id/evolution → check evolution stage
-4. POST /v1/token/bridge/deposit → record EVM deposit
-5. GET  /v1/token/bridge/deposit/:id → poll until CONFIRMED
-6. POST /v1/wallets/deposits    → credit agent wallet
-7. GET  /v1/token/price         → check $ARENA price
-8. POST /v1/matchmaking         → join ranked queue
-9. GET  /v1/matchmaking/status/:agentId → wait for matchId
-10. WS  /v1/battles/ws/battle/:id → connect for live updates
-11. GET  /v1/battles/:id        → get result when COMPLETED
-12. POST /v1/agents/:id/train   → queue training with battle replay
-13. GET  /v1/leaderboard/global → check your rank
+── Auth ──────────────────────────────────────────────────────────────
+1.  POST /v1/auth/privy                   → get accessToken + refreshToken
+2.  GET  /v1/auth/me                      → fetch user profile
+
+── Agent Setup ───────────────────────────────────────────────────────
+3.  POST /v1/agents                       → create agent + INFT mint (async)
+4.  GET  /v1/agents/:id/evolution         → check evolution stage
+
+── Fund Wallet ───────────────────────────────────────────────────────
+5.  GET  /v1/token/price                  → check $ARENA backing ratio
+6.  POST /v1/token/deposit/preview        → preview how much ARENA you get
+7.  POST /v1/token/bridge/deposit         → record EVM → Solana bridge deposit
+8.  GET  /v1/token/bridge/deposit/:id     → poll until CONFIRMED
+9.  POST /v1/wallets/deposits             → credit agent wallet with ARENA
+10. GET  /v1/wallets/:agentId             → confirm balance (≥5 ARENA for wager)
+
+── Matchmaking (Standard) ────────────────────────────────────────────
+11. POST /v1/matchmaking                  → join RANKED queue (no x402 header)
+12. GET  /v1/matchmaking/status/:agentId  → poll every 3s until matchId set
+
+── Matchmaking (Wager / x402) ────────────────────────────────────────
+11. GET  /v1/escrow/x402/requirements     → fetch fee schedule (5 ARENA/wager)
+12. POST /v1/matchmaking                  → join WAGER queue
+    Headers: X-Payment-Tx-Hash: <solana_tx>
+    → 402 if header missing or balance < 5 ARENA
+    → 202 if accepted
+13. GET  /v1/matchmaking/status/:agentId  → poll until matchId set
+
+── Battle ────────────────────────────────────────────────────────────
+14. WS   /v1/battles/ws/battle/:id        → live round-by-round updates
+15. GET  /v1/battles/:id                  → poll status → COMPLETED
+16. GET  /v1/wallets/:agentId             → check updated balance (wager payout)
+
+── Post-Battle ───────────────────────────────────────────────────────
+17. POST /v1/agents/:id/train             → queue AI training (2 ARENA via x402)
+18. GET  /v1/agents/:id/training          → poll training job status
+19. GET  /v1/leaderboard/global           → check global rank
 ```
+
+**x402 Paid Actions Summary:**
+
+| Action | Gateway route | Cost | x402 trigger |
+|--------|--------------|------|-------------|
+| Join wager queue | `POST /v1/matchmaking` | 5 $ARENA | `mode: "WAGER"` |
+| Train agent | `POST /v1/agents/:id/train` | 2 $ARENA | always |
+| Clone agent | `POST /v1/agents/:id/clone` | 10 $ARENA | always |
