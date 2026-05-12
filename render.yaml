@@ -281,7 +281,7 @@ services:
       - key: JWT_SECRET
         sync: false
       - key: ALLOWED_ORIGINS
-        value: "https://kult-browser-rust-l2lwg.ondigitalocean.app,http://localhost:3000"
+        value: "https://kult-browser-rust-l2lwg.ondigitalocean.app,http://localhost:3000,http://localhost:8080"
       - key: IDENTITY_SERVICE_URL
         fromService:
           name: aiarena-identity
