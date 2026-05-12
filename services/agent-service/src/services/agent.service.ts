@@ -173,13 +173,17 @@ export class AgentService {
     }
 
     // ── Step 6: Publish event → inft-service will mint the INFT ─────────────
-    const bus = await getEventBus();
-    await bus.publish(SUBJECTS.AGENT_CREATED, {
-      agentId:          agent.id,
-      userId,
-      metadataRootHash, // inft-service uses this for encryptedMetadataHash
-      avatarRootHash,
-    });
+    try {
+      const bus = await getEventBus();
+      await bus.publish(SUBJECTS.AGENT_CREATED, {
+        agentId:          agent.id,
+        userId,
+        metadataRootHash,
+        avatarRootHash,
+      });
+    } catch (err) {
+      console.warn('[AgentService] Could not publish AGENT_CREATED event (NATS unavailable):', (err as Error).message);
+    }
 
     return { ...agent, avatarRootHash, metadataRootHash };
   }

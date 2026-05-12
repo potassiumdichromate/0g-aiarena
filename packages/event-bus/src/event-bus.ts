@@ -78,13 +78,38 @@ export class EventBus {
   }
 }
 
+// ── No-op bus used when NATS is unavailable ───────────────────────────────────
+class NoopEventBus extends EventBus {
+  override async publish<T>(_subject: string, _data: T): Promise<void> {
+    // NATS unavailable — event silently dropped
+  }
+  override subscribe<T>(_subject: string, _handler: Handler<T>): Subscription {
+    return {} as Subscription;
+  }
+  override isConnected(): boolean { return false; }
+}
+
 // Singleton instance
 let eventBusInstance: EventBus | null = null;
 
 export async function getEventBus(): Promise<EventBus> {
-  if (!eventBusInstance) {
-    eventBusInstance = new EventBus();
-    await eventBusInstance.connect();
+  if (eventBusInstance) return eventBusInstance;
+
+  const url = process.env.NATS_URL;
+  if (!url) {
+    console.warn('[EventBus] NATS_URL not set — running in no-op mode (events disabled)');
+    eventBusInstance = new NoopEventBus();
+    return eventBusInstance;
   }
+
+  try {
+    const bus = new EventBus();
+    await bus.connect(url);
+    eventBusInstance = bus;
+  } catch (err) {
+    console.warn('[EventBus] Could not connect to NATS — running in no-op mode:', (err as Error).message);
+    eventBusInstance = new NoopEventBus();
+  }
+
   return eventBusInstance;
 }
