@@ -133,10 +133,7 @@ services:
       - key: ZEROG_NETWORK
         value: mainnet
       - key: FINANCIAL_SERVICE_URL
-        fromService:
-          name: aiarena-financial
-          type: web
-          property: hostport
+        value: https://aiarena-financial.onrender.com
 
   # ── Matchmaking Service ───────────────────────────────────────────────────────
   - type: web
@@ -167,10 +164,7 @@ services:
       - key: NATS_URL
         sync: false
       - key: FINANCIAL_SERVICE_URL
-        fromService:
-          name: aiarena-financial
-          type: web
-          property: hostport
+        value: https://aiarena-financial.onrender.com
       - key: WAGER_STAKE_AMOUNT
         value: "5"
 
@@ -283,37 +277,16 @@ services:
       - key: ALLOWED_ORIGINS
         value: "https://kult-browser-rust-l2lwg.ondigitalocean.app,http://localhost:3000,http://localhost:8080"
       - key: IDENTITY_SERVICE_URL
-        fromService:
-          name: aiarena-identity
-          type: web
-          property: hostport
+        value: https://aiarena-identity.onrender.com
       - key: AGENT_SERVICE_URL
-        fromService:
-          name: aiarena-agent
-          type: web
-          property: hostport
+        value: https://aiarena-agent.onrender.com
       - key: BATTLE_SERVICE_URL
-        fromService:
-          name: aiarena-battle
-          type: web
-          property: hostport
+        value: https://aiarena-battle.onrender.com
       - key: MATCHMAKING_SERVICE_URL
-        fromService:
-          name: aiarena-matchmaking
-          type: web
-          property: hostport
+        value: https://aiarena-matchmaking.onrender.com
       - key: FINANCIAL_SERVICE_URL
-        fromService:
-          name: aiarena-financial
-          type: web
-          property: hostport
+        value: https://aiarena-financial.onrender.com
       - key: TOKEN_SERVICE_URL
-        fromService:
-          name: aiarena-token
-          type: web
-          property: hostport
+        value: https://aiarena-token.onrender.com
       - key: LEADERBOARD_SERVICE_URL
-        fromService:
-          name: aiarena-leaderboard
-          type: web
-          property: hostport
+        value: https://aiarena-leaderboard.onrender.com

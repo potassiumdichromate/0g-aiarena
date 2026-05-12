@@ -114,9 +114,9 @@ async function main() {
   // Render's fromService.host gives bare hostname (no scheme). Add https:// when missing.
   const toUrl = (raw: string | undefined, fallback: string): string => {
     if (!raw) return fallback;
-    // fromService.property=hostport gives "hostname:port" — internal Render network uses plain HTTP.
-    // Already-absolute URLs (e.g. external 0G/Solana endpoints) are passed through unchanged.
-    return /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
+    // All service URLs are full https:// values — passed through unchanged.
+    // Bare strings (local dev fallbacks) get https:// prepended.
+    return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
   };
 
   const SERVICES: Array<{ prefix: string; upstream: string; rewritePrefix: string }> = [
