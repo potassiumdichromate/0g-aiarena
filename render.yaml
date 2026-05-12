@@ -136,7 +136,7 @@ services:
         fromService:
           name: aiarena-financial
           type: web
-          property: host
+          property: url
 
   # ── Matchmaking Service ───────────────────────────────────────────────────────
   - type: web
@@ -170,7 +170,7 @@ services:
         fromService:
           name: aiarena-financial
           type: web
-          property: host
+          property: url
       - key: WAGER_STAKE_AMOUNT
         value: "5"
 
@@ -286,34 +286,34 @@ services:
         fromService:
           name: aiarena-identity
           type: web
-          property: host
+          property: url
       - key: AGENT_SERVICE_URL
         fromService:
           name: aiarena-agent
           type: web
-          property: host
+          property: url
       - key: BATTLE_SERVICE_URL
         fromService:
           name: aiarena-battle
           type: web
-          property: host
+          property: url
       - key: MATCHMAKING_SERVICE_URL
         fromService:
           name: aiarena-matchmaking
           type: web
-          property: host
+          property: url
       - key: FINANCIAL_SERVICE_URL
         fromService:
           name: aiarena-financial
           type: web
-          property: host
+          property: url
       - key: TOKEN_SERVICE_URL
         fromService:
           name: aiarena-token
           type: web
-          property: host
+          property: url
       - key: LEADERBOARD_SERVICE_URL
         fromService:
           name: aiarena-leaderboard
           type: web
-          property: host
+          property: url
