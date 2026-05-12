@@ -172,7 +172,17 @@ export class AgentService {
       });
     }
 
-    // ── Step 6: Publish event → inft-service will mint the INFT ─────────────
+    // ── Step 6: Pre-create agent wallet via financial-service (no NATS needed) ──
+    const financialUrl = process.env.FINANCIAL_SERVICE_URL ?? 'http://localhost:8005';
+    try {
+      await fetch(`${financialUrl}/wallets/ensure/${agent.id}`, { method: 'POST' });
+      console.info(`[AgentService] Wallet ensured for agent ${agent.id}`);
+    } catch (err) {
+      // Non-fatal — wallet will be auto-created on first GET /wallets/:agentId
+      console.warn('[AgentService] Could not pre-create wallet (will auto-create on first access):', (err as Error).message);
+    }
+
+    // ── Step 7: Publish event → inft-service will mint the INFT ─────────────
     try {
       const bus = await getEventBus();
       await bus.publish(SUBJECTS.AGENT_CREATED, {

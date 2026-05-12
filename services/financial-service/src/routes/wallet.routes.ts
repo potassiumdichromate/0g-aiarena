@@ -4,11 +4,20 @@ import { FinancialOrchestrator } from '../services/financial-orchestrator';
 const orchestrator = new FinancialOrchestrator();
 
 export async function walletRoutes(app: FastifyInstance): Promise<void> {
+  // GET — auto-creates wallet on first access if agent exists
   app.get('/:agentId', async (req, reply) => {
     const { agentId } = req.params as { agentId: string };
     const wallet = await orchestrator.getWallet(agentId);
-    if (!wallet) return reply.status(404).send({ error: 'Wallet not found' });
+    if (!wallet) return reply.status(404).send({ error: 'Agent not found' });
     return { wallet };
+  });
+
+  // POST /wallets/ensure/:agentId — idempotent wallet creation (called by agent-service)
+  app.post('/ensure/:agentId', async (req, reply) => {
+    const { agentId } = req.params as { agentId: string };
+    const wallet = await orchestrator.ensureWallet(agentId);
+    if (!wallet) return reply.status(404).send({ error: 'Agent not found' });
+    return reply.status(201).send({ wallet });
   });
 
   app.post('/:agentId/policy', async (req, reply) => {

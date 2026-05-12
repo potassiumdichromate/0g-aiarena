@@ -114,6 +114,8 @@ services:
         sync: false
       - key: SOLANA_RPC_URL
         value: https://api.devnet.solana.com
+      - key: FINANCIAL_SERVICE_URL
+        value: https://aiarena-financial.onrender.com
 
   # ── Battle Service ────────────────────────────────────────────────────────────
   - type: web

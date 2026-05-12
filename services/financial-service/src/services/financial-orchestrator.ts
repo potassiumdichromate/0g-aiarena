@@ -1,11 +1,36 @@
+import { randomBytes } from 'crypto';
 import { prisma, FinancialRepository } from '@ai-arena/db-client';
 import { getEventBus, SUBJECTS } from '@ai-arena/event-bus';
 
 const finRepo = new FinancialRepository(prisma);
 
 export class FinancialOrchestrator {
+  /**
+   * Returns existing wallet or creates one on first access.
+   * Wallet creation used to depend on NATS AGENT_CREATED event — this makes it
+   * resilient when NATS is unavailable.
+   */
   async getWallet(agentId: string) {
-    return finRepo.getWallet(agentId);
+    return this.ensureWallet(agentId);
+  }
+
+  async ensureWallet(agentId: string) {
+    const existing = await finRepo.getWallet(agentId);
+    if (existing) return existing;
+
+    // Verify agent exists before creating wallet
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) return null;
+
+    // Generate a unique custodial Solana address (placeholder until on-chain wallet is provisioned)
+    const solanaAddress = 'SOL' + randomBytes(29).toString('hex').toUpperCase().slice(0, 41);
+
+    return finRepo.createWallet({
+      agent:         { connect: { id: agentId } },
+      solanaAddress,
+      balanceArena:  0,
+      balanceSol:    0,
+    });
   }
 
   // Fix: update the wallet policy in-place instead of creating a duplicate wallet
