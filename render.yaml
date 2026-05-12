@@ -132,6 +132,11 @@ services:
         sync: false
       - key: ZEROG_NETWORK
         value: mainnet
+      - key: FINANCIAL_SERVICE_URL
+        fromService:
+          name: aiarena-financial
+          type: web
+          property: host
 
   # ── Matchmaking Service ───────────────────────────────────────────────────────
   - type: web
@@ -161,6 +166,13 @@ services:
         sync: false
       - key: NATS_URL
         sync: false
+      - key: FINANCIAL_SERVICE_URL
+        fromService:
+          name: aiarena-financial
+          type: web
+          property: host
+      - key: WAGER_STAKE_AMOUNT
+        value: "5"
 
   # ── Financial Service ─────────────────────────────────────────────────────────
   - type: web

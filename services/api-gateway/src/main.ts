@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import httpProxy from '@fastify/http-proxy';
+import { registerX402Middleware } from './middleware/x402';
 
 // ── Optional Redis for distributed rate limiting ──────────────────────────────
 // Falls back to in-memory rate limiting when Redis is unavailable (local dev).
@@ -56,6 +57,9 @@ async function main() {
       ? { maxAge: 31_536_000, includeSubDomains: true }
       : false,
   });
+
+  // ── x402 Payment Middleware ─────────────────────────────────────────────────
+  registerX402Middleware(app);
 
   // ── Rate limiting (Redis-backed if available, in-memory otherwise) ──────────
   await app.register(rateLimit, {

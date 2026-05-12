@@ -2,12 +2,37 @@ import { getRedisClient, CACHE_KEYS } from '@ai-arena/cache';
 import { getEventBus, SUBJECTS } from '@ai-arena/event-bus';
 import { prisma } from '@ai-arena/db-client';
 
+const FINANCIAL_URL  = process.env.FINANCIAL_SERVICE_URL ?? 'http://localhost:8005';
+const WAGER_AMOUNT   = parseFloat(process.env.WAGER_STAKE_AMOUNT ?? '5'); // $ARENA per agent
+
 export class Matchmaker {
   private readonly redis = getRedisClient();
 
   async joinQueue(agentId: string, gameId: string, mode: string, eloRange: number): Promise<void> {
     const agent = await prisma.agent.findUnique({ where: { id: agentId } });
     if (!agent) throw new Error('Agent not found');
+
+    // ── Wager balance check via x402 ─────────────────────────────────────────
+    if (mode === 'WAGER') {
+      try {
+        const res = await fetch(`${FINANCIAL_URL}/wallets/${agentId}`, { method: 'GET' });
+        if (res.ok) {
+          const data = await res.json() as { wallet?: { balanceArena?: number } };
+          const balance = data.wallet?.balanceArena ?? 0;
+          if (balance < WAGER_AMOUNT) {
+            throw new Error(
+              `Insufficient $ARENA balance for wager battle. ` +
+              `Need ${WAGER_AMOUNT} ARENA, have ${balance}. ` +
+              `Deposit more ARENA to your agent wallet.`
+            );
+          }
+        }
+      } catch (err: any) {
+        if (err.message.includes('Insufficient')) throw err;
+        // Financial service unreachable — allow queue join (fail open)
+        console.warn('[Matchmaker] Could not verify wager balance:', err.message);
+      }
+    }
 
     const entry = { agentId, gameId, mode, eloRating: agent.eloRating, eloRange, joinedAt: Date.now() };
     const queueKey = CACHE_KEYS.matchQueue(gameId, mode);

@@ -21,6 +21,22 @@ import { ZeroGStorageClient, getZeroGConfig } from '@ai-arena/zerog-client';
 const battleRepo = new BattleRepository(prisma);
 const storage    = new ZeroGStorageClient(getZeroGConfig());
 
+const FINANCIAL_URL = process.env.FINANCIAL_SERVICE_URL ?? 'http://localhost:8005';
+
+async function callFinancial(path: string, body: unknown): Promise<unknown> {
+  try {
+    const res = await fetch(`${FINANCIAL_URL}${path}`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    });
+    return res.json();
+  } catch (err) {
+    console.error(`[BattleOrchestrator] Financial service call failed (${path}):`, err);
+    return null;
+  }
+}
+
 export class BattleOrchestrator {
 
   async createBattle(params: {
@@ -42,6 +58,24 @@ export class BattleOrchestrator {
         recordReplay:    true,
       },
     });
+
+    // Lock escrow for wager battles
+    if (params.wagerAmount && params.wagerAmount > 0) {
+      const escrowResult = await callFinancial('/escrow/lock', {
+        agentId1:    params.agentId,
+        agentId2:    params.opponentId,
+        stakeAmount: params.wagerAmount,
+        battleId:    battle.id,
+      }) as any;
+
+      if (escrowResult?.ok) {
+        console.log(`[BattleOrchestrator] Escrow locked for battle ${battle.id}: pool ${escrowResult.data?.totalPool} ARENA`);
+      } else {
+        // Escrow lock failed — cancel the battle
+        await battleRepo.updateStatus(battle.id, 'CANCELLED');
+        throw new Error(escrowResult?.error ?? 'Failed to lock escrow — check agent wallet balances');
+      }
+    }
 
     const bus = await getEventBus();
     await bus.publish(SUBJECTS.BATTLE_CREATED, {
@@ -120,6 +154,15 @@ export class BattleOrchestrator {
       });
     } catch (err) {
       console.error('[BattleOrchestrator] Failed to upload battle result to 0G Storage:', err);
+    }
+
+    // Settle escrow: winner gets 90%, platform keeps 10%
+    const settlement = await callFinancial('/escrow/settle', {
+      battleId: id,
+      winnerId: result.winnerId,
+    }) as any;
+    if (settlement?.ok && settlement.data?.winnerPayout > 0) {
+      console.log(`[BattleOrchestrator] Escrow settled: winner ${result.winnerId} receives ${settlement.data.winnerPayout} ARENA, commission ${settlement.data.commission} ARENA`);
     }
 
     const bus = await getEventBus();
