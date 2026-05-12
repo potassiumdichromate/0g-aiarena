@@ -12,6 +12,20 @@ databases:
     region: oregon
 
 services:
+  # ── NATS (private — internal messaging bus) ───────────────────────────────────
+  - type: pserv
+    name: aiarena-nats
+    env: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./services/nats/Dockerfile
+    dockerContext: ./services/nats
+    envVars:
+      - key: NATS_USER
+        value: arena
+      - key: NATS_PASSWORD
+        sync: false
+
   # ── Redis ─────────────────────────────────────────────────────────────────────
   - type: redis
     name: aiarena-redis
