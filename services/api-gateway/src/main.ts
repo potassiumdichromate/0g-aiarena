@@ -130,7 +130,8 @@ async function main() {
     { prefix: '/v1/games',         upstream: toUrl(process.env.GAME_SERVICE_URL,        'http://localhost:8004'), rewritePrefix: ''             },
     { prefix: '/v1/telemetry',     upstream: toUrl(process.env.TELEMETRY_SERVICE_URL,   'http://localhost:8010'), rewritePrefix: '/sessions'    },
     { prefix: '/v1/behaviour',     upstream: toUrl(process.env.BEHAVIOUR_SERVICE_URL,   'http://localhost:8011'), rewritePrefix: ''             },
-    { prefix: '/v1/training',      upstream: toUrl(process.env.TRAINING_SERVICE_URL,    'http://localhost:8012'), rewritePrefix: '/jobs'        },
+    // Training lives in agent-service — no separate training service deployed
+    { prefix: '/v1/training',      upstream: toUrl(process.env.AGENT_SERVICE_URL,       'http://localhost:8002'), rewritePrefix: '/agents'      },
     { prefix: '/v1/inference',     upstream: toUrl(process.env.INFERENCE_SERVICE_URL,   'http://localhost:8013'), rewritePrefix: ''             },
     { prefix: '/v1/memory',        upstream: toUrl(process.env.MEMORY_SERVICE_URL,      'http://localhost:8014'), rewritePrefix: '/agents'      },
     { prefix: '/v1/matchmaking',   upstream: toUrl(process.env.MATCHMAKING_SERVICE_URL, 'http://localhost:8004'), rewritePrefix: '/queue'       },

@@ -206,6 +206,11 @@ export class AgentService {
     return agentRepo.list(params);
   }
 
+  async listAgentsByUser(userId: string, params: { page?: number; limit?: number }) {
+    const agents = await agentRepo.findByUserId(userId, params.page ?? 1, params.limit ?? 50);
+    return { agents };
+  }
+
   async updateAgent(id: string, userId: string, data: { name?: string; metadata?: Record<string, unknown> }) {
     return agentRepo.update(id, data as any);
   }

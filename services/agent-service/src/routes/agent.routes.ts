@@ -24,6 +24,16 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
+  // GET /agents/mine — agents belonging to the authenticated user
+  app.get('/mine', { onRequest: [jwtMiddleware(app)] as any }, async (req) => {
+    const { userId } = req.user as { userId: string };
+    const { page, pageSize, limit } = req.query as Record<string, string>;
+    return agentService.listAgentsByUser(userId, {
+      page:  Number(page  || 1),
+      limit: Number(limit || pageSize || 50),
+    });
+  });
+
   app.get('/:id', { onRequest: [optionalJwt(app)] as any }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const agent = await agentService.getAgent(id);
@@ -44,6 +54,25 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
   app.get('/:id/evolution', { onRequest: [optionalJwt(app)] as any }, async (req) => {
     const { id } = req.params as { id: string };
     return agentService.getEvolutionStatus(id);
+  });
+
+  // GET /agents/:id/eligibility — training eligibility (alias for evolution status)
+  // Also reachable via gateway as GET /v1/training/agents/:id/eligibility
+  app.get('/:id/eligibility', { onRequest: [optionalJwt(app)] as any }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const evolution = await agentService.getEvolutionStatus(id);
+    const jobs      = await agentService.getTrainingStatus(id);
+    const running   = jobs.some((j: any) => j.status === 'QUEUED' || j.status === 'RUNNING');
+    return {
+      agentId:           id,
+      eligibleToTrain:   !running,
+      reason:            running ? 'Training job already in progress' : 'Ready to train',
+      currentStage:      evolution.currentStage,
+      eloRating:         evolution.eloRating,
+      totalBattles:      evolution.totalBattles,
+      activeJobCount:    jobs.filter((j: any) => j.status === 'RUNNING').length,
+      queuedJobCount:    jobs.filter((j: any) => j.status === 'QUEUED').length,
+    };
   });
 
   // ── Protected writes (require JWT) ─────────────────────────────────────────
