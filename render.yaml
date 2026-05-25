@@ -320,7 +320,7 @@ services:
     plan: starter
     region: oregon
     rootDir: services/inft-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && node_modules/.bin/turbo run build --filter=@ai-arena/inft-service...
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/inft-service...
     startCommand: node dist/main.js
     healthCheckPath: /health
     envVars:
