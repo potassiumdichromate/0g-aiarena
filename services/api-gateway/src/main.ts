@@ -114,47 +114,77 @@ async function main() {
   // Render's fromService.host gives bare hostname (no scheme). Add https:// when missing.
   const toUrl = (raw: string | undefined, fallback: string): string => {
     if (!raw) return fallback;
-    // All service URLs are full https:// values — passed through unchanged.
-    // Bare strings (local dev fallbacks) get https:// prepended.
     return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
   };
 
-  const SERVICES: Array<{ prefix: string; upstream: string; rewritePrefix: string }> = [
-    { prefix: '/v1/auth',          upstream: toUrl(process.env.IDENTITY_SERVICE_URL,    'http://localhost:8001'), rewritePrefix: '/auth'        },
-    { prefix: '/v1/users',         upstream: toUrl(process.env.IDENTITY_SERVICE_URL,    'http://localhost:8001'), rewritePrefix: '/users'       },
-    { prefix: '/v1/agents',        upstream: toUrl(process.env.AGENT_SERVICE_URL,       'http://localhost:8002'), rewritePrefix: '/agents'      },
-    // financial-service handles /v1/financial/* and /v1/wallets/* and /v1/escrow/*
-    { prefix: '/v1/financial',     upstream: toUrl(process.env.FINANCIAL_SERVICE_URL,   'http://localhost:8005'), rewritePrefix: ''             },
-    { prefix: '/v1/wallets',       upstream: toUrl(process.env.FINANCIAL_SERVICE_URL,   'http://localhost:8005'), rewritePrefix: '/wallets'     },
-    { prefix: '/v1/escrow',        upstream: toUrl(process.env.FINANCIAL_SERVICE_URL,   'http://localhost:8005'), rewritePrefix: '/escrow'      },
-    { prefix: '/v1/games',         upstream: toUrl(process.env.GAME_SERVICE_URL,        'http://localhost:8004'), rewritePrefix: ''             },
-    { prefix: '/v1/telemetry',     upstream: toUrl(process.env.TELEMETRY_SERVICE_URL,   'http://localhost:8010'), rewritePrefix: '/sessions'    },
-    { prefix: '/v1/behaviour',     upstream: toUrl(process.env.BEHAVIOUR_SERVICE_URL,   'http://localhost:8011'), rewritePrefix: ''             },
-    // Training lives in agent-service — no separate training service deployed
-    // /v1/training/agents/:id/eligibility → agent-service /agents/:id/eligibility
-    { prefix: '/v1/training',      upstream: toUrl(process.env.AGENT_SERVICE_URL,       'http://localhost:8002'), rewritePrefix: ''             },
-    { prefix: '/v1/inference',     upstream: toUrl(process.env.INFERENCE_SERVICE_URL,   'http://localhost:8013'), rewritePrefix: ''             },
-    { prefix: '/v1/memory',        upstream: toUrl(process.env.MEMORY_SERVICE_URL,      'http://localhost:8014'), rewritePrefix: '/agents'      },
-    { prefix: '/v1/matchmaking',   upstream: toUrl(process.env.MATCHMAKING_SERVICE_URL, 'http://localhost:8004'), rewritePrefix: '/queue'       },
-    { prefix: '/v1/battles',       upstream: toUrl(process.env.BATTLE_SERVICE_URL,      'http://localhost:8003'), rewritePrefix: '/battles'     },
-    { prefix: '/v1/replays',       upstream: toUrl(process.env.REPLAY_SERVICE_URL,      'http://localhost:8022'), rewritePrefix: ''             },
-    { prefix: '/v1/tournaments',   upstream: toUrl(process.env.TOURNAMENT_SERVICE_URL,  'http://localhost:8023'), rewritePrefix: ''             },
-    { prefix: '/v1/inft',          upstream: toUrl(process.env.INFT_SERVICE_URL,        'http://localhost:8032'), rewritePrefix: ''             },
-    { prefix: '/v1/payments',      upstream: toUrl(process.env.PAYMENT_SERVICE_URL,     'http://localhost:8033'), rewritePrefix: ''             },
-    { prefix: '/v1/analytics',     upstream: toUrl(process.env.ANALYTICS_SERVICE_URL,   'http://localhost:8040'), rewritePrefix: ''             },
-    { prefix: '/v1/leaderboards',  upstream: toUrl(process.env.LEADERBOARD_SERVICE_URL, 'http://localhost:8041'), rewritePrefix: '/leaderboards'},
-    { prefix: '/v1/storage',       upstream: toUrl(process.env.STORAGE_SERVICE_URL,     'http://localhost:8042'), rewritePrefix: ''             },
-    { prefix: '/v1/notifications', upstream: toUrl(process.env.NOTIFICATION_SERVICE_URL,'http://localhost:8043'), rewritePrefix: ''             },
-    { prefix: '/v1/token',         upstream: toUrl(process.env.TOKEN_SERVICE_URL,       'http://localhost:8050'), rewritePrefix: '/v1/token'    },
+  // Returns true when a real upstream URL is configured (not a localhost dev fallback).
+  const hasRealUrl = (envKey: string): boolean => {
+    const v = process.env[envKey];
+    return !!v && !/^https?:\/\/localhost/i.test(v);
+  };
+
+  // 503 stub — used for services that are not yet deployed in this environment.
+  const stub503 = (prefix: string) => async (_req: any, reply: any) =>
+    reply.status(503).send({
+      ok: false,
+      error: 'This service is not yet deployed in this environment.',
+      service: prefix,
+    });
+
+  // ── Deployed services — always proxied ─────────────────────────────────────
+  type SvcDef = { prefix: string; envKey: string; fallback: string; rewritePrefix: string };
+
+  const DEPLOYED: SvcDef[] = [
+    { prefix: '/v1/auth',         envKey: 'IDENTITY_SERVICE_URL',    fallback: 'http://localhost:8001', rewritePrefix: '/auth'         },
+    { prefix: '/v1/users',        envKey: 'IDENTITY_SERVICE_URL',    fallback: 'http://localhost:8001', rewritePrefix: '/users'        },
+    { prefix: '/v1/agents',       envKey: 'AGENT_SERVICE_URL',       fallback: 'http://localhost:8002', rewritePrefix: '/agents'       },
+    // Training lives in agent-service (/v1/training/* → agent-service /*)
+    { prefix: '/v1/training',     envKey: 'AGENT_SERVICE_URL',       fallback: 'http://localhost:8002', rewritePrefix: ''              },
+    // financial-service handles /v1/financial/*, /v1/wallets/*, /v1/escrow/*
+    { prefix: '/v1/financial',    envKey: 'FINANCIAL_SERVICE_URL',   fallback: 'http://localhost:8005', rewritePrefix: ''              },
+    { prefix: '/v1/wallets',      envKey: 'FINANCIAL_SERVICE_URL',   fallback: 'http://localhost:8005', rewritePrefix: '/wallets'      },
+    { prefix: '/v1/escrow',       envKey: 'FINANCIAL_SERVICE_URL',   fallback: 'http://localhost:8005', rewritePrefix: '/escrow'       },
+    { prefix: '/v1/battles',      envKey: 'BATTLE_SERVICE_URL',      fallback: 'http://localhost:8003', rewritePrefix: '/battles'      },
+    { prefix: '/v1/matchmaking',  envKey: 'MATCHMAKING_SERVICE_URL', fallback: 'http://localhost:8004', rewritePrefix: '/queue'        },
+    { prefix: '/v1/token',        envKey: 'TOKEN_SERVICE_URL',       fallback: 'http://localhost:8050', rewritePrefix: '/v1/token'     },
+    { prefix: '/v1/leaderboards', envKey: 'LEADERBOARD_SERVICE_URL', fallback: 'http://localhost:8041', rewritePrefix: '/leaderboards' },
   ];
 
-  for (const { prefix, upstream, rewritePrefix } of SERVICES) {
-    await app.register(httpProxy, {
-      upstream,
-      prefix,
-      rewritePrefix,
-      http2: false,
-    });
+  // ── Optional / not-yet-deployed services — proxy if URL set, else 503 ──────
+  const OPTIONAL: SvcDef[] = [
+    { prefix: '/v1/games',        envKey: 'GAME_SERVICE_URL',        fallback: 'http://localhost:8008', rewritePrefix: ''              },
+    { prefix: '/v1/telemetry',    envKey: 'TELEMETRY_SERVICE_URL',   fallback: 'http://localhost:8010', rewritePrefix: '/sessions'     },
+    { prefix: '/v1/behaviour',    envKey: 'BEHAVIOUR_SERVICE_URL',   fallback: 'http://localhost:8011', rewritePrefix: ''              },
+    { prefix: '/v1/inference',    envKey: 'INFERENCE_SERVICE_URL',   fallback: 'http://localhost:8013', rewritePrefix: ''              },
+    { prefix: '/v1/memory',       envKey: 'MEMORY_SERVICE_URL',      fallback: 'http://localhost:8014', rewritePrefix: '/agents'       },
+    { prefix: '/v1/replays',      envKey: 'REPLAY_SERVICE_URL',      fallback: 'http://localhost:8022', rewritePrefix: ''              },
+    { prefix: '/v1/tournaments',  envKey: 'TOURNAMENT_SERVICE_URL',  fallback: 'http://localhost:8023', rewritePrefix: ''              },
+    { prefix: '/v1/inft',         envKey: 'INFT_SERVICE_URL',        fallback: 'http://localhost:8032', rewritePrefix: ''              },
+    { prefix: '/v1/payments',     envKey: 'PAYMENT_SERVICE_URL',     fallback: 'http://localhost:8033', rewritePrefix: ''              },
+    { prefix: '/v1/analytics',    envKey: 'ANALYTICS_SERVICE_URL',   fallback: 'http://localhost:8040', rewritePrefix: ''              },
+    { prefix: '/v1/storage',      envKey: 'STORAGE_SERVICE_URL',     fallback: 'http://localhost:8042', rewritePrefix: ''              },
+    { prefix: '/v1/notifications',envKey: 'NOTIFICATION_SERVICE_URL',fallback: 'http://localhost:8043', rewritePrefix: ''              },
+  ];
+
+  const registerService = async (svc: SvcDef) => {
+    const upstream = toUrl(process.env[svc.envKey], svc.fallback);
+    await app.register(httpProxy, { upstream, prefix: svc.prefix, rewritePrefix: svc.rewritePrefix, http2: false });
+  };
+
+  // Always register deployed services
+  for (const svc of DEPLOYED) {
+    await registerService(svc);
+  }
+
+  // Optional: proxy if URL is configured; otherwise return 503 (avoids ECONNREFUSED in prod)
+  for (const svc of OPTIONAL) {
+    if (hasRealUrl(svc.envKey) || process.env.NODE_ENV !== 'production') {
+      await registerService(svc);
+    } else {
+      const handler = stub503(svc.prefix);
+      app.all(svc.prefix as any, handler);
+      app.all(`${svc.prefix}/*` as any, handler);
+    }
   }
 
   // ── Start ───────────────────────────────────────────────────────────────────

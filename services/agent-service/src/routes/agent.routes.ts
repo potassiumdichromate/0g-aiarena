@@ -34,6 +34,32 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
+  // GET /agents/training-job/:jobId — fetch a training job by its own ID
+  // (Must appear before /:id to avoid being shadowed by the agent-by-id route)
+  app.get('/training-job/:jobId', { onRequest: [optionalJwt(app)] as any }, async (req, reply) => {
+    const { jobId } = req.params as { jobId: string };
+    const job = await agentService.getTrainingJobById(jobId);
+    if (!job) return reply.status(404).send({ error: 'Training job not found' });
+    return { job };
+  });
+
+  // DELETE /agents/training-job/:jobId — cancel a training job by its own ID
+  app.delete('/training-job/:jobId', { onRequest: [jwtMiddleware(app)] as any }, async (req, reply) => {
+    const { jobId } = req.params as { jobId: string };
+    try {
+      const job = await agentService.cancelTrainingJobById(jobId);
+      return { job, cancelled: true };
+    } catch (err: any) {
+      return reply.status(404).send({ error: err.message });
+    }
+  });
+
+  // GET /agents/all-training — list recent training jobs across all agents
+  app.get('/all-training', { onRequest: [optionalJwt(app)] as any }, async (req) => {
+    const { limit } = req.query as { limit?: string };
+    return agentService.listAllTrainingJobs(Number(limit) || 20);
+  });
+
   app.get('/:id', { onRequest: [optionalJwt(app)] as any }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const agent = await agentService.getAgent(id);
@@ -100,7 +126,7 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/:id/train', { onRequest: [jwtMiddleware(app)] as any }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = req.body as { type?: string; priority?: number };
+    const body = req.body as { type?: string; priority?: number; config?: Record<string, unknown> };
     const job = await agentService.queueTraining(id, body);
     return reply.status(202).send({ job });
   });

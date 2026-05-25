@@ -219,13 +219,13 @@ export class AgentService {
     return agentRepo.retire(id);
   }
 
-  async queueTraining(agentId: string, params: { type?: string; priority?: number }) {
+  async queueTraining(agentId: string, params: { type?: string; priority?: number; config?: Record<string, unknown> }) {
     return prisma.trainingJob.create({
       data: {
         agent:    { connect: { id: agentId } },
         type:     (params.type as any) ?? 'BEHAVIOUR_CLONING',
         priority: params.priority ?? 5,
-        config:   {},
+        config:   (params.config as any) ?? {},
       },
     });
   }
@@ -236,6 +236,30 @@ export class AgentService {
       orderBy: { createdAt: 'desc' },
       take: 10,
     });
+  }
+
+  async getTrainingJobById(jobId: string) {
+    return prisma.trainingJob.findUnique({ where: { id: jobId } });
+  }
+
+  async cancelTrainingJobById(jobId: string) {
+    const job = await prisma.trainingJob.findUnique({ where: { id: jobId } });
+    if (!job) throw new Error('Training job not found');
+    if (job.status === 'COMPLETED' || job.status === 'CANCELLED') {
+      return job; // already terminal — no-op
+    }
+    return prisma.trainingJob.update({
+      where: { id: jobId },
+      data:  { status: 'CANCELLED' as any },
+    });
+  }
+
+  async listAllTrainingJobs(limit = 20) {
+    const jobs = await prisma.trainingJob.findMany({
+      orderBy: { createdAt: 'desc' },
+      take:    Math.min(limit, 100),
+    });
+    return { jobs };
   }
 
   async getMemorySummary(agentId: string) {
