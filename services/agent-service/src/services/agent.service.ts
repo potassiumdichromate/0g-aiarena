@@ -195,7 +195,50 @@ export class AgentService {
       console.warn('[AgentService] Could not publish AGENT_CREATED event (NATS unavailable):', (err as Error).message);
     }
 
-    return { ...agent, avatarRootHash, metadataRootHash };
+    // ── Step 8: Direct HTTP mint via inft-service (no NATS dependency) ───────
+    // NATS events don't fire reliably on Render starter plan.
+    // We call inft-service directly using an internal shared-secret header.
+    let inftTokenId: string | null = null;
+    const inftServiceUrl = process.env.INFT_SERVICE_URL;
+    if (inftServiceUrl) {
+      try {
+        const mintResp = await withTimeout(
+          fetch(`${inftServiceUrl}/inft/agent-mint`, {
+            method:  'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Service-Key': process.env.INTERNAL_SERVICE_SECRET ?? '',
+            },
+            body: JSON.stringify({
+              agentId:          agent.id,
+              traits,
+              metadataRootHash,
+            }),
+          }).then(async r => {
+            if (!r.ok) throw new Error(`inft-service responded ${r.status}`);
+            return r.json() as Promise<{ tokenId?: string | null; txHash?: string }>;
+          }),
+          20_000,
+          'mintINFT',
+        );
+        if (mintResp.tokenId) {
+          inftTokenId = String(mintResp.tokenId);
+          // Persist tokenId back to the agent record
+          await prisma.agent.update({
+            where: { id: agent.id },
+            data:  { inftTokenId },
+          });
+          console.info(`[AgentService] INFT minted: token #${inftTokenId} for agent ${agent.id} (tx: ${mintResp.txHash})`);
+        }
+      } catch (err) {
+        // Non-fatal — agent is created, INFT minting can be retried later
+        console.warn('[AgentService] INFT mint failed (non-fatal):', (err as Error).message);
+      }
+    } else {
+      console.info('[AgentService] INFT_SERVICE_URL not set — skipping on-chain INFT mint');
+    }
+
+    return { ...agent, avatarRootHash, metadataRootHash, inftTokenId };
   }
 
   async getAgent(id: string) {

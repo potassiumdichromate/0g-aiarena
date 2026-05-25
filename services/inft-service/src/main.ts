@@ -87,6 +87,11 @@ async function bootstrap(): Promise<void> {
 
   app.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {
     if (req.routerPath === '/health') return;
+    // Internal service-to-service calls bypass JWT using a shared secret header
+    const serviceKey    = req.headers['x-service-key'];
+    const internalSecret = process.env.INTERNAL_SERVICE_SECRET;
+    if (internalSecret && serviceKey === internalSecret) return;
+    // Fall through to JWT verification for external / user-facing requests
     try { await req.jwtVerify(); } catch { reply.code(401).send({ error: 'Unauthorized' }); }
   });
 
@@ -312,6 +317,74 @@ async function bootstrap(): Promise<void> {
     const receipt = await tx.wait();
 
     return { txHash: receipt.hash, tokenId: req.params.tokenId, won, eloChange };
+  });
+
+  // ── POST /inft/agent-mint — internal service-to-service INFT mint ────────
+  // Called by agent-service after an agent is created.
+  // Auth: X-Service-Key header (INTERNAL_SERVICE_SECRET env var) — NOT a user JWT.
+
+  app.post<{
+    Body: {
+      agentId: string;
+      traits: Record<string, number>;
+      metadataRootHash: string | null;
+    };
+  }>('/inft/agent-mint', async (req, reply) => {
+    const { agentId, traits, metadataRootHash } = req.body;
+
+    const signer   = getAdminSigner();
+    const contract = getContract(signer);
+    const toAddress = await signer.getAddress();
+
+    const traitsStruct = {
+      aggression:   Math.round(traits.aggression   ?? 50),
+      intelligence: Math.round(traits.intelligence ?? 50),
+      adaptability: Math.round(traits.adaptability ?? 50),
+      resilience:   Math.round(traits.resilience   ?? 50),
+      creativity:   Math.round(traits.creativity   ?? 50),
+      loyalty:      Math.round(traits.loyalty      ?? 50),
+      deception:    Math.round(traits.deception    ?? 50),
+      patience:     Math.round(traits.patience     ?? 50),
+    };
+
+    // Use metadataRootHash as encrypted metadata identifier (0G Storage root hash);
+    // fall back to agentId string if storage upload failed.
+    const encryptedMetadataHash = metadataRootHash ?? agentId;
+
+    // Initial memory root is zero — will be updated by memory-service over time.
+    const memoryRootHashBytes = ethers.zeroPadValue('0x00', 32);
+
+    // No LoRA model yet at creation time.
+    const modelRootHash = '';
+
+    // Dummy sealed key — real ECIES-sealed AES key is set when ownership is transferred.
+    const initialSealedKey = '0x00';
+
+    const tx = await contract.mintAgent(
+      toAddress,
+      traitsStruct,
+      encryptedMetadataHash,
+      memoryRootHashBytes,
+      modelRootHash,
+      initialSealedKey,
+    );
+
+    const receipt = await tx.wait();
+
+    const mintEvent = receipt.logs
+      .map((l: ethers.Log) => { try { return contract.interface.parseLog(l); } catch { return null; } })
+      .find((e: ethers.LogDescription | null) => e?.name === 'AgentMinted');
+
+    const tokenId = mintEvent?.args?.tokenId?.toString() ?? null;
+
+    app.log.info(`[inft-service] Minted INFT token ${tokenId} for agent ${agentId} — tx ${receipt.hash}`);
+
+    return {
+      txHash:  receipt.hash,
+      tokenId,
+      owner:   toAddress,
+      agentId,
+    };
   });
 
   await app.listen({ port: PORT, host: '0.0.0.0' });

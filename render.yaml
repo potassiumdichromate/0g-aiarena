@@ -116,6 +116,10 @@ services:
         value: https://api.devnet.solana.com
       - key: FINANCIAL_SERVICE_URL
         value: https://aiarena-financial.onrender.com
+      - key: INFT_SERVICE_URL
+        value: https://aiarena-inft.onrender.com
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
 
   # ── Battle Service ────────────────────────────────────────────────────────────
   - type: web
@@ -306,3 +310,33 @@ services:
         value: https://aiarena-token.onrender.com
       - key: LEADERBOARD_SERVICE_URL
         value: https://aiarena-leaderboard.onrender.com
+      - key: INFT_SERVICE_URL
+        value: https://aiarena-inft.onrender.com
+
+  # ── INFT Service (ERC-7857 Living NFT on 0G Chain) ───────────────────────────
+  - type: web
+    name: aiarena-inft
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: services/inft-service
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && node_modules/.bin/turbo run build --filter=@ai-arena/inft-service...
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8032"
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        sync: false
+      - key: ZEROG_NETWORK
+        value: mainnet
+      - key: ZEROG_EVM_RPC
+        value: https://evmrpc.0g.ai
+      - key: ZEROG_INFT_CONTRACT_ADDRESS
+        value: 0x67493Bb91e904840d39397E350f4A7865B779E10
+      - key: ZEROG_STORAGE_PRIVATE_KEY
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
