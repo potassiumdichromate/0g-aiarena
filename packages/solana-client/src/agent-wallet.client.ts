@@ -1,7 +1,7 @@
 /**
  * AgentWalletClient — TypeScript client for the agent_wallet Anchor program.
  *
- * Program ID (devnet + mainnet): 39W71ucMvVTxGMegur7XhfPUJU9m8Bqmh4qvRgykHMzk
+ * Program ID (devnet + mainnet): 7hG7hPo5ggf5oCbchhVmcNsvGG9QxFdaLkQR5cVVaPH7
  *
  * Every method tries the on-chain call first. If the program is not yet deployed
  * (account not found, provider error) it falls back gracefully so the rest of the
@@ -20,7 +20,7 @@ import idl from './idl/agent-wallet.idl.json';
 
 // Default to the program ID declared in Anchor.toml / lib.rs
 const AGENT_WALLET_PROGRAM_ID = new PublicKey(
-  process.env.AGENT_WALLET_PROGRAM_ID ?? '39W71ucMvVTxGMegur7XhfPUJU9m8Bqmh4qvRgykHMzk'
+  process.env.AGENT_WALLET_PROGRAM_ID ?? '7hG7hPo5ggf5oCbchhVmcNsvGG9QxFdaLkQR5cVVaPH7'
 );
 
 export interface AgentWalletAccount {

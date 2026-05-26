@@ -20,7 +20,7 @@ set -e
 WALLET_PATH="${SOLANA_WALLET_PATH:-$HOME/.config/solana/id.json}"
 CLUSTER="devnet"
 PROGRAM_NAME="agent_wallet"
-PROGRAM_ID="39W71ucMvVTxGMegur7XhfPUJU9m8Bqmh4qvRgykHMzk"
+PROGRAM_ID="7hG7hPo5ggf5oCbchhVmcNsvGG9QxFdaLkQR5cVVaPH7"
 
 echo ""
 echo "============================================"

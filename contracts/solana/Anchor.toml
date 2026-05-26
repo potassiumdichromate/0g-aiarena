@@ -8,13 +8,13 @@ skip-lint = false
 [programs.devnet]
 escrow_vault  = "ANc1L4vjTTQfUn2f3GoYWVTBVXCSSKS74enicqbVNYpn"
 tournament    = "74MfozGiX8QcJPm9GjA7QFnhXYuVBP1U7hX5jUjWHgrv"
-agent_wallet  = "39W71ucMvVTxGMegur7XhfPUJU9m8Bqmh4qvRgykHMzk"
+agent_wallet  = "7hG7hPo5ggf5oCbchhVmcNsvGG9QxFdaLkQR5cVVaPH7"
 staking       = "7eAFYSQ7FyPXWBcxR5XiJFcPBdt4VHN6S3u4oZfahVWC"
 
 [programs.mainnet]
 escrow_vault  = "ANc1L4vjTTQfUn2f3GoYWVTBVXCSSKS74enicqbVNYpn"
 tournament    = "74MfozGiX8QcJPm9GjA7QFnhXYuVBP1U7hX5jUjWHgrv"
-agent_wallet  = "39W71ucMvVTxGMegur7XhfPUJU9m8Bqmh4qvRgykHMzk"
+agent_wallet  = "7hG7hPo5ggf5oCbchhVmcNsvGG9QxFdaLkQR5cVVaPH7"
 staking       = "7eAFYSQ7FyPXWBcxR5XiJFcPBdt4VHN6S3u4oZfahVWC"
 
 [registry]
