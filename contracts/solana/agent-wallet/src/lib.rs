@@ -41,6 +41,22 @@ pub mod agent_wallet {
         Ok(())
     }
 
+    /// Credit $ARENA balance to an agent wallet.
+    /// Called by the platform authority after battle rewards or deposits.
+    /// NOTE: For devnet demo — any signer can credit. Mainnet: add authority PDA check.
+    pub fn credit(ctx: Context<Credit>, amount: u64) -> Result<()> {
+        ctx.accounts.wallet.balance = ctx.accounts.wallet.balance.saturating_add(amount);
+        Ok(())
+    }
+
+    /// Debit $ARENA balance from an agent wallet (platform-side escrow lock).
+    pub fn debit(ctx: Context<Credit>, amount: u64) -> Result<()> {
+        require!(ctx.accounts.wallet.balance >= amount, WalletError::InsufficientFunds);
+        require!(!ctx.accounts.wallet.is_frozen, WalletError::WalletFrozen);
+        ctx.accounts.wallet.balance = ctx.accounts.wallet.balance.saturating_sub(amount);
+        Ok(())
+    }
+
     /// Update the spending policy limits.
     pub fn update_policy(
         ctx: Context<UpdatePolicy>,
@@ -114,6 +130,15 @@ pub struct Transfer<'info> {
 pub struct FreezeWallet<'info> {
     #[account(mut)]
     pub wallet: Account<'info, AgentWallet>,
+    pub authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct Credit<'info> {
+    #[account(mut)]
+    pub wallet: Account<'info, AgentWallet>,
+    /// Platform authority signer (SOLANA_PRIVATE_KEY).
+    /// Devnet: any signer allowed. Mainnet: add has_one constraint to a config PDA.
     pub authority: Signer<'info>,
 }
 

@@ -5,26 +5,59 @@
     {
       "name": "createWallet",
       "accounts": [
-        { "name": "wallet", "isMut": true, "isSigner": false },
-        { "name": "authority", "isMut": true, "isSigner": true },
+        { "name": "wallet",        "isMut": true,  "isSigner": false },
+        { "name": "authority",     "isMut": true,  "isSigner": true  },
         { "name": "systemProgram", "isMut": false, "isSigner": false }
       ],
-      "args": [{ "name": "agentId", "type": "string" }]
+      "args": [
+        { "name": "agentId", "type": "string" },
+        { "name": "bump",    "type": "u8"     }
+      ]
+    },
+    {
+      "name": "credit",
+      "accounts": [
+        { "name": "wallet",    "isMut": true,  "isSigner": false },
+        { "name": "authority", "isMut": false, "isSigner": true  }
+      ],
+      "args": [
+        { "name": "amount", "type": "u64" }
+      ]
+    },
+    {
+      "name": "debit",
+      "accounts": [
+        { "name": "wallet",    "isMut": true,  "isSigner": false },
+        { "name": "authority", "isMut": false, "isSigner": true  }
+      ],
+      "args": [
+        { "name": "amount", "type": "u64" }
+      ]
     },
     {
       "name": "transfer",
       "accounts": [
-        { "name": "fromWallet", "isMut": true, "isSigner": false },
-        { "name": "toWallet", "isMut": true, "isSigner": false },
-        { "name": "authority", "isMut": false, "isSigner": true }
+        { "name": "fromWallet", "isMut": true,  "isSigner": false },
+        { "name": "toWallet",   "isMut": true,  "isSigner": false },
+        { "name": "authority",  "isMut": false, "isSigner": true  }
       ],
-      "args": [{ "name": "amount", "type": "u64" }]
+      "args": [
+        { "name": "amount", "type": "u64" }
+      ]
     },
     {
       "name": "freezeWallet",
       "accounts": [
-        { "name": "wallet", "isMut": true, "isSigner": false },
-        { "name": "authority", "isMut": false, "isSigner": true }
+        { "name": "wallet",    "isMut": true,  "isSigner": false },
+        { "name": "authority", "isMut": false, "isSigner": true  }
+      ],
+      "args": []
+    },
+    {
+      "name": "unfreezeWallet",
+      "accounts": [
+        { "name": "wallet",    "isMut": true,  "isSigner": false },
+        { "name": "authority", "isMut": false, "isSigner": true  }
       ],
       "args": []
     }
@@ -35,14 +68,22 @@
       "type": {
         "kind": "struct",
         "fields": [
-          { "name": "agentId", "type": "string" },
-          { "name": "authority", "type": "publicKey" },
-          { "name": "balance", "type": "u64" },
-          { "name": "isFrozen", "type": "bool" },
-          { "name": "dailySpendUsed", "type": "u64" },
-          { "name": "bump", "type": "u8" }
+          { "name": "agentId",             "type": "string"    },
+          { "name": "authority",           "type": "publicKey" },
+          { "name": "balance",             "type": "u64"       },
+          { "name": "isFrozen",            "type": "bool"      },
+          { "name": "dailySpendUsed",      "type": "u64"       },
+          { "name": "dailyResetTimestamp", "type": "i64"       },
+          { "name": "bump",                "type": "u8"        }
         ]
       }
     }
+  ],
+  "errors": [
+    { "code": 6000, "name": "WalletFrozen",       "msg": "Wallet is frozen and cannot be used"        },
+    { "code": 6001, "name": "InsufficientFunds",  "msg": "Insufficient funds in agent wallet"          },
+    { "code": 6002, "name": "WagerLimitExceeded", "msg": "Wager exceeds maximum single wager limit"    },
+    { "code": 6003, "name": "DailyLimitExceeded", "msg": "Daily spend limit exceeded"                  },
+    { "code": 6004, "name": "Unauthorized",       "msg": "Unauthorized: not the wallet authority"      }
   ]
 }

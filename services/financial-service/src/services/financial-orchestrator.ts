@@ -1,6 +1,8 @@
-import { randomBytes } from 'crypto';
 import { prisma, FinancialRepository } from '@ai-arena/db-client';
 import { getEventBus, SUBJECTS } from '@ai-arena/event-bus';
+import { AgentWalletClient } from '@ai-arena/solana-client';
+
+const walletClient = new AgentWalletClient();
 
 const finRepo = new FinancialRepository(prisma);
 
@@ -22,8 +24,16 @@ export class FinancialOrchestrator {
     const agent = await prisma.agent.findUnique({ where: { id: agentId } });
     if (!agent) return null;
 
-    // Generate a unique custodial Solana address (placeholder until on-chain wallet is provisioned)
-    const solanaAddress = 'SOL' + randomBytes(29).toString('hex').toUpperCase().slice(0, 41);
+    // Derive real Solana PDA for this agent via the agent_wallet Anchor program.
+    // createAgentWallet() attempts the on-chain createWallet instruction and falls
+    // back silently if the program is not yet deployed — but always returns the
+    // deterministic PDA address so the DB stores a real Solana address.
+    const { address: solanaAddress, txSignature } = await walletClient.createAgentWallet(agentId);
+    if (txSignature) {
+      console.info(`[FinancialOrchestrator] On-chain wallet created: ${solanaAddress} (tx: ${txSignature})`);
+    } else {
+      console.info(`[FinancialOrchestrator] Wallet PDA derived (program pending deploy): ${solanaAddress}`);
+    }
 
     return finRepo.createWallet({
       agent:         { connect: { id: agentId } },

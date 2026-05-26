@@ -16,6 +16,9 @@
 
 import { prisma, FinancialRepository } from '@ai-arena/db-client';
 import { getEventBus } from '@ai-arena/event-bus';
+import { AgentWalletClient } from '@ai-arena/solana-client';
+
+const walletClient = new AgentWalletClient();
 
 const finRepo = new FinancialRepository(prisma);
 
@@ -122,6 +125,17 @@ export class EscrowService {
       metadata: { battleId, escrowId: escrow.id, commission, totalPool } as any,
     });
 
+    // ── On-chain credit: write winner payout to Solana PDA ───────────────────
+    // winnerPayout is in ARENA float (e.g. 9.0). Store as lamport-style u64 (×1000).
+    // Falls back silently if program not yet deployed — Postgres is source of truth.
+    let solanaTxHash: string | null = null;
+    try {
+      const arenaUnits = Math.round(winnerPayout * 1000); // 1 ARENA = 1000 units on-chain
+      solanaTxHash = await walletClient.creditWallet(winnerId, arenaUnits);
+    } catch (err) {
+      console.warn('[EscrowService] On-chain credit failed (non-fatal):', (err as Error).message);
+    }
+
     // Mark escrow as settled
     await prisma.escrowRecord.update({
       where: { id: escrow.id },
@@ -129,7 +143,7 @@ export class EscrowService {
         state:     'SETTLED',
         winnerId,
         settledAt: new Date(),
-        txHashes:  { settlement: `settle_${battleId}_${Date.now()}` },
+        txHashes:  { settlement: solanaTxHash ?? `settle_${battleId}_${Date.now()}` },
       },
     });
 
