@@ -1,8 +1,10 @@
 import { FastifyInstance } from 'fastify';
 import { AgentService } from '../services/agent.service';
+import { AchievementService } from '../services/achievement.service';
 import { jwtMiddleware } from '../middleware/jwt.middleware';
 
 const agentService = new AgentService();
+const achievementService = new AchievementService();
 
 // ── Optional JWT: reads req.user if token present, doesn't reject if absent ──
 function optionalJwt(app: FastifyInstance) {
@@ -107,6 +109,14 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     } catch (err: any) {
       return reply.status(404).send({ error: err.message });
     }
+  });
+
+  // GET /agents/:id/achievements — computed achievement data for this agent
+  app.get('/:id/achievements', { onRequest: [optionalJwt(app)] as any }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const result = await achievementService.computeForAgent(id);
+    if (!result) return reply.status(404).send({ error: 'Agent not found' });
+    return result;
   });
 
   // GET /agents/:id/eligibility — training eligibility (alias for evolution status)
