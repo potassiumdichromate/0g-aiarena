@@ -3,7 +3,14 @@ import { getEventBus, SUBJECTS } from '@ai-arena/event-bus';
 import { prisma } from '@ai-arena/db-client';
 
 const FINANCIAL_URL  = process.env.FINANCIAL_SERVICE_URL ?? 'http://localhost:8005';
+const BATTLE_URL     = process.env.BATTLE_SERVICE_URL    ?? 'http://localhost:8021';
 const WAGER_AMOUNT   = parseFloat(process.env.WAGER_STAKE_AMOUNT ?? '5'); // $ARENA per agent
+
+/** TTL (seconds) for match-found Redis entries — long enough for both UIs to poll. */
+const MATCH_FOUND_TTL = 300;
+
+/** Redis key used to notify an agent that a match has been found for them. */
+const matchFoundKey = (agentId: string) => `match:found:${agentId}`;
 
 export class Matchmaker {
   private readonly redis = getRedisClient();
@@ -79,6 +86,26 @@ export class Matchmaker {
   }
 
   async getQueueStatus(agentId: string) {
+    // ── Check match-found first (set by directChallenge) ────────────────────
+    try {
+      const match = await this.redis.getJson<{
+        battleId: string; opponentId: string; gameId: string; mode: string;
+      }>(matchFoundKey(agentId));
+      if (match) {
+        // Return inQueue:true so the frontend status modal enters "matched" phase
+        return {
+          inQueue:     true,
+          matchId:     match.battleId,
+          gameId:      match.gameId,
+          mode:        match.mode,
+          waitTimeMs:  0,
+        };
+      }
+    } catch {
+      // Redis blip — fall through to queue entry check
+    }
+
+    // ── Fall back to normal queue entry ─────────────────────────────────────
     const entry = await this.redis.getJson<{ gameId: string; mode: string; joinedAt: number }>(
       CACHE_KEYS.queueEntry(agentId)
     );
@@ -88,7 +115,14 @@ export class Matchmaker {
 
   /**
    * Direct challenge — skips matchmaking queue and creates a battle immediately.
-   * Both agents must exist. Publishes MATCH_FOUND + BATTLE_CREATED events.
+   *
+   * Flow (NATS-free, mirrors the INFT-mint direct-HTTP pattern):
+   *   1. Validate both agents exist
+   *   2. Remove both from any open queue slots (idempotent)
+   *   3. Create Battle record with PENDING status
+   *   4. Write match:found Redis entries for both agents (polled by getQueueStatus)
+   *   5. Call battle-service HTTP POST /battles/:id/start to transition to IN_PROGRESS
+   *   6. Try NATS publish as best-effort fallback
    */
   async directChallenge(agentId: string, opponentId: string, gameId: string, mode: string) {
     const [agent, opponent] = await Promise.all([
@@ -98,7 +132,25 @@ export class Matchmaker {
     if (!agent)    throw new Error(`Agent ${agentId} not found`);
     if (!opponent) throw new Error(`Opponent ${opponentId} not found`);
 
-    // Create battle record directly
+    // ── Step 1: Remove both agents from any open queue slots ─────────────────
+    try {
+      const [agentEntry, opponentEntry] = await Promise.all([
+        this.redis.getJson<{ gameId: string; mode: string }>(CACHE_KEYS.queueEntry(agentId)),
+        this.redis.getJson<{ gameId: string; mode: string }>(CACHE_KEYS.queueEntry(opponentId)),
+      ]);
+      if (agentEntry) {
+        await this.redis.zrem(CACHE_KEYS.matchQueue(agentEntry.gameId, agentEntry.mode), agentId);
+        await this.redis.del(CACHE_KEYS.queueEntry(agentId));
+      }
+      if (opponentEntry) {
+        await this.redis.zrem(CACHE_KEYS.matchQueue(opponentEntry.gameId, opponentEntry.mode), opponentId);
+        await this.redis.del(CACHE_KEYS.queueEntry(opponentId));
+      }
+    } catch (err) {
+      console.warn('[Matchmaker] Could not clean up queue entries for directChallenge:', err);
+    }
+
+    // ── Step 2: Create battle record ─────────────────────────────────────────
     const battle = await prisma.battle.create({
       data: {
         gameId,
@@ -109,7 +161,42 @@ export class Matchmaker {
       },
     });
 
-    // Publish events so battle-service picks up and starts the fight
+    // ── Step 3: Write match-found entries so both agents discover via polling ─
+    // getQueueStatus checks these keys and returns matchId → frontend transitions
+    const matchPayloadForAgent    = { battleId: battle.id, opponentId,  gameId, mode };
+    const matchPayloadForOpponent = { battleId: battle.id, opponentId: agentId, gameId, mode };
+    try {
+      await Promise.all([
+        this.redis.setexJson(matchFoundKey(agentId),    MATCH_FOUND_TTL, matchPayloadForAgent),
+        this.redis.setexJson(matchFoundKey(opponentId), MATCH_FOUND_TTL, matchPayloadForOpponent),
+      ]);
+    } catch (err) {
+      console.warn('[Matchmaker] Could not write match-found Redis entries:', err);
+    }
+
+    // ── Step 4: Start battle via direct HTTP (NATS-free) ─────────────────────
+    // Same pattern used for INFT minting in agent-service.
+    let battleStarted = false;
+    try {
+      const res = await fetch(`${BATTLE_URL}/battles/${battle.id}/start`, {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'X-Service-Key': process.env.INTERNAL_SERVICE_SECRET ?? '',
+        },
+      });
+      if (res.ok) {
+        battleStarted = true;
+        console.info(`[Matchmaker] Battle ${battle.id} started via direct HTTP`);
+      } else {
+        const text = await res.text().catch(() => '');
+        console.warn(`[Matchmaker] Battle-service start returned ${res.status}: ${text}`);
+      }
+    } catch (err) {
+      console.warn('[Matchmaker] Could not start battle via HTTP (will rely on NATS):', (err as Error).message);
+    }
+
+    // ── Step 5: Best-effort NATS publish ─────────────────────────────────────
     try {
       const bus = await getEventBus();
       await bus.publish(SUBJECTS.MATCH_FOUND, {
@@ -124,15 +211,15 @@ export class Matchmaker {
         gameId,
       });
     } catch (err) {
-      console.warn('[Matchmaker] NATS unavailable for directChallenge events:', err);
+      console.warn('[Matchmaker] NATS unavailable for directChallenge events (non-fatal):', err);
     }
 
     return {
-      battleId:   battle.id,
-      agentIds:   [agentId, opponentId],
+      battleId:      battle.id,
+      agentIds:      [agentId, opponentId],
       gameId,
       mode,
-      status:     'PENDING',
+      status:        battleStarted ? 'IN_PROGRESS' : 'PENDING',
     };
   }
 }
