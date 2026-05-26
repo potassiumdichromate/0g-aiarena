@@ -30,6 +30,10 @@ const evmRpc = process.env.ZEROG_EVM_RPC
     ? 'https://evmrpc.0g.ai'
     : 'https://evmrpc-testnet.0g.ai');
 
+// AgentTraits tuple as defined in AIArenaINFT.sol
+// struct AgentTraits { aggression, patience, adaptability, riskTolerance, precision, endurance, creativity, teamwork }
+const TRAITS_TUPLE = 'tuple(uint8 aggression, uint8 patience, uint8 adaptability, uint8 riskTolerance, uint8 precision, uint8 endurance, uint8 creativity, uint8 teamwork)';
+
 const INFT_ABI = [
   // ERC-7857 core
   'function transfer(address from, address to, uint256 tokenId, bytes calldata sealedKey, bytes calldata proof) external',
@@ -40,24 +44,26 @@ const INFT_ABI = [
   // Metadata reads
   'function ownerOf(uint256 tokenId) external view returns (address)',
   'function tokenURI(uint256 tokenId) external view returns (string)',
-  'function getAgentMetadata(uint256 tokenId) external view returns (tuple(string encryptedMetadataHash, bytes32 memoryRootHash, string modelRootHash, uint8 evolutionStage, bool isClone, uint256 parentTokenId, uint256 cloneCount, uint256 lastUpdateBlock))',
-  'function getTraits(uint256 tokenId) external view returns (tuple(uint8 aggression, uint8 intelligence, uint8 adaptability, uint8 resilience, uint8 creativity, uint8 loyalty, uint8 deception, uint8 patience))',
-  'function sealedKey(uint256 tokenId) external view returns (bytes)',
-  // Admin
-  'function mintAgent(address to, tuple(uint8 aggression, uint8 intelligence, uint8 adaptability, uint8 resilience, uint8 creativity, uint8 loyalty, uint8 deception, uint8 patience) calldata traits, string calldata encryptedMetadataHash, bytes32 memoryRootHash, string calldata modelRootHash, bytes calldata initialSealedKey) external returns (uint256)',
-  'function evolveAgent(uint256 tokenId, uint8 newStage, tuple(uint8 aggression, uint8 intelligence, uint8 adaptability, uint8 resilience, uint8 creativity, uint8 loyalty, uint8 deception, uint8 patience) calldata newTraits) external',
+  `function getTraits(uint256 tokenId) external view returns (${TRAITS_TUPLE})`,
+  'function agentIdToTokenId(string calldata agentId) external view returns (uint256)',
+  'function setOperator(address operator, bool authorised) external',
+  // Mint — matches AIArenaINFT.sol exactly
+  // mintAgent(to, agentId, clan, archetype, traits, encryptedMetadataHash, sealedKey, genesisRootHash, tokenUri)
+  `function mintAgent(address to, string calldata agentId, string calldata clan, string calldata archetype, ${TRAITS_TUPLE} calldata traits, bytes32 encryptedMetadataHash, bytes calldata sealedKey, string calldata genesisRootHash, string calldata tokenUri) external returns (uint256)`,
+  // Evolve — matches AIArenaINFT.sol
+  `function evolveAgent(uint256 tokenId, uint8 newStage, ${TRAITS_TUPLE} calldata newTraits) external`,
   'function updateMemoryRoot(uint256 tokenId, bytes32 newMemoryRoot) external',
   'function updateModelRoot(uint256 tokenId, string calldata newModelRootHash) external',
   'function recordBattleResult(uint256 tokenId, bool won, uint256 eloChange) external',
-  // Events
-  'event AgentMinted(uint256 indexed tokenId, address indexed owner)',
-  'event AgentTransferred(uint256 indexed tokenId, address indexed from, address indexed to)',
-  'event AgentCloned(uint256 indexed parentId, uint256 indexed cloneId, address indexed to)',
-  'event UsageAuthorized(uint256 indexed tokenId, address indexed executor)',
-  'event UsageRevoked(uint256 indexed tokenId, address indexed executor)',
-  'event AgentEvolved(uint256 indexed tokenId, uint8 newStage)',
+  // Events — matches AIArenaINFT.sol
+  'event AgentMinted(uint256 indexed tokenId, string agentId, address indexed owner, string clan)',
+  'event AgentEvolved(uint256 indexed tokenId, uint8 fromStage, uint8 toStage)',
+  'event BattleResultRecorded(uint256 indexed tokenId, bool won, uint32 totalBattles)',
   'event MemoryRootUpdated(uint256 indexed tokenId, bytes32 memoryRoot)',
-  'event ModelRootUpdated(uint256 indexed tokenId, string modelRootHash)',
+  'event ModelVersionUpdated(uint256 indexed tokenId, string modelRootHash)',
+  'event AgentCloned(uint256 indexed parentId, uint256 indexed cloneId, address to)',
+  'event UsageAuthorized(uint256 indexed tokenId, address indexed executor, bytes permissions)',
+  'event UsageRevoked(uint256 indexed tokenId, address indexed executor)',
 ];
 
 function getProvider() {
@@ -150,36 +156,40 @@ async function bootstrap(): Promise<void> {
   app.post<{
     Body: {
       to: string;
+      agentId: string;
+      clan?: string;
+      archetype?: string;
       traits: Record<string, number>;
       encryptedMetadataHash: string;
-      memoryRootHash: string;
-      modelRootHash: string;
-      initialSealedKey: string;
+      genesisRootHash?: string;
+      tokenUri?: string;
     };
   }>('/inft/mint', async (req, reply) => {
-    const { to, traits, encryptedMetadataHash, memoryRootHash, modelRootHash, initialSealedKey } = req.body;
+    const { to, agentId, clan = 'zerog', archetype = 'berserker', traits, encryptedMetadataHash, genesisRootHash = '', tokenUri = '' } = req.body;
 
     const signer   = getAdminSigner();
     const contract = getContract(signer);
 
     const traitsStruct = {
-      aggression:   traits.aggression   ?? 50,
-      intelligence: traits.intelligence ?? 50,
-      adaptability: traits.adaptability ?? 50,
-      resilience:   traits.resilience   ?? 50,
-      creativity:   traits.creativity   ?? 50,
-      loyalty:      traits.loyalty      ?? 50,
-      deception:    traits.deception    ?? 50,
-      patience:     traits.patience     ?? 50,
+      aggression:    traits.aggression   ?? 50,
+      patience:      traits.patience     ?? 50,
+      adaptability:  traits.adaptability ?? 50,
+      riskTolerance: traits.resilience   ?? 50,
+      precision:     traits.precision    ?? 50,
+      endurance:     traits.loyalty      ?? 50,
+      creativity:    traits.creativity   ?? 50,
+      teamwork:      traits.teamwork     ?? 50,
     };
 
+    let hashBytes: string;
+    if (ethers.isHexString(encryptedMetadataHash, 32)) {
+      hashBytes = encryptedMetadataHash;
+    } else {
+      hashBytes = ethers.keccak256(ethers.toUtf8Bytes(encryptedMetadataHash));
+    }
+
     const tx = await contract.mintAgent(
-      to,
-      traitsStruct,
-      encryptedMetadataHash,
-      memoryRootHash,          // bytes32 — Keccak256 of 0G Storage root hash
-      modelRootHash,           // string  — 0G Storage root hash of LoRA adapter
-      initialSealedKey,        // ECIES-sealed AES key for new owner
+      to, agentId, clan, archetype, traitsStruct, hashBytes, '0x00', genesisRootHash, tokenUri,
     );
 
     const receipt = await tx.wait();
@@ -326,47 +336,57 @@ async function bootstrap(): Promise<void> {
   app.post<{
     Body: {
       agentId: string;
+      clan?: string;
+      archetype?: string;
       traits: Record<string, number>;
       metadataRootHash: string | null;
     };
   }>('/inft/agent-mint', async (req, reply) => {
-    const { agentId, traits, metadataRootHash } = req.body;
+    const { agentId, clan = 'ZEROG', archetype = 'BERSERKER', traits, metadataRootHash } = req.body;
 
-    const signer   = getAdminSigner();
-    const contract = getContract(signer);
+    const signer    = getAdminSigner();
+    const contract  = getContract(signer);
     const toAddress = await signer.getAddress();
 
+    // Map our DB trait names → contract AgentTraits struct field names
+    // Contract: aggression, patience, adaptability, riskTolerance, precision, endurance, creativity, teamwork
     const traitsStruct = {
       aggression:   Math.round(traits.aggression   ?? 50),
-      intelligence: Math.round(traits.intelligence ?? 50),
-      adaptability: Math.round(traits.adaptability ?? 50),
-      resilience:   Math.round(traits.resilience   ?? 50),
-      creativity:   Math.round(traits.creativity   ?? 50),
-      loyalty:      Math.round(traits.loyalty      ?? 50),
-      deception:    Math.round(traits.deception    ?? 50),
       patience:     Math.round(traits.patience     ?? 50),
+      adaptability: Math.round(traits.adaptability ?? 50),
+      riskTolerance:Math.round(traits.resilience   ?? 50), // resilience → riskTolerance
+      precision:    Math.round(traits.precision    ?? 50),
+      endurance:    Math.round(traits.loyalty      ?? 50), // loyalty → endurance
+      creativity:   Math.round(traits.creativity   ?? 50),
+      teamwork:     Math.round(traits.deception    ?? 50), // deception → teamwork (closest available)
     };
 
-    // Use metadataRootHash as encrypted metadata identifier (0G Storage root hash);
-    // fall back to agentId string if storage upload failed.
-    const encryptedMetadataHash = metadataRootHash ?? agentId;
+    // encryptedMetadataHash must be bytes32 — convert from 0G Storage root hash hex string
+    let encryptedMetadataHashBytes: string;
+    if (metadataRootHash && ethers.isHexString(metadataRootHash, 32)) {
+      encryptedMetadataHashBytes = metadataRootHash; // already 32-byte hex
+    } else if (metadataRootHash) {
+      // hash the string to get bytes32
+      encryptedMetadataHashBytes = ethers.keccak256(ethers.toUtf8Bytes(metadataRootHash));
+    } else {
+      encryptedMetadataHashBytes = ethers.keccak256(ethers.toUtf8Bytes(agentId));
+    }
 
-    // Initial memory root is zero — will be updated by memory-service over time.
-    const memoryRootHashBytes = ethers.zeroPadValue('0x00', 32);
-
-    // No LoRA model yet at creation time.
-    const modelRootHash = '';
-
-    // Dummy sealed key — real ECIES-sealed AES key is set when ownership is transferred.
-    const initialSealedKey = '0x00';
+    // Dummy sealed key — real ECIES key set on ownership transfer
+    const sealedKey      = '0x00';
+    const genesisRootHash = metadataRootHash ?? '';
+    const tokenUri        = `https://aiarena-gateway.onrender.com/v1/agents/${agentId}/metadata`;
 
     const tx = await contract.mintAgent(
       toAddress,
+      agentId,
+      clan.toLowerCase(),
+      archetype.toLowerCase(),
       traitsStruct,
-      encryptedMetadataHash,
-      memoryRootHashBytes,
-      modelRootHash,
-      initialSealedKey,
+      encryptedMetadataHashBytes,
+      sealedKey,
+      genesisRootHash,
+      tokenUri,
     );
 
     const receipt = await tx.wait();

@@ -211,6 +211,8 @@ export class AgentService {
             },
             body: JSON.stringify({
               agentId:          agent.id,
+              clan:             params.clan,
+              archetype:        params.archetype ?? 'berserker',
               traits,
               metadataRootHash,
             }),
