@@ -264,6 +264,60 @@ export class AgentService {
     return agentRepo.retire(id);
   }
 
+  // ── Autonomous mode ──────────────────────────────────────────────────────────
+
+  async getAutonomousConfig(agentId: string) {
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) throw new Error('Agent not found');
+    const meta = (agent.metadata ?? {}) as Record<string, unknown>;
+    return {
+      agentId,
+      autonomousMode:   !!(meta.autonomousMode),
+      autonomousConfig: (meta.autonomousConfig as Record<string, unknown>) ?? {
+        gameId:   'default',
+        mode:     'RANKED',
+        eloRange: 200,
+        strategy: 'BALANCED',
+        autoTrain: true,
+      },
+    };
+  }
+
+  async setAutonomousConfig(agentId: string, cfg: {
+    autonomousMode: boolean;
+    gameId?:        string;
+    mode?:          string;
+    eloRange?:      number;
+    strategy?:      string;
+    autoTrain?:     boolean;
+  }) {
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) throw new Error('Agent not found');
+    const meta = (agent.metadata ?? {}) as Record<string, unknown>;
+    const updated = await prisma.agent.update({
+      where: { id: agentId },
+      data: {
+        metadata: {
+          ...meta,
+          autonomousMode:   cfg.autonomousMode,
+          autonomousConfig: {
+            gameId:    cfg.gameId    ?? 'default',
+            mode:      cfg.mode      ?? 'RANKED',
+            eloRange:  cfg.eloRange  ?? 200,
+            strategy:  cfg.strategy  ?? 'BALANCED',
+            autoTrain: cfg.autoTrain ?? true,
+          },
+        },
+      },
+    });
+    const updatedMeta = (updated.metadata ?? {}) as Record<string, unknown>;
+    return {
+      agentId,
+      autonomousMode:   cfg.autonomousMode,
+      autonomousConfig: updatedMeta.autonomousConfig,
+    };
+  }
+
   async queueTraining(agentId: string, params: { type?: string; priority?: number; config?: Record<string, unknown> }) {
     return prisma.trainingJob.create({
       data: {

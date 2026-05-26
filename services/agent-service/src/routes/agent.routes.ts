@@ -82,6 +82,33 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     return agentService.getEvolutionStatus(id);
   });
 
+  // ── Autonomous mode config ───────────────────────────────────────────────────
+  app.get('/:id/autonomous', { onRequest: [optionalJwt(app)] as any }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    try {
+      return await agentService.getAutonomousConfig(id);
+    } catch (err: any) {
+      return reply.status(404).send({ error: err.message });
+    }
+  });
+
+  app.post('/:id/autonomous', { onRequest: [jwtMiddleware(app)] as any }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = req.body as {
+      autonomousMode: boolean;
+      gameId?:        string;
+      mode?:          string;
+      eloRange?:      number;
+      strategy?:      string;
+      autoTrain?:     boolean;
+    };
+    try {
+      return await agentService.setAutonomousConfig(id, body);
+    } catch (err: any) {
+      return reply.status(404).send({ error: err.message });
+    }
+  });
+
   // GET /agents/:id/eligibility — training eligibility (alias for evolution status)
   // Also reachable via gateway as GET /v1/training/agents/:id/eligibility
   app.get('/:id/eligibility', { onRequest: [optionalJwt(app)] as any }, async (req, reply) => {

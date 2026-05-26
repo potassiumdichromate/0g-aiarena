@@ -51,9 +51,14 @@ const config: HardhatUserConfig = {
     artifacts: './artifacts',
   },
 
+  sourcify: {
+    enabled: true,
+  },
+
   etherscan: {
     apiKey: {
-      base: process.env.BASESCAN_API_KEY ?? '',
+      base:            process.env.BASESCAN_API_KEY ?? '',
+      'zerog-mainnet': 'no-api-key-required',
     },
     customChains: [
       {

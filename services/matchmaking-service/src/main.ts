@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import jwt from '@fastify/jwt';
 import { matchmakingRoutes } from './routes/matchmaking.routes';
+import { startAutonomousLoop } from './services/autonomous-loop';
 
 const PORT = parseInt(process.env.PORT ?? '8020', 10);
 
@@ -17,6 +18,9 @@ async function bootstrap(): Promise<void> {
 
   await app.listen({ port: PORT, host: '0.0.0.0' });
   app.log.info(`Matchmaking service running on port ${PORT}`);
+
+  // Start the background autonomous agent loop
+  startAutonomousLoop();
 }
 
 bootstrap().catch(err => { console.error(err); process.exit(1); });
