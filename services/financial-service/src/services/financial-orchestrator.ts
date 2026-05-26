@@ -54,8 +54,8 @@ export class FinancialOrchestrator {
   }
 
   async processDeposit(agentId: string, amount: number, currency: string, txHash: string) {
-    const wallet = await finRepo.getWallet(agentId);
-    if (!wallet) throw new Error('Wallet not found');
+    const wallet = await this.ensureWallet(agentId);
+    if (!wallet) throw new Error('Agent not found — create the agent before depositing');
 
     if (wallet.isFrozen) throw new Error('Wallet is frozen');
 
@@ -89,8 +89,8 @@ export class FinancialOrchestrator {
    * to confirm when status becomes CONFIRMED.
    */
   async initiateWithdrawal(agentId: string, amount: number, destination: string) {
-    const wallet = await finRepo.getWallet(agentId);
-    if (!wallet) throw new Error('Wallet not found');
+    const wallet = await this.ensureWallet(agentId);
+    if (!wallet) throw new Error('Agent not found');
     if (wallet.isFrozen) throw new Error('Wallet is frozen');
     if (wallet.balanceArena < amount) throw new Error('Insufficient ARENA balance');
 
@@ -139,8 +139,8 @@ export class FinancialOrchestrator {
   }
 
   async createStake(agentId: string, amount: number) {
-    const wallet = await finRepo.getWallet(agentId);
-    if (!wallet) throw new Error('Wallet not found');
+    const wallet = await this.ensureWallet(agentId);
+    if (!wallet) throw new Error('Agent not found');
     if (wallet.balanceArena < amount) throw new Error('Insufficient ARENA balance');
 
     await finRepo.updateBalance(agentId, -amount, 0);
