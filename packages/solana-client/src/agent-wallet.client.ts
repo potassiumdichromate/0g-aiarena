@@ -8,9 +8,10 @@
  * platform keeps running. Once `anchor deploy` is run the on-chain path activates
  * automatically.
  *
- * PDA seed: ["agent-wallet", agentId]  ← deterministic, same on devnet + mainnet.
- * The PDA address is always returned even when the on-chain call fails — so the DB
- * stores a real Solana address you can look up on explorer.solana.com.
+ * PDA seed: ["agent-wallet", agentId_no_hyphens]
+ *   UUID with hyphens = 36 bytes which exceeds Solana's 32-byte seed limit.
+ *   We strip hyphens (32 hex chars = 32 bytes) so the seed fits exactly.
+ *   The Rust program uses the same stripping so PDA addresses match on-chain.
  */
 
 import { PublicKey, SystemProgram } from '@solana/web3.js';
@@ -42,8 +43,11 @@ export class AgentWalletClient {
   // ── PDA derivation ─────────────────────────────────────────────────────────
 
   async getWalletPDA(agentId: string): Promise<[PublicKey, number]> {
+    // UUID with hyphens = 36 bytes > Solana's 32-byte seed limit.
+    // Strip hyphens → 32 hex chars = 32 bytes, exactly at the limit.
+    const seedId = agentId.replace(/-/g, '');
     return PublicKey.findProgramAddressSync(
-      [Buffer.from('agent-wallet'), Buffer.from(agentId)],
+      [Buffer.from('agent-wallet'), Buffer.from(seedId)],
       AGENT_WALLET_PROGRAM_ID,
     );
   }
@@ -69,8 +73,9 @@ export class AgentWalletClient {
       }
 
       const program = getProgram();
+      // Pass hyphen-stripped ID to match the seeds constraint in the Rust program
       const tx = await program.methods
-        .createWallet(agentId, bump)
+        .createWallet(agentId.replace(/-/g, ''), bump)
         .accounts({
           wallet:        pda,
           authority:     program.provider.publicKey!,

@@ -7,6 +7,8 @@ pub mod agent_wallet {
     use super::*;
 
     /// Create a new agent wallet PDA for the given agent ID.
+    /// agent_id is passed WITHOUT hyphens (32 hex chars) to satisfy Solana's
+    /// 32-byte PDA seed limit. TypeScript client strips hyphens before calling.
     pub fn create_wallet(ctx: Context<CreateWallet>, agent_id: String, bump: u8) -> Result<()> {
         let wallet = &mut ctx.accounts.wallet;
         wallet.agent_id = agent_id;
