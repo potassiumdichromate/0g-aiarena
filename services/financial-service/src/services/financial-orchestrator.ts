@@ -25,14 +25,19 @@ export class FinancialOrchestrator {
     if (!agent) return null;
 
     // Derive real Solana PDA for this agent via the agent_wallet Anchor program.
-    // createAgentWallet() attempts the on-chain createWallet instruction and falls
-    // back silently if the program is not yet deployed — but always returns the
-    // deterministic PDA address so the DB stores a real Solana address.
-    const { address: solanaAddress, txSignature } = await walletClient.createAgentWallet(agentId);
-    if (txSignature) {
-      console.info(`[FinancialOrchestrator] On-chain wallet created: ${solanaAddress} (tx: ${txSignature})`);
-    } else {
-      console.info(`[FinancialOrchestrator] Wallet PDA derived (program pending deploy): ${solanaAddress}`);
+    // Wrapped in try-catch so any Solana error (PDA seed issue, network, etc.)
+    // never blocks DB wallet creation — Postgres is always the source of truth.
+    let solanaAddress = `pending_${agentId.replace(/-/g, '')}`;
+    try {
+      const result = await walletClient.createAgentWallet(agentId);
+      solanaAddress = result.address;
+      if (result.txSignature) {
+        console.info(`[FinancialOrchestrator] On-chain wallet created: ${solanaAddress} (tx: ${result.txSignature})`);
+      } else {
+        console.info(`[FinancialOrchestrator] Wallet PDA derived: ${solanaAddress}`);
+      }
+    } catch (err) {
+      console.warn(`[FinancialOrchestrator] Solana PDA derivation failed, using fallback address: ${(err as Error).message}`);
     }
 
     return finRepo.createWallet({
