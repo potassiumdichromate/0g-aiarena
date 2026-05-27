@@ -149,6 +149,61 @@ export class Matchmaker {
     }
   }
 
+  /**
+   * Cancel and purge all battles that have been stuck in a non-terminal status
+   * for more than 10 minutes, then clean their Redis queue / match-found keys.
+   */
+  async cleanupStaleBattles(): Promise<void> {
+    const cutoff = new Date(Date.now() - 10 * 60 * 1000); // 10 minutes ago
+
+    let staleBattles: { id: string; agentIds: string[]; gameId: string; mode: string }[] = [];
+    try {
+      staleBattles = await prisma.battle.findMany({
+        where: {
+          status: { in: ['PENDING', 'INITIALIZING', 'IN_PROGRESS'] },
+          createdAt: { lt: cutoff },
+        },
+        select: { id: true, agentIds: true, gameId: true, mode: true },
+      });
+    } catch (err) {
+      console.warn('[Cleanup] Could not query stale battles:', err);
+      return;
+    }
+
+    if (staleBattles.length === 0) return;
+    console.info(`[Cleanup] Cancelling ${staleBattles.length} stale battle(s) older than 10 minutes`);
+
+    for (const battle of staleBattles) {
+      try {
+        // Mark CANCELLED in DB
+        await prisma.battle.update({
+          where: { id: battle.id },
+          data:  { status: 'CANCELLED' },
+        });
+
+        // Remove Redis keys for every agent in the battle
+        for (const agentId of battle.agentIds) {
+          try {
+            await this.redis.del(matchFoundKey(agentId));
+            const entry = await this.redis.getJson<{ gameId: string; mode: string }>(
+              CACHE_KEYS.queueEntry(agentId)
+            );
+            if (entry) {
+              await this.redis.zrem(CACHE_KEYS.matchQueue(entry.gameId, entry.mode), agentId);
+              await this.redis.del(CACHE_KEYS.queueEntry(agentId));
+            }
+          } catch {
+            // best-effort
+          }
+        }
+
+        console.info(`[Cleanup] Cancelled battle ${battle.id}`);
+      } catch (err) {
+        console.warn(`[Cleanup] Failed to cancel battle ${battle.id}:`, err);
+      }
+    }
+  }
+
   async getQueueStatus(agentId: string) {
     // ── Check match-found first (set by directChallenge) ────────────────────
     try {

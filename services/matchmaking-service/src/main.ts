@@ -4,8 +4,26 @@ import helmet from '@fastify/helmet';
 import jwt from '@fastify/jwt';
 import { matchmakingRoutes } from './routes/matchmaking.routes';
 import { startAutonomousLoop } from './services/autonomous-loop';
+import { Matchmaker } from './services/matchmaker';
 
 const PORT = parseInt(process.env.PORT ?? '8020', 10);
+
+/** Run cleanup every 2 minutes — cancels battles stuck > 10 min in non-terminal status. */
+function startCleanupLoop(): void {
+  const mm = new Matchmaker();
+  const INTERVAL_MS = 2 * 60 * 1_000; // 2 minutes
+
+  // Run once at startup to clear anything that survived a restart
+  mm.cleanupStaleBattles().catch((err) =>
+    console.warn('[Cleanup] Startup cleanup error:', err)
+  );
+
+  setInterval(() => {
+    mm.cleanupStaleBattles().catch((err) =>
+      console.warn('[Cleanup] Interval cleanup error:', err)
+    );
+  }, INTERVAL_MS);
+}
 
 async function bootstrap(): Promise<void> {
   const app = Fastify({ logger: true });
@@ -21,6 +39,9 @@ async function bootstrap(): Promise<void> {
 
   // Start the background autonomous agent loop
   startAutonomousLoop();
+
+  // Start the stale-battle cleanup loop (10-minute TTL)
+  startCleanupLoop();
 }
 
 bootstrap().catch(err => { console.error(err); process.exit(1); });
