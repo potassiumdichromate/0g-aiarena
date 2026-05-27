@@ -61,17 +61,81 @@ export class Matchmaker {
 
       if (candidateId === agentId) continue;
       if (Math.abs(candidateElo - elo) <= eloRange) {
-        // Match found! Remove only the two matched agents from the sorted set.
+        // ── Match found ───────────────────────────────────────────────────────
+
+        // 1. Remove both agents from the queue immediately
         await this.redis.zrem(queueKey, agentId, candidateId);
         await this.redis.del(CACHE_KEYS.queueEntry(agentId));
         await this.redis.del(CACHE_KEYS.queueEntry(candidateId));
-        const bus = await getEventBus();
-        await bus.publish(SUBJECTS.MATCH_FOUND, {
-          matchId: `${agentId}-${candidateId}-${Date.now()}`,
-          agentIds: [agentId, candidateId],
-          eloRatings: { [agentId]: elo, [candidateId]: candidateElo },
-          occurredAt: new Date(),
+
+        // 2. Create a real Battle record in the DB (same as directChallenge)
+        //    Status starts as PENDING so both frontends can show the 60-second
+        //    countdown overlay before the game iframe opens.
+        const battle = await prisma.battle.create({
+          data: {
+            gameId,
+            mode:     mode as any,
+            status:   'PENDING',
+            agentIds: [agentId, candidateId],
+            config:   { maxRounds: 10, timeoutMs: 30_000, recordReplay: true },
+          },
         });
+
+        // 3. Write match:found Redis entries for BOTH agents.
+        //    getQueueStatus() reads these keys and returns { inQueue:true, matchId }
+        //    so the frontend ArenaMatchStatusModal enters the "matched" phase and
+        //    navigates to /arena/game/:battleId.
+        const payloadForAgent     = { battleId: battle.id, opponentId: candidateId, gameId, mode };
+        const payloadForCandidate = { battleId: battle.id, opponentId: agentId,     gameId, mode };
+        try {
+          await Promise.all([
+            this.redis.setexJson(matchFoundKey(agentId),    MATCH_FOUND_TTL, payloadForAgent),
+            this.redis.setexJson(matchFoundKey(candidateId), MATCH_FOUND_TTL, payloadForCandidate),
+          ]);
+        } catch (err) {
+          console.warn('[Matchmaker] Could not write match-found Redis entries:', err);
+        }
+
+        // 4. Transition the battle to IN_PROGRESS via direct HTTP.
+        //    This is intentionally called after writing the Redis keys so both
+        //    frontends have time to poll, receive matchId, and navigate to the
+        //    game page before the battle is marked live.
+        try {
+          const res = await fetch(`${BATTLE_URL}/battles/${battle.id}/start`, {
+            method:  'POST',
+            headers: {
+              'Content-Type':  'application/json',
+              'X-Service-Key': process.env.INTERNAL_SERVICE_SECRET ?? '',
+            },
+          });
+          if (res.ok) {
+            console.info(`[Matchmaker] Battle ${battle.id} started via direct HTTP (queue match)`);
+          } else {
+            const text = await res.text().catch(() => '');
+            console.warn(`[Matchmaker] battle-service start returned ${res.status}: ${text}`);
+          }
+        } catch (err) {
+          console.warn('[Matchmaker] Could not start battle via HTTP (will rely on NATS):', (err as Error).message);
+        }
+
+        // 5. Best-effort NATS publish for any downstream subscribers
+        try {
+          const bus = await getEventBus();
+          await bus.publish(SUBJECTS.MATCH_FOUND, {
+            matchId:    battle.id,
+            agentIds:   [agentId, candidateId],
+            eloRatings: { [agentId]: elo, [candidateId]: candidateElo },
+            occurredAt: new Date(),
+          });
+          await bus.publish(SUBJECTS.BATTLE_CREATED, {
+            battleId: battle.id,
+            agentIds: [agentId, candidateId],
+            gameId,
+          });
+        } catch (err) {
+          console.warn('[Matchmaker] NATS unavailable (non-fatal):', err);
+        }
+
         return;
       }
     }
