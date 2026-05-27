@@ -175,7 +175,7 @@ export async function battleRoutes(app: FastifyInstance): Promise<void> {
       newLoserElo,
       resultRootHash,
       zgExplorerUrl:  resultRootHash
-        ? `https://storagescan-newton.0g.ai/tx/${resultRootHash}`
+        ? `${process.env.ZEROG_NETWORK === 'testnet' ? 'https://storagescan-testnet.0g.ai' : 'https://storagescan.0g.ai'}/tx/${resultRootHash}`
         : null,
     });
   });
