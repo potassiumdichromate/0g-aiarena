@@ -238,32 +238,40 @@ Tier 4 — Procedural (0G Storage)
 
 ## Service Inventory
 
-| Service | Port | Responsibility |
-|---------|------|----------------|
-| api-gateway | 8000 | JWT auth, rate limiting, routing |
-| identity-service | 8001 | SIWE authentication, JWT issuance |
-| agent-service | 8002 | Agent CRUD + 0G avatar/metadata upload |
-| financial-service | 8003 | Wallets, ledger, spending policies |
-| game-service | 8004 | Game registry, intelligence layer config |
-| telemetry-service | 8010 | Real-time event ingestion → ClickHouse |
-| behaviour-service | 8011 | Trait analysis, archetype classification |
-| training-service | 8012 | Job queue + dataset upload to 0G Storage |
-| inference-service | 8013 | 0G Compute Router — combat action inference |
-| memory-service | 8014 | 4-tier memory + 0G Storage snapshots |
-| embedding-service | 8015 | BGE-M3 embedding generation → Qdrant |
-| matchmaking-service | 8020 | ELO-based queue matching |
-| battle-service | 8021 | Battle lifecycle + 0G result archival |
-| replay-service | 8022 | Replay upload/download/verify via 0G Storage |
-| tournament-service | 8023 | Tournament brackets, prize distribution |
-| anticheat-service | 8024 | Deterministic replay verification |
-| wallet-service | 8030 | Solana agent wallet management |
-| escrow-service | 8031 | Solana battle escrow lifecycle |
-| inft-service | 8032 | ERC-7857 INFT — mint, evolve, anchor hashes |
-| payment-service | 8033 | x402 payments, deposits, withdrawals |
-| analytics-service | 8040 | ClickHouse queries, meta-game analysis |
-| leaderboard-service | 8041 | Redis sorted-set leaderboards |
-| storage-service | 8042 | 0G Storage API (path→rootHash abstraction) |
-| notification-service | 8043 | Push, WebSocket, email notifications |
+### Deployed Services (Render production)
+
+| Service | Responsibility |
+|---------|----------------|
+| api-gateway | JWT auth, rate limiting (500 req/min default), x402 middleware, routing |
+| identity-service | Privy auth, JWT issuance, user profiles |
+| agent-service | Agent CRUD, 0G avatar/metadata upload, training job management |
+| financial-service | Wallets, ledger, spending policies, escrow, x402 payment processing |
+| battle-service | Battle lifecycle, ELO computation, 0G result archival |
+| matchmaking-service | ELO-based queue matching, autonomous battle loop, stale battle cleanup |
+| token-service | $ARENA token, bridge deposits, reserve management |
+| leaderboard-service | Redis sorted-set leaderboards |
+| inft-service | ERC-7857 INFT — mint, evolve, anchor memory/model hashes |
+| inference-service | 0G Compute Router — combat action inference, strategy planning |
+| memory-service | 4-tier memory: Redis + PostgreSQL + Qdrant + 0G Storage snapshots |
+
+### Additional Services (in monorepo, deployable independently)
+
+| Service | Responsibility |
+|---------|----------------|
+| telemetry-service | Real-time event ingestion → ClickHouse |
+| behaviour-service | Trait analysis, archetype classification |
+| training-service | Training job queue + 0G Compute dispatch (routes proxied via agent-service) |
+| embedding-service | BGE-M3 embedding generation → Qdrant |
+| replay-service | Replay upload/download/verify via 0G Storage |
+| tournament-service | Tournament brackets, prize distribution |
+| anticheat-service | Deterministic replay verification |
+| wallet-service | Solana agent wallet management |
+| escrow-service | Solana battle escrow lifecycle |
+| payment-service | x402 payments, cross-chain routing |
+| analytics-service | ClickHouse queries, meta-game analysis |
+| storage-service | 0G Storage API (path→rootHash abstraction) |
+| notification-service | Push, WebSocket, email notifications |
+| game-service | Game registry, intelligence layer config |
 
 ---
 
@@ -345,9 +353,8 @@ Every service exports:
 Edge (Cloudflare / nginx)
   └─ connection-rate limit per IP
        └─ API Gateway (@fastify/rate-limit, Redis-backed)
-            ├─ Global:   200 req / 60s  per wallet address or IP
+            ├─ Global:   500 req / 60s  per wallet address or IP  (env: RATE_LIMIT_MAX)
             └─ /v1/auth: 10  req / 60s  per IP  (brute-force protection)
-                  └─ Per-service: 100 req / 60s  (independent service limits)
 ```
 
 Rate limit state is stored in **Redis** — all gateway instances share the same counters,
@@ -358,7 +365,7 @@ so limits are enforced correctly in horizontally-scaled deployments.
   or nginx `limit_conn` + `limit_req` modules before traffic reaches the gateway.
 - **Body size cap**: `bodyLimit: 1 MB` on the API gateway — oversized requests are
   rejected before reaching service logic (memory-exhaustion protection).
-- **Timeouts**: `connectionTimeout: 30s`, `requestTimeout: 30s` — drops slow-loris connections.
+- **Timeouts**: `connectionTimeout: 60s`, `requestTimeout: 60s` — drops slow-loris connections.
 - **Helmet**: security headers on every response (X-Frame-Options, HSTS in production, etc.).
 
 ### Auth

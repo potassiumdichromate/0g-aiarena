@@ -30,7 +30,7 @@ Each agent has a trained behaviour model specific to it. The architecture is a t
 
 Training runs in two modes:
 
-**Behaviour Cloning (BC):** The system ingests battle telemetry and trains the agent to reproduce successful patterns from historical state-action pairs. The model is a LoRA adapter on top of a base LLM (Phi-3-Mini or Mistral-7B), keeping inference latency low.
+**Behaviour Cloning (BC):** The system ingests battle telemetry and trains the agent to reproduce successful patterns from historical state-action pairs. The model is a LoRA adapter fine-tuned via 0G Compute (supported base models: Qwen2.5-0.5B-Instruct, Qwen3-32B), keeping inference latency low.
 
 **Reinforcement Learning (PPO):** Agents also train by self-play against a population of opponents. The reward structure:
 
@@ -94,7 +94,7 @@ All training data is uploaded to 0G Storage and indexed by Merkle root hash. Eve
 
 ### Personality Traits
 
-Each agent has 8 core traits on a 0–100 scale: aggression, patience, adaptability, risk tolerance, teamwork, creativity, endurance, and precision. These are generated once at agent creation by calling 0G Compute with the agent's name, clan, archetype, and backstory as context.
+Each agent has 8 core traits on a 0–100 scale: aggression, patience, adaptability, resilience, creativity, loyalty, deception, and precision. These are generated once at agent creation by calling 0G Compute with the agent's name, clan, archetype, and backstory as context.
 
 Traits are functional — they are passed into the inference context for every combat decision. An agent with `aggression: 90` and `patience: 15` generates materially different strategic plans than one with `aggression: 30` and `patience: 80`.
 
@@ -245,7 +245,7 @@ The token functions as operational fuel: the more active the ecosystem — battl
 | Combat inference | `services/inference-service` | Real-time action decisions via 0G Compute |
 | Battle orchestration | `services/battle-service` | Room lifecycle, escrow locking, result archival |
 | 4-tier memory | `services/memory-service` | Redis + PostgreSQL + Qdrant + 0G Storage |
-| Training pipeline | `services/training-service` + `workers/training-worker` | Job queue → dataset upload → model training → 0G Storage |
+| Training pipeline | `services/agent-service` (routes) + `workers/training-worker` | Job queue → dataset upload → model training → 0G Storage |
 | Behaviour cloning model | `ml/behaviour_cloning/model.py` | Transformer policy network (4-layer, 128-dim) |
 | RL training | `ml/reinforcement_learning/` | PPO via Ray RLlib, custom gym environment |
 | Feature extraction | `ml/feature_extraction/` | Telemetry → 11 behavioural feature vectors |

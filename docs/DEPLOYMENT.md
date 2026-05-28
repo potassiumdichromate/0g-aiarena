@@ -16,7 +16,7 @@ Start all infrastructure services:
 docker-compose up -d
 ```
 
-This starts: PostgreSQL 16, ClickHouse 24, Redis 7, NATS 2.10, Qdrant 1.8.
+This starts: PostgreSQL 16, ClickHouse 24, Redis 7, NATS 2.10 (JetStream), Qdrant 1.8, Prometheus, Grafana, Jaeger, token-service, and bridge-listener.
 
 > **Redis is optional for the API gateway.** If Redis is unreachable, the gateway falls back to in-memory rate limiting and logs a warning. All other functionality is unaffected.
 
@@ -200,7 +200,7 @@ kubectl run --rm -it db-migrate \
 
 ## Health Checks
 
-All services expose `GET /health` returning `{ status: "ok", uptime: <seconds> }`.
+All services expose `GET /health`. The API gateway returns `{ status: "ok", service: "api-gateway", ts: <epoch_ms>, redis: <bool> }`. Individual services return `{ status: "ok" }`.
 
 Check service health:
 ```bash

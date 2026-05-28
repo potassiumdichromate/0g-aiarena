@@ -43,7 +43,7 @@ The platform is designed as a B2B SDK — game developers integrate the Unity SD
 | API Gateway | Fastify 4 + `@fastify/http-proxy` (Redis-optional rate limiting) |
 | Microservices | Node.js 20 + Fastify 4 + TypeScript 5 |
 | ML Workers | Python 3.11 + PyTorch 2 + Ray + PEFT/TRL |
-| Databases | PostgreSQL 16, TimescaleDB, ClickHouse 24 |
+| Databases | PostgreSQL 16, ClickHouse 24 |
 | Cache | Redis 7 (optional for local dev — gateway falls back to in-memory) |
 | Message Bus | NATS 2.10 JetStream |
 | Vector DB | Qdrant v1.8 |
@@ -289,54 +289,40 @@ NEXT_PUBLIC_AGENT_REGISTRY_ADDRESS=0x0891Df42835c87F7A9309Ce021941D17Bf684d86
 
 ## Service Descriptions
 
-### Core Platform Services
+### Deployed Services (production — Render)
 
-| Service | Port | Responsibility |
-|---|---|---|
-| api-gateway | 8000 | Central proxy, rate limiting (Redis-optional), CORS |
-| identity-service | 8001 | Privy auth, JWT issuance, user profiles, dev-login endpoint |
-| agent-service | 8002 | Agent lifecycle, 0G generation (with timeouts), evolution |
-| financial-service | 8003 | Wallets, spending policies, ledger |
-| game-service | 8004 | Game registry, intelligence layer config |
+| Service | Responsibility |
+|---|---|
+| api-gateway | Central proxy, JWT auth, rate limiting, CORS, x402 middleware |
+| identity-service | Privy auth, JWT issuance, user profiles |
+| agent-service | Agent lifecycle, 0G generation, training job management, evolution |
+| battle-service | Battle room orchestration, ELO computation, 0G result archival |
+| matchmaking-service | ELO-based queue matching, autonomous battle loop |
+| financial-service | Wallets, escrow, x402 payments, ledger |
+| token-service | $ARENA token, bridge deposits, reserve |
+| leaderboard-service | Redis sorted-set leaderboards |
+| inft-service | ERC-7857 INFT mint, trait anchoring, memory/model root updates |
+| inference-service | 0G Compute Router — combat action inference, strategy planning |
+| memory-service | 4-tier memory system — working, episodic, semantic, procedural |
 
-### AI Pipeline Services
+### Additional Services (deployable, included in monorepo)
 
-| Service | Port | Responsibility |
-|---|---|---|
-| telemetry-service | 8010 | Real-time event ingestion, WebSocket streaming |
-| behaviour-service | 8011 | Feature extraction, trait classification |
-| training-service | 8012 | Job queue, 0G Compute dispatch |
-| inference-service | 8013 | Combat action inference, caching |
-| memory-service | 8014 | Working/episodic/semantic memory + RAG |
-| embedding-service | 8015 | BGE-M3 embedding proxy |
-
-### Game Services
-
-| Service | Port | Responsibility |
-|---|---|---|
-| matchmaking-service | 8020 | ELO window matching, queue management |
-| battle-service | 8021 | Battle room orchestration, state broadcasting |
-| replay-service | 8022 | Deterministic replay storage + verification |
-| tournament-service | 8023 | Tournament brackets, prize distribution |
-| anticheat-service | 8024 | Action validation, anomaly detection |
-
-### Financial Services
-
-| Service | Port | Responsibility |
-|---|---|---|
-| wallet-service | 8030 | Solana PDA wallet management |
-| escrow-service | 8031 | Battle escrow lifecycle |
-| inft-service | 8032 | INFT minting, metadata, evolution |
-| payment-service | 8033 | x402 payments, cross-chain routing |
-
-### Analytics & Infrastructure
-
-| Service | Port | Responsibility |
-|---|---|---|
-| analytics-service | 8040 | ClickHouse queries, meta-game analysis |
-| leaderboard-service | 8041 | Redis sorted set leaderboards |
-| storage-service | 8042 | 0G Storage file management API |
-| notification-service | 8043 | Push, WebSocket, email notifications |
+| Service | Responsibility |
+|---|---|
+| telemetry-service | Real-time event ingestion |
+| behaviour-service | Feature extraction, trait classification |
+| training-service | Training job orchestration (routes proxied via agent-service in current deploy) |
+| embedding-service | BGE-M3 embedding proxy |
+| replay-service | Deterministic replay storage and verification |
+| tournament-service | Tournament brackets, prize distribution |
+| anticheat-service | Action validation, anomaly detection |
+| analytics-service | ClickHouse queries, meta-game analysis |
+| storage-service | 0G Storage file management API |
+| notification-service | Push, WebSocket, email notifications |
+| wallet-service | Solana PDA wallet management |
+| escrow-service | Solana escrow lifecycle (currently handled by financial-service) |
+| payment-service | Cross-chain payment routing |
+| game-service | Game registry, intelligence layer config |
 
 ---
 
