@@ -41,6 +41,34 @@ export async function escrowRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * POST /escrow/x402/pay
+   * Initiate an x402 payment from the agent's custodial ARENA wallet.
+   *
+   * Called by the frontend x402 interceptor when it receives a 402 response.
+   * Deducts the ARENA amount up-front from the agent's on-platform balance
+   * and returns a synthetic txHash that the client sends back as the payment proof.
+   *
+   * Body: { agentId, amount, purpose }
+   * Response: { ok, txHash, agentId }
+   */
+  app.post('/x402/pay', async (req, reply) => {
+    const { agentId, amount, purpose } = req.body as {
+      agentId: string;
+      amount:  number;
+      purpose: string;
+    };
+    if (!agentId || !amount || !purpose) {
+      return reply.status(400).send({ ok: false, error: 'agentId, amount, and purpose are required' });
+    }
+    try {
+      const result = await escrow.initiateX402Payment(agentId, amount, purpose);
+      return reply.status(200).send({ ok: true, txHash: result.txHash, agentId });
+    } catch (err: any) {
+      return reply.status(400).send({ ok: false, error: err.message });
+    }
+  });
+
+  /**
    * POST /escrow/x402/verify
    * Verify an x402 payment proof.
    * Called by the API Gateway x402 middleware.

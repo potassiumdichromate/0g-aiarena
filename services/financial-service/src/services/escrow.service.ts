@@ -166,14 +166,59 @@ export class EscrowService {
     return { winnerId, winnerPayout, commission };
   }
 
+  // ── x402 Auto-Pay (custodial wallet) ─────────────────────────────────────
+
+  /**
+   * Initiate an x402 payment from the agent's custodial ARENA wallet.
+   *
+   * Called by the frontend x402 interceptor when it receives a 402.
+   * Deducts the amount up-front and returns a synthetic txHash the client
+   * can immediately use to retry the original request.
+   *
+   * The gateway's verifyX402Payment will recognise this as a pre-paid entry
+   * and let the request through without double-charging.
+   */
+  async initiateX402Payment(
+    agentId: string,
+    amount:  number,
+    purpose: string,
+  ): Promise<{ txHash: string }> {
+    const wallet = await finRepo.getWallet(agentId);
+    if (!wallet)        throw new Error('Wallet not found');
+    if (wallet.isFrozen) throw new Error('Wallet is frozen');
+    if (wallet.balanceArena < amount) {
+      throw new Error(`Insufficient ARENA balance (need ${amount}, have ${wallet.balanceArena})`);
+    }
+
+    // Deduct balance up-front
+    await finRepo.updateBalance(agentId, -amount, 0);
+
+    // Synthetic internal txHash — unique and traceable
+    const txHash = `x402_internal_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+    await finRepo.createLedgerEntry({
+      wallet:   { connect: { id: wallet.id } },
+      type:     'BATTLE_WAGER',
+      amount,
+      currency: 'ARENA',
+      status:   'CONFIRMED',
+      txHash,
+      metadata: { x402_prepaid: true, x402_used: false, purpose } as any,
+    });
+
+    console.log(`[EscrowService] x402 pre-paid: agent ${agentId}, ${amount} ARENA, purpose=${purpose}, tx=${txHash}`);
+    return { txHash };
+  }
+
   // ── x402 Payment Verification ──────────────────────────────────────────────
 
   /**
    * Verify an x402 payment proof submitted via X-Payment-Tx-Hash header.
-   * Checks:
-   *   1. txHash exists in ledger and is CONFIRMED
-   *   2. Amount matches expected
-   *   3. Not already used (idempotency)
+   *
+   * Handles two flows:
+   *   A. Pre-paid (initiateX402Payment)  — finds the ledger entry by txHash,
+   *      checks it hasn't been consumed yet.
+   *   B. Manual Solana transfer          — checks the agent has sufficient balance.
    */
   async verifyX402Payment(
     txHash:         string,
@@ -183,7 +228,25 @@ export class EscrowService {
     const wallet = await finRepo.getWallet(agentId);
     if (!wallet) return { valid: false, reason: 'Wallet not found' };
 
-    // Check if this txHash was already used for x402
+    // ── Flow A: pre-paid internal payment ─────────────────────────────────────
+    const prePaid = await prisma.ledgerEntry.findFirst({
+      where: {
+        walletId: wallet.id,
+        txHash,
+        metadata: { path: ['x402_prepaid'], equals: true },
+      },
+    });
+
+    if (prePaid) {
+      const meta = prePaid.metadata as Record<string, unknown>;
+      if (meta.x402_used) return { valid: false, reason: 'Payment already used' };
+      if ((prePaid.amount as number) < expectedAmount) {
+        return { valid: false, reason: `Pre-paid amount ${prePaid.amount} < required ${expectedAmount}` };
+      }
+      return { valid: true };
+    }
+
+    // ── Flow B: external Solana tx — guard against replay ─────────────────────
     const existing = await prisma.ledgerEntry.findFirst({
       where: {
         walletId: wallet.id,
@@ -193,7 +256,6 @@ export class EscrowService {
     });
     if (existing) return { valid: false, reason: 'Payment already used' };
 
-    // Verify the agent has enough balance (optimistic: just check balance)
     if (wallet.balanceArena < expectedAmount) {
       return { valid: false, reason: `Insufficient balance (need ${expectedAmount}, have ${wallet.balanceArena})` };
     }
@@ -204,7 +266,9 @@ export class EscrowService {
   // ── Charge x402 ───────────────────────────────────────────────────────────
 
   /**
-   * Deduct x402 payment from agent wallet after verification.
+   * Finalise an x402 payment after verification:
+   *   - Pre-paid entries: mark as consumed (balance already deducted).
+   *   - External Solana txs: deduct balance and record.
    */
   async chargeX402(
     txHash:   string,
@@ -215,6 +279,24 @@ export class EscrowService {
     const wallet = await finRepo.getWallet(agentId);
     if (!wallet) throw new Error('Wallet not found');
 
+    // Mark pre-paid entry as consumed
+    const prePaid = await prisma.ledgerEntry.findFirst({
+      where: {
+        walletId: wallet.id,
+        txHash,
+        metadata: { path: ['x402_prepaid'], equals: true },
+      },
+    });
+
+    if (prePaid) {
+      await prisma.ledgerEntry.update({
+        where: { id: prePaid.id },
+        data:  { metadata: { ...(prePaid.metadata as object), x402_used: true } },
+      });
+      return;
+    }
+
+    // External Solana flow: deduct + record
     await finRepo.updateBalance(agentId, -amount, 0);
     await finRepo.createLedgerEntry({
       wallet:   { connect: { id: wallet.id } },

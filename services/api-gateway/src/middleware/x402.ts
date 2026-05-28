@@ -47,7 +47,12 @@ const X402_ROUTES: Array<{
     amount: 2,
     when: (req) => {
       // Bypass payment for automated post-battle training triggered by the game client.
+      // We check the header (always parsed before preHandler in a proxy) rather than
+      // the body (which may be null when using @fastify/http-proxy).
       // Manual training from the Training page still requires 2 $ARENA.
+      const source = req.headers['x-training-source'] as string | undefined;
+      if (source === 'arena-battle') return false; // bypass
+      // Fallback: also check body.config.source for direct (non-proxy) callers
       const body   = req.body as Record<string, unknown> | undefined;
       const config = body?.config as Record<string, unknown> | undefined;
       return config?.source !== 'arena-battle';
