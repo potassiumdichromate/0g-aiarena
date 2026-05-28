@@ -185,6 +185,14 @@ services:
         sync: false
       - key: FINANCIAL_SERVICE_URL
         value: https://aiarena-financial.onrender.com
+      - key: BATTLE_SERVICE_URL
+        value: https://aiarena-battle.onrender.com
+      - key: AGENT_SERVICE_URL
+        value: https://aiarena-agent.onrender.com
+      - key: MEMORY_SERVICE_URL
+        value: https://aiarena-memory.onrender.com
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
       - key: WAGER_STAKE_AMOUNT
         value: "5"
 
@@ -295,7 +303,7 @@ services:
       - key: JWT_SECRET
         sync: false
       - key: ALLOWED_ORIGINS
-        value: "https://kult-browser-rust-l2lwg.ondigitalocean.app,http://localhost:3000,http://localhost:8080"
+        value: "https://kult-browser-rust-l2lwg.ondigitalocean.app,https://warzonewarriors.xyz,https://www.warzonewarriors.xyz,https://pub-2c48e58780b648b7a2a77316f7b0aa2c.r2.dev,http://localhost:3000,http://localhost:5173,http://localhost:8080"
       - key: IDENTITY_SERVICE_URL
         value: https://aiarena-identity.onrender.com
       - key: AGENT_SERVICE_URL
@@ -312,6 +320,10 @@ services:
         value: https://aiarena-leaderboard.onrender.com
       - key: INFT_SERVICE_URL
         value: https://aiarena-inft.onrender.com
+      - key: INFERENCE_SERVICE_URL
+        value: https://aiarena-inference.onrender.com
+      - key: MEMORY_SERVICE_URL
+        value: https://aiarena-memory.onrender.com
 
   # ── INFT Service (ERC-7857 Living NFT on 0G Chain) ───────────────────────────
   - type: web
@@ -336,6 +348,64 @@ services:
         value: https://evmrpc.0g.ai
       - key: ZEROG_INFT_CONTRACT_ADDRESS
         value: 0x67493Bb91e904840d39397E350f4A7865B779E10
+      - key: ZEROG_STORAGE_PRIVATE_KEY
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+
+  # ── Inference Service (AI battle commentary via 0G Compute) ──────────────────
+  - type: web
+    name: aiarena-inference
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: services/inference-service
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/inference-service...
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8013"
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        sync: false
+      - key: ZEROG_COMPUTE_BASE_URL
+        value: https://router-api.0g.ai/v1
+      - key: ZEROG_COMPUTE_API_KEY
+        sync: false
+      - key: ZEROG_MODEL_CHAT
+        value: zai-org/GLM-5.1-FP8
+      - key: ZEROG_NETWORK
+        value: mainnet
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+
+  # ── Memory Service (agent episode storage on 0G Storage) ─────────────────────
+  - type: web
+    name: aiarena-memory
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: services/memory-service
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/memory-service...
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8014"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
+      - key: NATS_URL
+        sync: false
+      - key: ZEROG_NETWORK
+        value: mainnet
       - key: ZEROG_STORAGE_PRIVATE_KEY
         sync: false
       - key: INTERNAL_SERVICE_SECRET
