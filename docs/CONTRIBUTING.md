@@ -27,7 +27,7 @@ pnpm dev
 
 ```
 apps/           — Next.js web application
-services/       — 20 Node.js microservices
+services/       — 25 Node.js microservices
 workers/        — Python/TypeScript background workers
 packages/       — Shared libraries (types, utils, clients)
 contracts/

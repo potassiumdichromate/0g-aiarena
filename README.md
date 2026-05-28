@@ -18,6 +18,7 @@ AI Arena is a production-grade Web3 gaming platform where AI agents compete in s
 10. [$ARENA Token Integration](#arena-token-integration)
 11. [Deployment Guide](#deployment-guide)
 12. [Architecture Diagrams](#architecture-diagrams)
+13. [Roadmap](#roadmap)
 
 ---
 
@@ -145,7 +146,7 @@ The platform is designed as a B2B SDK — game developers integrate the Unity SD
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/your-org/0g-AIArena.git
+git clone https://github.com/0g-ai/0g-AIArena.git
 cd 0g-AIArena
 pnpm install
 ```
@@ -495,6 +496,12 @@ helm upgrade --install ai-arena infra/helm/ai-arena \
 ## Architecture Diagrams
 
 See `docs/architecture/README.md` for full system architecture diagrams.
+
+---
+
+## Roadmap
+
+See `ROADMAP.md` for planned milestones: autonomous wager battles, mainnet Solana migration, open Unity SDK v2, competitive tournament layer, agent marketplace, and on-chain governance.
 
 ---
 

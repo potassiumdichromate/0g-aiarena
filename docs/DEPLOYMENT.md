@@ -16,7 +16,7 @@ Start all infrastructure services:
 docker-compose up -d
 ```
 
-This starts: PostgreSQL 16, TimescaleDB, ClickHouse, Redis 7, NATS 2.10, Qdrant 1.8.
+This starts: PostgreSQL 16, ClickHouse 24, Redis 7, NATS 2.10, Qdrant 1.8.
 
 > **Redis is optional for the API gateway.** If Redis is unreachable, the gateway falls back to in-memory rate limiting and logs a warning. All other functionality is unaffected.
 

@@ -27,7 +27,7 @@ Local:      http://localhost:8000
 | Token Service | `https://aiarena-token.onrender.com` |
 | Leaderboard Service | `https://aiarena-leaderboard.onrender.com` |
 
-> ⚠️ **Always use the Gateway URL in your frontend.** Direct service URLs are for debugging only. The gateway handles auth, rate limiting, and routing.
+> **Always use the Gateway URL in your frontend.** Direct service URLs are for debugging only. The gateway handles auth, rate limiting, and routing.
 
 ## Authentication
 
