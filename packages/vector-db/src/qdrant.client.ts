@@ -1,4 +1,17 @@
-import { QdrantClient } from '@qdrant/js-client-rest';
+/**
+ * QdrantWrapper — lazy ESM-compatible shim around @qdrant/js-client-rest.
+ *
+ * @qdrant/js-client-rest v1+ is ESM-only.  This package compiles to CommonJS,
+ * so a static `import { QdrantClient }` would be compiled to `require()` which
+ * Node refuses to use on an ESM package (TS1479).
+ *
+ * Solution: keep only `import type` (erased at compile-time, no require() call)
+ * and use a dynamic `await import(...)` inside an async helper so the real
+ * import happens at runtime via the ESM loader.
+ */
+
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports
+import type { QdrantClient as QdrantClientType } from '@qdrant/js-client-rest';
 import { COLLECTION_CONFIGS, CollectionName } from './collections';
 
 export interface VectorPoint {
@@ -14,26 +27,42 @@ export interface ScoredPoint {
 }
 
 export class QdrantWrapper {
-  private readonly client: QdrantClient;
+  private _client: QdrantClientType | null = null;
+  private readonly url: string;
+  private readonly apiKey: string | undefined;
 
   constructor(
-    url = process.env.QDRANT_URL ?? 'http://localhost:6333',
+    url    = process.env.QDRANT_URL    ?? 'http://localhost:6333',
     apiKey = process.env.QDRANT_API_KEY
   ) {
-    this.client = new QdrantClient({ url, apiKey, checkCompatibility: false });
+    this.url    = url;
+    this.apiKey = apiKey;
+  }
+
+  /** Lazy ESM dynamic import — only runs once per instance. */
+  private async client(): Promise<QdrantClientType> {
+    if (!this._client) {
+      // dynamic import() works in CJS modules even for ESM-only packages.
+      const { QdrantClient } = await import('@qdrant/js-client-rest');
+      this._client = new QdrantClient({
+        url:                this.url,
+        apiKey:             this.apiKey,
+        checkCompatibility: false,
+      });
+    }
+    return this._client;
   }
 
   async createCollection(name: CollectionName): Promise<void> {
     const config = COLLECTION_CONFIGS[name];
+    const c = await this.client();
     try {
-      await this.client.createCollection(name, {
+      await c.createCollection(name, {
         vectors: {
-          size: config.vectorSize,
+          size:     config.vectorSize,
           distance: config.distance,
         } as any,
-        optimizers_config: {
-          default_segment_number: 2,
-        },
+        optimizers_config: { default_segment_number: 2 },
         replication_factor: 1,
       });
     } catch (err: any) {
@@ -43,26 +72,18 @@ export class QdrantWrapper {
   }
 
   async upsertVector(collection: string, point: VectorPoint): Promise<void> {
-    await this.client.upsert(collection, {
-      wait: true,
-      points: [
-        {
-          id: point.id,
-          vector: point.vector,
-          payload: point.payload,
-        },
-      ],
+    const c = await this.client();
+    await c.upsert(collection, {
+      wait:   true,
+      points: [{ id: point.id, vector: point.vector, payload: point.payload }],
     });
   }
 
   async upsertVectors(collection: string, points: VectorPoint[]): Promise<void> {
-    await this.client.upsert(collection, {
-      wait: true,
-      points: points.map(p => ({
-        id: p.id,
-        vector: p.vector,
-        payload: p.payload,
-      })),
+    const c = await this.client();
+    await c.upsert(collection, {
+      wait:   true,
+      points: points.map(p => ({ id: p.id, vector: p.vector, payload: p.payload })),
     });
   }
 
@@ -72,46 +93,43 @@ export class QdrantWrapper {
     filter?: Record<string, unknown>,
     limit = 10
   ): Promise<ScoredPoint[]> {
-    const results = await this.client.search(collection, {
+    const c = await this.client();
+    const results = await c.search(collection, {
       vector,
       limit,
-      filter: filter as any,
+      filter:       filter as any,
       with_payload: true,
     });
-
     return results.map(r => ({
-      id: r.id,
-      score: r.score,
+      id:      r.id,
+      score:   r.score,
       payload: r.payload as Record<string, unknown>,
     }));
   }
 
   async delete(collection: string, filter: Record<string, unknown>): Promise<void> {
-    await this.client.delete(collection, {
-      wait: true,
-      filter: filter as any,
-    });
+    const c = await this.client();
+    await c.delete(collection, { wait: true, filter: filter as any });
   }
 
   async deleteById(collection: string, ids: (string | number)[]): Promise<void> {
-    await this.client.delete(collection, {
-      wait: true,
-      points: ids,
-    });
+    const c = await this.client();
+    await c.delete(collection, { wait: true, points: ids });
   }
 
   async getPoint(collection: string, id: string | number): Promise<VectorPoint | null> {
+    const c = await this.client();
     try {
-      const result = await this.client.retrieve(collection, {
-        ids: [id],
+      const result = await c.retrieve(collection, {
+        ids:         [id],
         with_payload: true,
-        with_vector: true,
+        with_vector:  true,
       });
       if (!result.length) return null;
       const point = result[0];
       return {
-        id: point.id,
-        vector: point.vector as number[],
+        id:      point.id,
+        vector:  point.vector as number[],
         payload: point.payload as Record<string, unknown>,
       };
     } catch {
