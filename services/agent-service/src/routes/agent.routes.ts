@@ -174,4 +174,46 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
     const clone = await agentService.cloneAgent(id, userId);
     return reply.status(201).send({ agent: clone });
   });
+
+  /**
+   * POST /v1/agents/:id/evolve-traits
+   *
+   * Update this agent's traits based on their actual battle performance.
+   * Called by the React client immediately after POST /v1/battles/:id/end.
+   * Accepts the raw playerStats Unity recorded during the match.
+   *
+   * No JWT guard — the React client calls this right after endBattle.
+   * (Add jwtMiddleware if you want server-side ownership enforcement.)
+   */
+  app.post('/:id/evolve-traits', { onRequest: [optionalJwt(app)] as any }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = req.body as {
+      outcome:         'WIN' | 'LOSS';
+      jumps:           number;
+      shotsAttempted:  number;
+      shotsConnected:  number;
+      timesHit:        number;
+      distanceCovered: number;
+      durationSeconds: number;
+    };
+
+    if (!body?.outcome || !['WIN', 'LOSS'].includes(body.outcome)) {
+      return reply.status(400).send({ error: 'outcome must be WIN or LOSS' });
+    }
+
+    try {
+      const result = await agentService.evolveTraits(id, {
+        outcome:         body.outcome,
+        jumps:           Number(body.jumps ?? 0),
+        shotsAttempted:  Number(body.shotsAttempted ?? 0),
+        shotsConnected:  Number(body.shotsConnected ?? 0),
+        timesHit:        Number(body.timesHit ?? 0),
+        distanceCovered: Number(body.distanceCovered ?? 0),
+        durationSeconds: Number(body.durationSeconds ?? 0),
+      });
+      return reply.status(200).send(result);
+    } catch (err: any) {
+      return reply.status(404).send({ error: err.message });
+    }
+  });
 }

@@ -163,6 +163,80 @@ export class InferenceGateway {
   }
 
   /**
+   * Generate a battle commentary paragraph using 0G Compute.
+   *
+   * Sends a rich prompt with all battle stats to the 0G Compute Router
+   * (OpenAI-compatible, model: configurable via ZEROG_COMMENTARY_MODEL).
+   * Returns a single dramatic paragraph suitable for storing as an agent memory.
+   */
+  async generateBattleCommentary(params: {
+    battleId:        string;
+    winnerName:      string;
+    winnerArchetype: string;
+    winnerClan:      string;
+    winnerElo:       number;
+    winnerHpPercent: number;
+    loserName:       string;
+    loserArchetype:  string;
+    loserClan:       string;
+    loserElo:        number;
+    loserHpPercent:  number;
+    durationSeconds: number;
+    endReason:       string;
+    playerStats?:    Record<string, {
+      jumps: number;
+      shotsAttempted: number;
+      shotsConnected: number;
+      timesHit:       number;
+      distanceCovered: number;
+    }>;
+  }): Promise<{ commentary: string; teeVerified?: boolean | null }> {
+    const model = process.env.ZEROG_COMMENTARY_MODEL ?? 'zai-org/GLM-4-9B';
+
+    const winnerStats = params.playerStats?.[params.winnerName]
+      ?? Object.values(params.playerStats ?? {})[0];
+    const loserStats  = params.playerStats?.[params.loserName]
+      ?? Object.values(params.playerStats ?? {})[1];
+
+    const statsLine = (name: string, s?: typeof winnerStats) =>
+      s ? `${name}: ${s.jumps} jumps · ${s.shotsConnected} shots connected · took ${s.timesHit} hits · ${s.distanceCovered}m covered`
+        : `${name}: stats unavailable`;
+
+    const prompt = `You are an electrifying AI Arena battle commentator for WarzoneWarrior — a futuristic AI combat league running on the 0G decentralised network.
+
+Write exactly ONE paragraph (2-3 sentences) of vivid, punchy post-match commentary for this battle. Be dramatic. Reference the fighters' archetypes and clans. Mention key stats. Allude to what this means for their on-chain legacy and ELO standing.
+
+BATTLE SUMMARY
+Battle ID : ${params.battleId}
+Winner    : ${params.winnerName} (${params.winnerArchetype} · ${params.winnerClan} clan · ${params.winnerElo} ELO) — ${params.winnerHpPercent}% HP remaining
+Loser     : ${params.loserName} (${params.loserArchetype} · ${params.loserClan} clan · ${params.loserElo} ELO) — ${params.loserHpPercent}% HP remaining
+Duration  : ${params.durationSeconds}s · ended by ${params.endReason === 'death' ? 'KO' : 'timeout'}
+${statsLine(params.winnerName, winnerStats)}
+${statsLine(params.loserName, loserStats)}
+
+Write the commentary paragraph now:`;
+
+    try {
+      const response = await (this.compute as any).openai.chat.completions.create({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 200,
+        temperature: 0.85,
+      });
+
+      const commentary = (response.choices?.[0]?.message?.content ?? '').trim();
+      const teeVerified = (response as any).x_0g_trace?.tee_verified ?? null;
+
+      return { commentary: commentary || 'An epic battle concluded in the WarzoneWarrior arena.', teeVerified };
+    } catch (err) {
+      console.error('[InferenceGateway] Battle commentary generation failed:', err);
+      return {
+        commentary: `${params.winnerName} (${params.winnerArchetype}) defeated ${params.loserName} (${params.loserArchetype}) in a ${params.durationSeconds}s clash, cementing their dominance in the WarzoneWarrior AI Arena.`,
+      };
+    }
+  }
+
+  /**
    * Check 0G Compute account balance (neuron units).
    * 1e18 neuron = 1 0G token. Alert if below threshold.
    */

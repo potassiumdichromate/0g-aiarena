@@ -418,4 +418,87 @@ export class AgentService {
       eligibleForEvolution: agent.wins >= 10 && agent.eloRating >= 1200,
     };
   }
+
+  /**
+   * Evolve agent traits based on actual battle performance.
+   *
+   * Called by the React client immediately after POST /v1/battles/:id/end.
+   * Stats come from Unity's per-frame tracking (ArenaBattleReporter.cs).
+   *
+   * Trait delta rules (capped at ±5 per battle, all traits clamped 0-100):
+   *   aggression   ← shots attempted rate  (high shots = +aggression)
+   *   precision    ← shot accuracy          (high hit% = +precision)
+   *   resilience   ← survived hits as winner / took no hits as winner
+   *   creativity   ← jumps count            (mobile fighter)
+   *   adaptability ← every completed battle gives a small bump
+   *   patience     ← long match             (survived full duration)
+   *   deception    ← winner who took 0 hits  (untouchable)
+   *   loyalty      ← small constant: stayed in the fight
+   */
+  async evolveTraits(agentId: string, params: {
+    outcome:          'WIN' | 'LOSS';
+    jumps:            number;
+    shotsAttempted:   number;
+    shotsConnected:   number;
+    timesHit:         number;
+    distanceCovered:  number;
+    durationSeconds:  number;
+  }) {
+    const agent = await agentRepo.findById(agentId);
+    if (!agent) throw new Error('Agent not found');
+
+    const current = ((agent.traits as Record<string, unknown>) ?? {}) as Record<string, number>;
+
+    const clamp = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
+    const won   = params.outcome === 'WIN';
+
+    // ── Compute deltas ────────────────────────────────────────────────────────
+    const accuracy      = params.shotsAttempted > 0 ? params.shotsConnected / params.shotsAttempted : 0;
+    const shotRate      = Math.min(params.shotsAttempted / 30, 1); // normalise over ~30 shots
+    const jumpRate      = Math.min(params.jumps / 20, 1);          // normalise over ~20 jumps
+    const longMatch     = params.durationSeconds > 60;             // > 1 min = patient fight
+    const tookNoHits    = params.timesHit === 0;
+
+    const delta = {
+      aggression:   won ? Math.round(shotRate  * 4) : Math.round(shotRate  * 2) - 1,
+      precision:    won ? Math.round(accuracy  * 5) : Math.round(accuracy  * 3) - 1,
+      resilience:   won
+        ? (params.timesHit > 0 ? 3 : 1)   // absorbed hits and still won
+        : (params.timesHit > 3 ? -1 : 0), // took heavy damage and lost
+      creativity:   Math.round(jumpRate * 3) + (won ? 1 : 0),
+      adaptability: won ? 2 : 1,           // every battle = adaptability++
+      patience:     longMatch ? 2 : 0,
+      deception:    won && tookNoHits ? 3 : 0,
+      loyalty:      1,                     // always loyal — stayed in the fight
+    };
+
+    // ── Apply deltas ──────────────────────────────────────────────────────────
+    const updated: Record<string, number> = {
+      aggression:   clamp((current.aggression   ?? 50) + delta.aggression),
+      precision:    clamp((current.precision    ?? 50) + delta.precision),
+      resilience:   clamp((current.resilience   ?? 50) + delta.resilience),
+      creativity:   clamp((current.creativity   ?? 50) + delta.creativity),
+      adaptability: clamp((current.adaptability ?? 50) + delta.adaptability),
+      patience:     clamp((current.patience     ?? 50) + delta.patience),
+      deception:    clamp((current.deception    ?? 50) + delta.deception),
+      loyalty:      clamp((current.loyalty      ?? 50) + delta.loyalty),
+      intelligence: current.intelligence ?? 50,  // trained by LoRA only — not changed here
+    };
+
+    // ── Persist ───────────────────────────────────────────────────────────────
+    await prisma.agent.update({
+      where: { id: agentId },
+      data:  { traits: updated as any },
+    });
+
+    console.info(
+      `[AgentService] Traits evolved for ${agentId} (${params.outcome}): ` +
+      Object.entries(delta)
+        .filter(([, v]) => v !== 0)
+        .map(([k, v]) => `${k}${v >= 0 ? '+' : ''}${v}`)
+        .join(', ')
+    );
+
+    return { agentId, traits: updated, deltas: delta };
+  }
 }

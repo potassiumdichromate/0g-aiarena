@@ -45,6 +45,13 @@ const X402_ROUTES: Array<{
     path:   /^\/v1\/agents\/[^/]+\/train$/,
     action: 'train_agent',
     amount: 2,
+    when: (req) => {
+      // Bypass payment for automated post-battle training triggered by the game client.
+      // Manual training from the Training page still requires 2 $ARENA.
+      const body   = req.body as Record<string, unknown> | undefined;
+      const config = body?.config as Record<string, unknown> | undefined;
+      return config?.source !== 'arena-battle';
+    },
   },
   {
     method: 'POST',
