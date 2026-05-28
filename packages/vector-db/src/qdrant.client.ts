@@ -104,7 +104,7 @@ export class QdrantWrapper {
       filter:       filter as any,
       with_payload: true,
     });
-    return results.map(r => ({
+    return results.map((r: any) => ({
       id:      r.id,
       score:   r.score,
       payload: r.payload as Record<string, unknown>,
