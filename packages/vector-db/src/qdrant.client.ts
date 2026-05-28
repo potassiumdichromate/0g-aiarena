@@ -10,9 +10,13 @@
  * import happens at runtime via the ESM loader.
  */
 
-// eslint-disable-next-line @typescript-eslint/consistent-type-imports
-import type { QdrantClient as QdrantClientType } from '@qdrant/js-client-rest';
 import { COLLECTION_CONFIGS, CollectionName } from './collections';
+
+// @qdrant/js-client-rest is ESM-only — we cannot static-import or import-type it
+// in a CommonJS package without hitting TS1479 / TS1541.  We use `any` for the
+// private field and resolve the real class at runtime via dynamic import().
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type QdrantClientType = any;
 
 export interface VectorPoint {
   id: string | number;
