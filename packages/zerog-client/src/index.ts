@@ -1,12 +1,13 @@
 export { ZeroGStorageClient } from './storage.client';
 export type { UploadResult } from './storage.client';
 
-export { ZeroGComputeClient } from './compute.client';
+export { ZeroGComputeClient, LEAGUE_PREDICTION_TOOL } from './compute.client';
 export type {
   CombatActionRequest,
   CombatAction,
   StrategyPlanRequest,
   StrategicPlan,
+  LeaguePredictionToolArgs,
   ImageGenerationResult,
   AudioTranscriptionResult,
   ZeroGTrace,

@@ -14,6 +14,7 @@
     "@fastify/helmet": "^11.1.0",
     "@fastify/jwt": "^8.0.0",
     "@ai-arena/shared-types": "workspace:*",
+    "@ai-arena/shared-utils": "workspace:*",
     "@ai-arena/cache": "workspace:*",
     "@ai-arena/zerog-client": "workspace:*",
     "@ai-arena/db-client": "workspace:*"

@@ -26,7 +26,8 @@
       "@ai-arena/cache": ["../../packages/cache/src"],
       "@ai-arena/zerog-client": ["../../packages/zerog-client/src"],
       "@ai-arena/solana-client": ["../../packages/solana-client/src"],
-      "@ai-arena/vector-db": ["../../packages/vector-db/src"]
+      "@ai-arena/vector-db": ["../../packages/vector-db/src"],
+      "@ai-arena/football-data-client": ["../../packages/football-data-client/src"]
     }
   }
 }

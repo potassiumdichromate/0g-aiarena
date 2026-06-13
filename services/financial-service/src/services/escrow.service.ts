@@ -14,13 +14,16 @@
  *      → EscrowRecord state → SETTLED
  */
 
-import { prisma, FinancialRepository } from '@ai-arena/db-client';
+import { prisma, FinancialRepository, LeagueRepository } from '@ai-arena/db-client';
 import { getEventBus } from '@ai-arena/event-bus';
 import { AgentWalletClient } from '@ai-arena/solana-client';
+import { FinancialOrchestrator } from './financial-orchestrator';
 
 const walletClient = new AgentWalletClient();
 
 const finRepo = new FinancialRepository(prisma);
+const leagueRepo = new LeagueRepository(prisma);
+const orchestrator = new FinancialOrchestrator();
 
 export const COMMISSION_RATE = 0.10; // 10% platform fee
 
@@ -164,6 +167,204 @@ export class EscrowService {
     console.log(`[EscrowService] Settled battle ${battleId}: winner ${winnerId} receives ${winnerPayout} ARENA, commission ${commission} ARENA`);
 
     return { winnerId, winnerPayout, commission };
+  }
+
+  // ── League: Lock ─────────────────────────────────────────────────────────
+
+  /**
+   * §9.2 — locks `LeagueBattle.stakeArena` from both the challenger and
+   * opponent's `AgentWallet.balanceArena`, creates an `EscrowRecord` (state
+   * LOCKED, linked via `leagueBattleId`), and transitions the battle
+   * PENDING -> LOCKED. Idempotent: a battle already LOCKED returns its
+   * existing `escrowId` rather than locking funds twice.
+   */
+  async lockLeagueEscrow(battleId: string): Promise<{ escrowId: string }> {
+    const battle = await prisma.leagueBattle.findUnique({ where: { id: battleId } });
+    if (!battle) throw new Error(`League battle ${battleId} not found`);
+
+    if (battle.status === 'LOCKED' && battle.escrowId) {
+      return { escrowId: battle.escrowId };
+    }
+    if (battle.status !== 'PENDING') {
+      throw new Error(`League battle ${battleId} is not PENDING (status=${battle.status})`);
+    }
+
+    const stake = battle.stakeArena;
+    const [challengerWallet, opponentWallet] = await Promise.all([
+      orchestrator.ensureWallet(battle.challengerId),
+      orchestrator.ensureWallet(battle.opponentId),
+    ]);
+    if (!challengerWallet) throw new Error(`Wallet not found for agent ${battle.challengerId}`);
+    if (!opponentWallet) throw new Error(`Wallet not found for agent ${battle.opponentId}`);
+    if (challengerWallet.isFrozen) throw new Error(`Wallet frozen for agent ${battle.challengerId}`);
+    if (opponentWallet.isFrozen) throw new Error(`Wallet frozen for agent ${battle.opponentId}`);
+    if (challengerWallet.balanceArena < stake)
+      throw new Error(`Insufficient ARENA balance for agent ${battle.challengerId} (need ${stake}, have ${challengerWallet.balanceArena})`);
+    if (opponentWallet.balanceArena < stake)
+      throw new Error(`Insufficient ARENA balance for agent ${battle.opponentId} (need ${stake}, have ${opponentWallet.balanceArena})`);
+
+    await Promise.all([
+      finRepo.updateBalance(battle.challengerId, -stake, 0),
+      finRepo.updateBalance(battle.opponentId, -stake, 0),
+    ]);
+
+    await Promise.all([
+      finRepo.createLedgerEntry({
+        wallet:   { connect: { id: challengerWallet.id } },
+        type:     'LEAGUE_BATTLE_WAGER',
+        amount:   stake,
+        currency: 'ARENA',
+        status:   'CONFIRMED',
+        metadata: { battleId, role: 'escrow_lock' } as any,
+      }),
+      finRepo.createLedgerEntry({
+        wallet:   { connect: { id: opponentWallet.id } },
+        type:     'LEAGUE_BATTLE_WAGER',
+        amount:   stake,
+        currency: 'ARENA',
+        status:   'CONFIRMED',
+        metadata: { battleId, role: 'escrow_lock' } as any,
+      }),
+    ]);
+
+    const escrow = await prisma.escrowRecord.create({
+      data: {
+        battleId,
+        agentIds:       [battle.challengerId, battle.opponentId],
+        amounts:        { [battle.challengerId]: stake, [battle.opponentId]: stake },
+        solanaAddress:  `escrow_league_${battleId}`,
+        state:          'LOCKED',
+        leagueBattleId: battle.id,
+      },
+    });
+
+    await leagueRepo.transitionBattleStatus(battle.id, 'PENDING', 'LOCKED', {
+      escrow:     { connect: { id: escrow.id } },
+      acceptedAt: new Date(),
+    });
+
+    console.log(`[EscrowService] League escrow locked: battle ${battleId}, ${stake} ARENA each, escrow ${escrow.id}`);
+    return { escrowId: escrow.id };
+  }
+
+  // ── League: Settle ───────────────────────────────────────────────────────
+
+  /**
+   * §9.3/§9.4 — settles a LOCKED League Battle escrow.
+   *   winnerId set  -> winner receives 90% of the pool, 10% commission stays
+   *                    in the platform reserve (never paid out).
+   *   winnerId null -> void: both stakes are refunded in full (tie or the
+   *                    match was cancelled).
+   * Idempotent: a battle already SETTLED/VOID, or an escrow already
+   * SETTLED/CANCELLED, is a no-op.
+   */
+  async settleLeagueBattle(battleId: string, winnerId: string | null): Promise<void> {
+    const battle = await prisma.leagueBattle.findUnique({ where: { id: battleId } });
+    if (!battle) throw new Error(`League battle ${battleId} not found`);
+
+    if (battle.status === 'SETTLED' || battle.status === 'VOID') return;
+    if (battle.status !== 'LOCKED' || !battle.escrowId) {
+      throw new Error(`League battle ${battleId} is not LOCKED (status=${battle.status})`);
+    }
+
+    const escrow = await prisma.escrowRecord.findUnique({ where: { id: battle.escrowId } });
+    if (!escrow) throw new Error(`Escrow ${battle.escrowId} not found for battle ${battleId}`);
+    if (escrow.state === 'SETTLED' || escrow.state === 'CANCELLED') return;
+    if (escrow.state !== 'LOCKED') {
+      throw new Error(`Escrow ${escrow.id} is not LOCKED (state=${escrow.state})`);
+    }
+
+    const amounts = escrow.amounts as Record<string, number>;
+    const totalPool = Object.values(amounts).reduce((sum, v) => sum + v, 0);
+    const now = new Date();
+
+    if (winnerId) {
+      const commission   = parseFloat((totalPool * COMMISSION_RATE).toFixed(6));
+      const winnerPayout = parseFloat((totalPool - commission).toFixed(6));
+
+      const winnerWallet = await orchestrator.ensureWallet(winnerId);
+      if (!winnerWallet) throw new Error(`Winner wallet not found for agent ${winnerId}`);
+
+      await finRepo.updateBalance(winnerId, winnerPayout, 0);
+      await finRepo.createLedgerEntry({
+        wallet:   { connect: { id: winnerWallet.id } },
+        type:     'LEAGUE_BATTLE_REWARD',
+        amount:   winnerPayout,
+        currency: 'ARENA',
+        status:   'CONFIRMED',
+        metadata: { battleId, escrowId: escrow.id, commission, totalPool } as any,
+      });
+
+      await prisma.escrowRecord.update({
+        where: { id: escrow.id },
+        data:  { state: 'SETTLED', winnerId, settledAt: now },
+      });
+
+      await leagueRepo.transitionBattleStatus(battle.id, 'LOCKED', 'SETTLED', { winnerId, settledAt: now });
+
+      console.log(`[EscrowService] League battle ${battleId} settled: winner ${winnerId} receives ${winnerPayout} ARENA, commission ${commission} ARENA`);
+    } else {
+      await Promise.all(
+        Object.entries(amounts).map(async ([agentId, amount]) => {
+          const wallet = await orchestrator.ensureWallet(agentId);
+          if (!wallet) return;
+          await finRepo.updateBalance(agentId, amount, 0);
+          await finRepo.createLedgerEntry({
+            wallet:   { connect: { id: wallet.id } },
+            type:     'LEAGUE_BATTLE_REFUND',
+            amount,
+            currency: 'ARENA',
+            status:   'CONFIRMED',
+            metadata: { battleId, escrowId: escrow.id } as any,
+          });
+        }),
+      );
+
+      await prisma.escrowRecord.update({
+        where: { id: escrow.id },
+        data:  { state: 'CANCELLED', settledAt: now },
+      });
+
+      await leagueRepo.transitionBattleStatus(battle.id, 'LOCKED', 'VOID', { settledAt: now });
+
+      console.log(`[EscrowService] League battle ${battleId} voided: refunded ${totalPool} ARENA total`);
+    }
+  }
+
+  // ── League: Prediction reward ───────────────────────────────────────────
+
+  /**
+   * §5.6/§10.2 step 4 — credits `AgentWallet.balanceArena` for a settled
+   * League prediction. Idempotent on `(predictionId, LEAGUE_PREDICTION_REWARD)`
+   * — a duplicate call for an already-credited prediction is a no-op.
+   */
+  async creditLeaguePrediction(
+    agentId:      string,
+    predictionId: string,
+    amount:       number,
+    metadata:     Record<string, unknown>,
+  ): Promise<void> {
+    const wallet = await orchestrator.ensureWallet(agentId);
+    if (!wallet) throw new Error(`Wallet not found for agent ${agentId}`);
+
+    const existing = await prisma.ledgerEntry.findFirst({
+      where: {
+        walletId: wallet.id,
+        type:     'LEAGUE_PREDICTION_REWARD',
+        metadata: { path: ['predictionId'], equals: predictionId },
+      },
+    });
+    if (existing) return;
+
+    await finRepo.updateBalance(agentId, amount, 0);
+    await finRepo.createLedgerEntry({
+      wallet:   { connect: { id: wallet.id } },
+      type:     'LEAGUE_PREDICTION_REWARD',
+      amount,
+      currency: 'ARENA',
+      status:   'CONFIRMED',
+      metadata: { predictionId, ...metadata } as any,
+    });
   }
 
   // ── x402 Auto-Pay (custodial wallet) ─────────────────────────────────────

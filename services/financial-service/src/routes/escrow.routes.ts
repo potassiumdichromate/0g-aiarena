@@ -41,6 +41,60 @@ export async function escrowRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * POST /escrow/league/lock
+   * Called by league-service when a battle challenge is accepted (§9.2).
+   * Locks `stakeArena` from both the challenger and opponent wallets and
+   * transitions the battle PENDING -> LOCKED within this call.
+   * Body: { battleId }
+   */
+  app.post('/league/lock', async (req, reply) => {
+    const { battleId } = req.body as { battleId: string };
+    try {
+      const result = await escrow.lockLeagueEscrow(battleId);
+      return reply.status(200).send({ ok: true, data: result });
+    } catch (err: any) {
+      return reply.status(400).send({ ok: false, error: err.message });
+    }
+  });
+
+  /**
+   * POST /escrow/league/credit
+   * Called by league-worker when a settled League prediction earns
+   * `arenaAwarded > 0` (§5.6/§10.2 step 4). Idempotent per predictionId.
+   * Body: { agentId, predictionId, amount, metadata }
+   */
+  app.post('/league/credit', async (req, reply) => {
+    const { agentId, predictionId, amount, metadata } = req.body as {
+      agentId:      string;
+      predictionId: string;
+      amount:       number;
+      metadata?:    Record<string, unknown>;
+    };
+    try {
+      await escrow.creditLeaguePrediction(agentId, predictionId, amount, metadata ?? {});
+      return reply.status(200).send({ ok: true });
+    } catch (err: any) {
+      return reply.status(400).send({ ok: false, error: err.message });
+    }
+  });
+
+  /**
+   * POST /escrow/league/battles/settle
+   * Called by league-worker once both predictions on a LOCKED League Battle
+   * have settled (§9.3), or when a match is cancelled (§9.4, winnerId null).
+   * Body: { battleId, winnerId }
+   */
+  app.post('/league/battles/settle', async (req, reply) => {
+    const { battleId, winnerId } = req.body as { battleId: string; winnerId: string | null };
+    try {
+      await escrow.settleLeagueBattle(battleId, winnerId);
+      return reply.status(200).send({ ok: true });
+    } catch (err: any) {
+      return reply.status(400).send({ ok: false, error: err.message });
+    }
+  });
+
+  /**
    * POST /escrow/x402/pay
    * Initiate an x402 payment from the agent's custodial ARENA wallet.
    *

@@ -148,6 +148,8 @@ async function main() {
     { prefix: '/v1/matchmaking',  envKey: 'MATCHMAKING_SERVICE_URL', fallback: 'http://localhost:8004', rewritePrefix: '/queue'        },
     { prefix: '/v1/token',        envKey: 'TOKEN_SERVICE_URL',       fallback: 'http://localhost:8050', rewritePrefix: '/v1/token'     },
     { prefix: '/v1/leaderboards', envKey: 'LEADERBOARD_SERVICE_URL', fallback: 'http://localhost:8041', rewritePrefix: '/leaderboards' },
+    // league-service handles /v1/league/* itself — keep the prefix on the way through
+    { prefix: '/v1/league',       envKey: 'LEAGUE_SERVICE_URL',      fallback: 'http://localhost:8060', rewritePrefix: '/v1/league'    },
   ];
 
   // ── Optional / not-yet-deployed services — proxy if URL set, else 503 ──────

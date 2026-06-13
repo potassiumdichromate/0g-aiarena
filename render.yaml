@@ -324,6 +324,8 @@ services:
         value: https://aiarena-inference.onrender.com
       - key: MEMORY_SERVICE_URL
         value: https://aiarena-memory.onrender.com
+      - key: LEAGUE_SERVICE_URL
+        value: https://aiarena-league.onrender.com
 
   # ── INFT Service (ERC-7857 Living NFT on 0G Chain) ───────────────────────────
   - type: web
@@ -409,4 +411,84 @@ services:
       - key: ZEROG_STORAGE_PRIVATE_KEY
         sync: false
       - key: INTERNAL_SERVICE_SECRET
+        sync: false
+
+  # ── League Service (KULT Agent League — predictions, battles, leaderboards) ──
+  - type: web
+    name: aiarena-league
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: services/league-service
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/league-service...
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8060"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: aiarena-redis
+          type: redis
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
+      - key: NATS_URL
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+      - key: FINANCIAL_SERVICE_URL
+        value: https://aiarena-financial.onrender.com
+      - key: INFERENCE_SERVICE_URL
+        value: https://aiarena-inference.onrender.com
+      - key: LEAGUE_DATA_PROVIDER
+        value: internal-admin
+      - key: SPORTMONKS_API_KEY
+        sync: false
+      - key: API_FOOTBALL_API_KEY
+        sync: false
+
+  # ── League Worker (KULT Agent League — pre-gen, settlement, leaderboard cron) ─
+  - type: web
+    name: aiarena-league-worker
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: services/league-worker
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/league-worker...
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8061"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: aiarena-redis
+          type: redis
+          property: connectionString
+      - key: NATS_URL
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+      - key: FINANCIAL_SERVICE_URL
+        value: https://aiarena-financial.onrender.com
+      - key: INFERENCE_SERVICE_URL
+        value: https://aiarena-inference.onrender.com
+      - key: LEAGUE_DATA_PROVIDER
+        value: internal-admin
+      - key: SPORTMONKS_API_KEY
+        sync: false
+      - key: API_FOOTBALL_API_KEY
         sync: false

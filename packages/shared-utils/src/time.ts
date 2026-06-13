@@ -44,3 +44,15 @@ export function toUnixTimestamp(date: Date): number {
 export function fromUnixTimestamp(ts: number): Date {
   return new Date(ts * 1000);
 }
+
+/**
+ * Start (00:00 UTC Sunday) of the week immediately before the week
+ * containing `now`. Used by the league weekly reset (§14.3), which runs at
+ * 00:00 UTC every Sunday and snapshots the week that just ended.
+ */
+export function startOfPreviousWeekUTC(now: Date = new Date()): Date {
+  const midnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const dayOfWeek = midnight.getUTCDay(); // 0 = Sunday
+  midnight.setUTCDate(midnight.getUTCDate() - dayOfWeek - 7);
+  return midnight;
+}

@@ -15,8 +15,18 @@ import {
   getZeroGConfig,
   CombatAction,
   StrategicPlan,
+  LeaguePredictionToolArgs,
 } from '@ai-arena/zerog-client';
 import { prisma } from '@ai-arena/db-client';
+import {
+  mapAgentToTribe,
+  validatePrediction,
+  generateFallbackPrediction,
+  normalizeTraits,
+  AgentTraitVector,
+  LeagueTribe,
+  LeagueStage,
+} from '@ai-arena/shared-utils';
 
 interface CombatInferenceParams {
   agentId: string;
@@ -42,6 +52,80 @@ interface StrategyInferenceParams {
   opponentProfile?: Record<string, unknown>;
   useMemory?: boolean;
 }
+
+const LEAGUE_PREDICTION_TIMEOUT_MS = 12_000; // [DECISION §7.2] between the 5s combat and 20s strategy timeouts
+
+export interface MatchContext {
+  matchId: string;
+  homeTeam: string;
+  awayTeam: string;
+  stage: LeagueStage;
+  kickoffAt: string;
+  // Lightweight context only — no external odds/news data (out of scope, §8)
+  headToHead?: { homeWins: number; awayWins: number; draws: number };
+}
+
+export interface LeaguePredictionResult {
+  winner: 'HOME' | 'AWAY' | 'DRAW';
+  scoreHome: number;
+  scoreAway: number;
+  conviction: 'LOW' | 'MEDIUM' | 'HIGH';
+  reasoning: string;
+  source: 'AI' | 'FALLBACK';
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout: ${label} took longer than ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
+function buildMatchPrompt(ctx: MatchContext): string {
+  const h2h = ctx.headToHead
+    ? `Head-to-head record: ${ctx.homeTeam} ${ctx.headToHead.homeWins}W - ${ctx.headToHead.draws}D - ${ctx.headToHead.awayWins}L ${ctx.awayTeam}.`
+    : 'No head-to-head record available.';
+
+  return `Match: ${ctx.homeTeam} vs ${ctx.awayTeam}
+Stage: ${ctx.stage}
+Kickoff: ${ctx.kickoffAt}
+${h2h}
+${ctx.stage !== 'GROUP' ? 'This is a knockout match — your prediction must pick a winner (no draw).' : ''}
+Predict the winner, the final score, and your conviction level. Submit your prediction using the tool.`;
+}
+
+/**
+ * Tribe system prompts — pre-launch acceptance gate requires the 4
+ * archetypes to "produce distinguishably different prediction text" (§7.4).
+ * Each entry fixes tone, vocabulary, and reasoning structure.
+ */
+export const TRIBE_SYSTEM_PROMPTS: Record<LeagueTribe, (traits: AgentTraitVector) => string> = {
+  NEXUS_01: (traits) => `You are Nexus-01, a Statistician. You predict football matches using cold,
+numerical reasoning. Reference form, tempo, and statistical tendencies in
+your reasoning. Never use emotional language. Keep your conviction
+proportional to how clear-cut the numbers are — only go HIGH conviction
+when the data is one-sided. Agent traits: ${JSON.stringify(traits)}.`,
+
+  SHADOW_9: (traits) => `You are Shadow-9, the Villain. You predict football matches with cynicism
+and a taste for chaos. You enjoy picking against the crowd and you frame
+your reasoning as if daring the favorite to prove you wrong. Lean toward
+HIGH conviction when picking an underdog or an unpopular scoreline. Agent
+traits: ${JSON.stringify(traits)}.`,
+
+  ATHENA: (traits) => `You are Athena, the Oracle. You predict football matches with calm,
+principled authority — as if the outcome were foretold. Your reasoning
+is short, declarative, and confident without being boastful. Conviction
+reflects how settled the outcome feels to you, not how popular the pick
+is. Agent traits: ${JSON.stringify(traits)}.`,
+
+  VOIDWALKER: (traits) => `You are Voidwalker, the Madman. You predict football matches by embracing
+chaos — unconventional scorelines, wildcard reasoning, gut feeling over
+logic. Your reasoning should feel unpredictable and a little unhinged, but
+the winner/score/conviction fields must still be internally consistent.
+Agent traits: ${JSON.stringify(traits)}.`,
+};
 
 export class InferenceGateway {
   private readonly compute: ZeroGComputeClient;
@@ -121,6 +205,64 @@ export class InferenceGateway {
       };
 
       return { plan, source: 'FALLBACK' };
+    }
+  }
+
+  /**
+   * Predict the outcome of an upcoming football match for the KULTAI Agent
+   * World Cup 2026 league (§7.2). Never throws — falls back to a
+   * deterministic, per-(agent,match) prediction if 0G Compute is degraded or
+   * returns an invalid response.
+   */
+  async decideLeaguePrediction(agentId: string, matchContext: MatchContext): Promise<LeaguePredictionResult> {
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) {
+      throw new Error(`decideLeaguePrediction: agent ${agentId} not found`);
+    }
+
+    const traits = normalizeTraits(agent.traits);
+    const tribe = mapAgentToTribe(agent.id, agent.archetype, traits);
+    const systemPrompt = TRIBE_SYSTEM_PROMPTS[tribe](traits);
+
+    try {
+      const raw = await withTimeout(
+        this.compute.inferLeaguePrediction(systemPrompt, buildMatchPrompt(matchContext)),
+        LEAGUE_PREDICTION_TIMEOUT_MS,
+        'inferLeaguePrediction',
+      );
+
+      const prediction = await this.validateOrRetry(raw, systemPrompt, matchContext);
+      return { ...prediction, source: 'AI' };
+    } catch (err) {
+      console.error('[InferenceGateway] League prediction inference failed, using fallback:', err);
+      const fallback = generateFallbackPrediction(agentId, matchContext.matchId, matchContext.stage, traits);
+      return { ...fallback, source: 'FALLBACK' };
+    }
+  }
+
+  /**
+   * Validates an AI prediction; on failure, retries once with a corrective
+   * message before giving up (§6.3). Throws if both attempts are invalid —
+   * caller falls back to `generateFallbackPrediction`.
+   */
+  private async validateOrRetry(
+    raw: LeaguePredictionToolArgs,
+    systemPrompt: string,
+    matchContext: MatchContext,
+  ): Promise<LeaguePredictionToolArgs> {
+    try {
+      validatePrediction(raw, matchContext.stage);
+      return raw;
+    } catch (err) {
+      const correctivePrompt = `${buildMatchPrompt(matchContext)}\n\nYour previous response was invalid: ${(err as Error).message}. Respond again with a coherent winner/score pair.`;
+
+      const retry = await withTimeout(
+        this.compute.inferLeaguePrediction(systemPrompt, correctivePrompt),
+        LEAGUE_PREDICTION_TIMEOUT_MS,
+        'inferLeaguePrediction (retry)',
+      );
+      validatePrediction(retry, matchContext.stage);
+      return retry;
     }
   }
 

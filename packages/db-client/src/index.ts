@@ -23,3 +23,4 @@ export { AgentRepository } from './repositories/agent.repository';
 export { BattleRepository } from './repositories/battle.repository';
 export { FinancialRepository } from './repositories/financial.repository';
 export { TrainingRepository } from './repositories/training.repository';
+export { LeagueRepository } from './repositories/league.repository';

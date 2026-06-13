@@ -6,6 +6,9 @@ const walletClient = new AgentWalletClient();
 
 const finRepo = new FinancialRepository(prisma);
 
+/** New-agent off-chain $ARENA starter grant (KULT V1 Economy Spec §7). */
+export const STARTER_ARENA_ALLOCATION = 100;
+
 export class FinancialOrchestrator {
   /**
    * Returns existing wallet or creates one on first access.
@@ -40,12 +43,25 @@ export class FinancialOrchestrator {
       console.warn(`[FinancialOrchestrator] Solana PDA derivation failed, using fallback address: ${(err as Error).message}`);
     }
 
-    return finRepo.createWallet({
+    const wallet = await finRepo.createWallet({
       agent:         { connect: { id: agentId } },
       solanaAddress,
-      balanceArena:  0,
+      balanceArena:  STARTER_ARENA_ALLOCATION,
       balanceSol:    0,
     });
+
+    // Off-chain points ledger entry for the starter grant — keeps balanceArena
+    // fully reconstructable from LedgerEntry rows (sum of entries == balance).
+    await finRepo.createLedgerEntry({
+      wallet:   { connect: { id: wallet.id } },
+      type:     'STARTER_ALLOCATION',
+      amount:   STARTER_ARENA_ALLOCATION,
+      currency: 'ARENA',
+      status:   'CONFIRMED',
+      metadata: { reason: 'new_agent_starter_grant' } as any,
+    });
+
+    return wallet;
   }
 
   // Fix: update the wallet policy in-place instead of creating a duplicate wallet

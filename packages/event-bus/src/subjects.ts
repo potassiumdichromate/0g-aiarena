@@ -42,3 +42,19 @@ export const SUBJECTS = {
 } as const;
 
 export type Subject = typeof SUBJECTS[keyof typeof SUBJECTS];
+
+// League events — KULTAI Agent World Cup 2026 (architecture §16.1)
+export const LEAGUE_SUBJECTS = {
+  LEAGUE_PREDICTION_CREATED: 'league.prediction.created',
+  LEAGUE_PREDICTION_LOCKED: 'league.prediction.locked',
+  LEAGUE_PREDICTION_SETTLED: 'league.prediction.settled',
+  LEAGUE_MATCH_SETTLED: 'league.match.settled',
+  LEAGUE_BATTLE_CREATED: 'league.battle.created',
+  LEAGUE_BATTLE_ACCEPTED: 'league.battle.accepted',
+  LEAGUE_BATTLE_SETTLED: 'league.battle.settled',
+  LEAGUE_RIVALRY_UPDATED: 'league.rivalry.updated',
+  LEAGUE_MOMENT_CREATED: 'league.moment.created',
+  LEAGUE_FACTION_JOINED: 'league.faction.joined',
+} as const;
+
+export type LeagueSubject = typeof LEAGUE_SUBJECTS[keyof typeof LEAGUE_SUBJECTS];

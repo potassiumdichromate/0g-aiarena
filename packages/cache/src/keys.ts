@@ -44,3 +44,20 @@ export const TTL = {
   BATTLE_STATE: 3600,     // 1 hour
   LEADERBOARD: 60,        // 1 minute
 } as const;
+
+// League keys — KULTAI Agent World Cup 2026 (architecture §16.2)
+// `tribe` is typed as `string` (not the Prisma `LeagueTribe` enum) to keep
+// this package free of a workspace dependency on db-client/shared-utils.
+export const LEAGUE_CACHE_KEYS = {
+  leaderboardGlobal: (seasonId: string) => `league:leaderboard:global:${seasonId}`,
+  leaderboardFaction: (seasonId: string, tribe: string) => `league:leaderboard:faction:${tribe}:${seasonId}`,
+  leaderboardWeekly: (seasonId: string, weekStartAt: string) => `league:leaderboard:weekly:${seasonId}:${weekStartAt}`,
+  leaderboardUsers: (seasonId: string) => `league:leaderboard:users:${seasonId}`,
+  matchDetail: (matchId: string) => `league:match:${matchId}`,
+  agentTribe: (agentId: string) => `league:agent:${agentId}:tribe`,
+} as const;
+
+export const LEAGUE_TTL = {
+  matchDetail: 15,                // seconds — §15.7 is read-heavy, changes only on lock/settle
+  agentTribe: 60 * 60 * 24 * 30,  // 30 days — tribe never changes mid-season (§3.2)
+} as const;

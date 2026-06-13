@@ -82,6 +82,11 @@ enum TransactionType {
   STAKE
   UNSTAKE
   TRANSFER
+  LEAGUE_PREDICTION_REWARD
+  LEAGUE_BATTLE_WAGER
+  LEAGUE_BATTLE_REWARD
+  LEAGUE_BATTLE_REFUND
+  STARTER_ALLOCATION
 }
 
 enum TransactionStatus {
@@ -301,6 +306,13 @@ model EscrowRecord {
 
   battles       Battle[]
 
+  /// Additive, nullable, unique — set only for League Battle escrows.
+  /// Existing battleId/tournamentId fields are untouched; League uses its
+  /// own FK so existing battle/tournament escrow code paths cannot collide
+  /// with League settlement logic.
+  leagueBattleId String?     @unique
+  leagueBattle   LeagueBattle?
+
   @@index([state])
   @@index([solanaAddress])
 }
@@ -454,4 +466,318 @@ model ZeroGFineTuneJob {
 
   @@index([agentId])
   @@index([status])
+}
+
+// ===== LEAGUE SYSTEM =====
+// KULTAI Agent World Cup 2026 — see docs/league/LEAGUE_SYSTEM_ARCHITECTURE.md
+// All agentId/userId references below are loose (validated at the
+// application layer) — no Prisma relations onto Agent or User (§1.7).
+
+enum LeagueTribe {
+  NEXUS_01    // Statistician
+  SHADOW_9    // Villain
+  ATHENA      // Oracle
+  VOIDWALKER  // Madman
+}
+
+enum LeagueStage {
+  GROUP
+  ROUND_OF_32
+  ROUND_OF_16
+  QUARTER_FINAL
+  SEMI_FINAL
+  THIRD_PLACE
+  FINAL
+}
+
+enum LeagueMatchStatus {
+  SCHEDULED
+  LIVE
+  FINISHED
+  POSTPONED
+  CANCELLED
+}
+
+enum PredictionOutcome {
+  HOME
+  DRAW
+  AWAY
+}
+
+/// LOW / MEDIUM / HIGH conviction levels — multipliers defined in §5.2
+enum ConvictionLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum PredictionStatus {
+  PENDING
+  LOCKED
+  SETTLED
+  VOID
+}
+
+enum PredictionSource {
+  AI              // 0G Compute structured output
+  FALLBACK        // deterministic fallback (0G degraded/timeout)
+  USER_OVERRIDE   // user edited the prediction before lock
+}
+
+enum LeagueBattleStatus {
+  PENDING     // challenger created, awaiting opponent response
+  ACCEPTED    // opponent accepted, escrow lock in progress
+  LOCKED      // escrow funded, awaiting match settlement
+  SETTLED     // winner paid out
+  VOID        // match cancelled — stakes refunded
+  DECLINED    // opponent declined / expired
+}
+
+enum LeagueMomentType {
+  VINDICATION  // correct pick against consensus
+  ROAST        // agent trash-talks a rival post-result
+  UPSET        // correct underdog pick
+  RIVALRY      // rivalry narrative milestone (5+ matchups)
+  STREAK       // N-correct streak milestone
+  ASCENSION    // evolution stage change driven by League performance
+  EVOLUTION    // trait-vector shift driven by League performance
+  FACTION      // faction milestone (leaderboard lead change, etc.)
+}
+
+/// One row per competition (e.g. "KULTAI World Cup 2026"). All tunable
+/// constants (scoring weights, lock buffer, reputation priors) live in
+/// `config` so they can be versioned/adjusted without a migration —
+/// see §20.1 for the default shape.
+model LeagueSeason {
+  id              String   @id @default(uuid())
+  slug            String   @unique
+  name            String
+  providerId      String?            // provider-side season/league id
+  startsAt        DateTime
+  endsAt          DateTime
+  isActive        Boolean  @default(true)
+  config          Json     @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  matches         LeagueMatch[]
+  agentStats      LeagueAgentSeasonStats[]
+  weeklySnapshots LeagueWeeklySnapshot[]
+
+  @@index([isActive])
+}
+
+model LeagueMatch {
+  id            String            @id @default(uuid())
+  seasonId      String
+  providerId    String            // provider fixture id (e.g. Sportmonks fixture id)
+  stage         LeagueStage
+  matchday      Int?
+  homeTeam      String            // FIFA 3-letter code, e.g. "BRA"
+  awayTeam      String
+  venue         String?
+  kickoffAt     DateTime
+  status        LeagueMatchStatus @default(SCHEDULED)
+  result        Json?             // NormalizedMatchResult once known (§8.1)
+  resultVersion Int               @default(0)  // bumped on provider-correction re-scoring
+  settledAt     DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  season        LeagueSeason       @relation(fields: [seasonId], references: [id])
+  predictions   LeaguePrediction[]
+  battles       LeagueBattle[]
+  moments       LeagueMoment[]
+
+  @@unique([seasonId, providerId])
+  @@index([status, kickoffAt])
+  @@index([seasonId, stage])
+}
+
+/// One row per (match, agent). agentId is a loose reference — validated
+/// against Agent at write time, not enforced via Prisma relation (§1.7).
+model LeaguePrediction {
+  id                String            @id @default(uuid())
+  matchId           String
+  agentId           String
+  winner            PredictionOutcome
+  scoreHome         Int
+  scoreAway         Int
+  conviction        ConvictionLevel   @default(LOW)
+  reasoning         String?
+  source            PredictionSource  @default(AI)
+  status            PredictionStatus  @default(PENDING)
+
+  // Populated only once status = SETTLED (or VOID, all null)
+  isCorrectWinner   Boolean?
+  isExactScore      Boolean?
+  isUpset           Boolean?
+  basePoints        Int?
+  arenaAwarded      Float?
+  kpAwarded         Int?
+
+  lockedAt          DateTime?
+  settledAt         DateTime?
+  settlementVersion Int               @default(0)  // mirrors LeagueMatch.resultVersion at settlement time
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  match             LeagueMatch       @relation(fields: [matchId], references: [id])
+
+  @@unique([matchId, agentId])
+  @@index([agentId, status])
+  @@index([matchId, status])
+}
+
+/// Two agents wager $ARENA on who scores higher on the same match (§9).
+/// challengerId/opponentId are agentIds (loose reference, §1.7).
+model LeagueBattle {
+  id           String             @id @default(uuid())
+  seasonId     String
+  matchId      String
+  challengerId String
+  opponentId   String
+  stakeArena   Float
+  status       LeagueBattleStatus @default(PENDING)
+  escrowId     String?            @unique
+  winnerId     String?
+  createdAt    DateTime           @default(now())
+  acceptedAt   DateTime?
+  settledAt    DateTime?
+
+  match        LeagueMatch        @relation(fields: [matchId], references: [id])
+  escrow       EscrowRecord?      @relation(fields: [escrowId], references: [id])
+
+  @@index([matchId, status])
+  @@index([challengerId])
+  @@index([opponentId])
+}
+
+/// Canonical pairwise record between two agents. agentLowId/agentHighId
+/// are agentIds ordered lexicographically so (A,B) and (B,A) always
+/// resolve to the same row.
+model LeagueRivalry {
+  id             String    @id @default(uuid())
+  seasonId       String
+  agentLowId     String
+  agentHighId    String
+  agentLowWins   Int       @default(0)
+  agentHighWins  Int       @default(0)
+  disagreements  Int       @default(0)  // predictions on the same match w/ different winners
+  totalMatchups  Int       @default(0)  // battles + disagreements combined
+  lastMatchupAt  DateTime?
+  narrative      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([seasonId, agentLowId, agentHighId])
+}
+
+/// Per-agent, per-season League standing. tribe is fixed at enrollment (§3.2).
+model LeagueAgentSeasonStats {
+  id                    String      @id @default(uuid())
+  seasonId              String
+  agentId               String
+  tribe                 LeagueTribe
+  reputation            Float       @default(1500)
+  reputationProvisional Boolean     @default(true)  // true until predictionsTotal >= 20
+  predictionsTotal      Int         @default(0)
+  correctWinnerCount    Int         @default(0)
+  exactScoreCount       Int         @default(0)
+  currentStreak         Int         @default(0)
+  bestStreak            Int         @default(0)
+  battleWins            Int         @default(0)
+  battleLosses          Int         @default(0)
+  arenaEarnedSeason     Float       @default(0)
+  avgConvictionCorrect  Float       @default(0)
+  avgConvictionWrong    Float       @default(0)
+  enrolledAt            DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  season                LeagueSeason @relation(fields: [seasonId], references: [id])
+
+  @@unique([seasonId, agentId])
+  @@index([seasonId, reputation])
+  @@index([seasonId, tribe, reputation])
+}
+
+/// One row per user, platform-wide (not season-scoped — KP and faction
+/// membership persist across seasons; weekly fields reset per §14.3).
+model LeagueUserProfile {
+  id                  String       @id @default(uuid())
+  userId              String       @unique
+  factionId           LeagueTribe?
+  factionJoinedAt     DateTime?
+  lastFactionSwitchAt DateTime?
+  kpBalance           Int          @default(0)
+  kpWeekly            Int          @default(0)
+  weekStartAt         DateTime     @default(now())
+  dayStreak           Int          @default(0)
+  lastActiveDate      DateTime?
+  updatedAt           DateTime     @updatedAt
+  createdAt           DateTime     @default(now())
+}
+
+/// Append-only KP ledger — the KP analog of LedgerEntry. The unique
+/// constraint on (refType, refId, reason) is the idempotency guard:
+/// settlement re-runs that try to award KP again for the same
+/// prediction/reason are rejected at the DB level.
+model LeagueKpLedger {
+  id           String   @id @default(uuid())
+  userId       String
+  amount       Int          // negative for admin corrections
+  reason       String       // "predict" | "correct" | "upset" | "rivalry" | "correction"
+  refType      String       // "prediction" | "battle" | "rivalry"
+  refId        String
+  balanceAfter Int
+  createdAt    DateTime @default(now())
+
+  @@unique([refType, refId, reason])
+  @@index([userId, createdAt])
+}
+
+/// Auto-generated shareable content (§13). idempotencyKey guarantees
+/// one Moment per (type, subject, agent) even across settlement retries.
+model LeagueMoment {
+  id             String           @id @default(uuid())
+  seasonId       String
+  type           LeagueMomentType
+  agentId        String?
+  matchId        String?
+  text           String
+  payload        Json             @default("{}")
+  idempotencyKey String           @unique
+  createdAt      DateTime         @default(now())
+
+  match          LeagueMatch?     @relation(fields: [matchId], references: [id])
+
+  @@index([seasonId, createdAt])
+  @@index([agentId])
+}
+
+/// Frozen weekly leaderboard snapshots, written at the Sunday 00:00 UTC
+/// reset (§14.3) before the live Redis ZSETs are cleared.
+model LeagueWeeklySnapshot {
+  id          String   @id @default(uuid())
+  seasonId    String
+  weekStartAt DateTime
+  scope       String   // "global" | "faction:NEXUS_01" | ...
+  rankings    Json     // [{ subjectId, rank, score }]
+  createdAt   DateTime @default(now())
+
+  season      LeagueSeason @relation(fields: [seasonId], references: [id])
+
+  @@unique([seasonId, weekStartAt, scope])
+}
+
+/// One row per match settlement attempt — the audit trail for §10's
+/// idempotency + correction-window logic.
+model LeagueSettlementLog {
+  id          String   @id @default(uuid())
+  matchId     String   @unique
+  resultHash  String   // hash of the normalized result used for this run
+  version     Int      @default(1)  // mirrors LeagueMatch.resultVersion
+  status      String   @default("COMPLETED")  // COMPLETED | FAILED | PARTIAL
+  errorDetail String?
+  processedAt DateTime @default(now())
 }

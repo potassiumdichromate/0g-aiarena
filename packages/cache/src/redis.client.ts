@@ -120,6 +120,17 @@ export class RedisClient {
     return this.redis.zrem(key, ...members);
   }
 
+  async zincrby(key: string, increment: number, member: string): Promise<number> {
+    const result = await this.redis.zincrby(key, increment, member);
+    return parseFloat(result);
+  }
+
+  async delPattern(pattern: string): Promise<number> {
+    const keys = await this.redis.keys(pattern);
+    if (keys.length === 0) return 0;
+    return this.redis.del(...keys);
+  }
+
   async publish(channel: string, message: string): Promise<void> {
     await this.redis.publish(channel, message);
   }

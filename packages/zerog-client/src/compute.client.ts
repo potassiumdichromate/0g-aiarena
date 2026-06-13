@@ -79,6 +79,14 @@ export interface StrategicPlan {
   estimatedDuration: string;
 }
 
+export interface LeaguePredictionToolArgs {
+  winner: 'HOME' | 'AWAY' | 'DRAW';
+  scoreHome: number;
+  scoreAway: number;
+  conviction: 'LOW' | 'MEDIUM' | 'HIGH';
+  reasoning: string;
+}
+
 export interface ImageGenerationResult {
   base64: string;          // b64_json (only format 0G currently supports)
   mimeType: 'image/png';
@@ -236,6 +244,50 @@ Analyse the battle context and opponent profile, then produce a structured strat
     }
 
     throw new Error('No parseable strategic plan in 0G Compute response');
+  }
+
+  // ── Inference: League Prediction ───────────────────────────────────────────
+
+  /**
+   * Request a structured football match prediction (KULTAI Agent World Cup
+   * 2026 — architecture §7.1). `systemPrompt` carries the tribe voice
+   * (TRIBE_SYSTEM_PROMPTS), `userPrompt` carries the match context.
+   */
+  async inferLeaguePrediction(
+    systemPrompt: string,
+    userPrompt: string,
+    opts: { maxTokens?: number; temperature?: number } = {},
+  ): Promise<LeaguePredictionToolArgs> {
+    const response = await (this.openai.chat.completions.create as Function)({
+      model: this.config.modelChat,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: opts.maxTokens ?? 300,
+      temperature: opts.temperature ?? 0.7,
+      tools: [LEAGUE_PREDICTION_TOOL],
+      tool_choice: { type: 'function', function: { name: 'submit_league_prediction' } },
+      ...(this.config.verifyTee && { verify_tee: true }),
+      ...(this.buildProviderField() && { provider: this.buildProviderField() }),
+    }) as ZeroGChatCompletion;
+
+    const toolCall = response.choices[0]?.message?.tool_calls?.[0];
+    const content = response.choices[0]?.message?.content ?? '';
+
+    if (toolCall?.function?.arguments) {
+      try {
+        return parseToolArguments<LeaguePredictionToolArgs>(toolCall.function.arguments);
+      } catch {
+        // fall through to content extraction
+      }
+    }
+
+    if (content) {
+      return parseToolArguments<LeaguePredictionToolArgs>(content);
+    }
+
+    throw new Error('No parseable league prediction in 0G Compute response');
   }
 
   // ── Agent Personality Generation ──────────────────────────────────────────
@@ -495,6 +547,26 @@ const COMBAT_ACTION_TOOL: OpenAI.Chat.ChatCompletionTool = {
         confidence:     { type: 'number', minimum: 0, maximum: 1, description: 'Confidence in this decision' },
       },
       required: ['actionType', 'aggressionBias', 'confidence'],
+    },
+  },
+};
+
+export const LEAGUE_PREDICTION_TOOL: OpenAI.Chat.ChatCompletionTool = {
+  type: 'function',
+  function: {
+    name: 'submit_league_prediction',
+    description: 'Submit a structured prediction for an upcoming football match.',
+    parameters: {
+      type: 'object',
+      properties: {
+        winner:     { type: 'string', enum: ['HOME', 'AWAY', 'DRAW'] },
+        scoreHome:  { type: 'integer', minimum: 0, maximum: 20 },
+        scoreAway:  { type: 'integer', minimum: 0, maximum: 20 },
+        conviction: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'] },
+        reasoning:  { type: 'string', description: 'One or two sentences, in your archetype voice.' },
+      },
+      required: ['winner', 'scoreHome', 'scoreAway', 'conviction', 'reasoning'],
+      additionalProperties: false,
     },
   },
 };

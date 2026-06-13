@@ -163,6 +163,19 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
 
+  packages/football-data-client:
+    dependencies:
+      '@ai-arena/db-client':
+        specifier: workspace:*
+        version: link:../db-client
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.40
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
   packages/shared-types:
     devDependencies:
       typescript:
@@ -718,6 +731,9 @@ importers:
       '@ai-arena/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
+      '@ai-arena/shared-utils':
+        specifier: workspace:*
+        version: link:../../packages/shared-utils
       '@ai-arena/zerog-client':
         specifier: workspace:*
         version: link:../../packages/zerog-client
@@ -795,6 +811,86 @@ importers:
       '@fastify/cors':
         specifier: ^9.0.0
         version: 9.0.1
+      '@fastify/helmet':
+        specifier: ^11.1.0
+        version: 11.1.1
+      fastify:
+        specifier: ^4.26.0
+        version: 4.29.1
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.40
+      ts-node-dev:
+        specifier: ^2.0.0
+        version: 2.0.0(@types/node@20.19.40)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
+  services/league-service:
+    dependencies:
+      '@ai-arena/cache':
+        specifier: workspace:*
+        version: link:../../packages/cache
+      '@ai-arena/db-client':
+        specifier: workspace:*
+        version: link:../../packages/db-client
+      '@ai-arena/event-bus':
+        specifier: workspace:*
+        version: link:../../packages/event-bus
+      '@ai-arena/shared-types':
+        specifier: workspace:*
+        version: link:../../packages/shared-types
+      '@ai-arena/shared-utils':
+        specifier: workspace:*
+        version: link:../../packages/shared-utils
+      '@fastify/cors':
+        specifier: ^9.0.0
+        version: 9.0.1
+      '@fastify/helmet':
+        specifier: ^11.1.0
+        version: 11.1.1
+      '@fastify/jwt':
+        specifier: ^8.0.0
+        version: 8.0.1
+      '@fastify/rate-limit':
+        specifier: ^9.1.0
+        version: 9.1.0
+      fastify:
+        specifier: ^4.26.0
+        version: 4.29.1
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.40
+      ts-node-dev:
+        specifier: ^2.0.0
+        version: 2.0.0(@types/node@20.19.40)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
+  services/league-worker:
+    dependencies:
+      '@ai-arena/cache':
+        specifier: workspace:*
+        version: link:../../packages/cache
+      '@ai-arena/db-client':
+        specifier: workspace:*
+        version: link:../../packages/db-client
+      '@ai-arena/event-bus':
+        specifier: workspace:*
+        version: link:../../packages/event-bus
+      '@ai-arena/football-data-client':
+        specifier: workspace:*
+        version: link:../../packages/football-data-client
+      '@ai-arena/shared-types':
+        specifier: workspace:*
+        version: link:../../packages/shared-types
+      '@ai-arena/shared-utils':
+        specifier: workspace:*
+        version: link:../../packages/shared-utils
       '@fastify/helmet':
         specifier: ^11.1.0
         version: 11.1.1
