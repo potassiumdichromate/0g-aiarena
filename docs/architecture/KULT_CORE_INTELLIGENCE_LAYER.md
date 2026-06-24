@@ -139,6 +139,135 @@ for the arena, then we could list it on the marketplace too"* — the cleanest f
 4. **OKX A2MCP bridge** — "Create Arena Agent" as a marketplace service.
 5. **OKX A2A** — richer negotiated services (later).
 
+## Correction vs. earlier drafts
+
+The INFT mint triggered by agent creation (`POST /inft/agent-mint`, called from
+`agent.service.ts`) is an **0G Chain EVM transaction** (Chain ID 16661, contract
+`AIArenaINFT.sol`), not a Solana transaction. Solana is used elsewhere in the platform
+(agent-wallet, escrow-vault, tournament, staking Anchor programs) but not in this flow — worth
+correcting since it affects the gas-cost line item below.
+
+## Implementation spec — Phase 4 (OKX `create-agent` endpoint)
+
+This section makes the OKX bridge concrete enough to build, based on the actual current code
+(`services/agent-service/src/routes/agent.routes.ts`, `services/agent-service/src/services/agent.service.ts`,
+`packages/db-client/prisma/schema.prisma`), not approximations.
+
+### Current `POST /agents` (for reference — JWT-gated, internal users)
+
+```typescript
+// Request
+{ name: string; clan: string; archetype?: string; backstory?: string }
+
+// Response (201)
+{
+  agent: {
+    id, name, clan, archetype, traits: Record<string, number>,
+    metadata: { backstory, avatarRootHash, metadataRootHash, avatarBase64 },
+    eloRating, wins, losses, draws, evolutionStage, inftTokenId
+  },
+  avatarRootHash?, metadataRootHash?, inftTokenId?
+}
+```
+
+### New `POST /v1/okx/create-agent` (proposed)
+
+```typescript
+// Request
+// Auth: X-OKX-Service-Key header (issued at ASP registration, NOT the user JWT)
+{
+  name: string;
+  clan: string;
+  archetype?: string;
+  backstory?: string;
+  idempotencyKey: string;   // required — OKX/caller-supplied, see schema below
+}
+
+// Response — 201 on first call, 200 on a replayed idempotencyKey
+{
+  agentId: string;
+  name: string;
+  clan: string;
+  archetype: string;
+  traits: Record<string, number>;
+  backstory: string;
+  inftTokenId: string | null;       // null if mint is still pending/non-fatally failed
+  avatarStatus: "pending" | "ready";
+  avatarRootHash: string | null;    // present once avatar generation completes
+}
+```
+
+Avatar generation stays async (per the existing `ENABLE_AVATAR_GEN` / timeout-guard pattern in
+`agent.service.ts`) to keep this endpoint inside a few seconds rather than the current ~30–50s —
+the route returns as soon as traits + backstory + DB row exist, and patches in
+`avatarRootHash` once the existing avatar pipeline finishes.
+
+### Schema additions
+
+**Idempotency** — follow the existing precedent in `LeagueMoment.idempotencyKey` (single unique
+column) rather than overloading `Agent` with an OKX-specific field:
+
+```prisma
+model OkxAgentRequest {
+  id             String    @id @default(uuid())
+  idempotencyKey String    @unique
+  agentId        String?
+  status         String    @default("PENDING") // PENDING | COMPLETED | FAILED
+  requestPayload Json
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+
+  agent          Agent?    @relation(fields: [agentId], references: [id])
+}
+```
+
+Lookup this table by `idempotencyKey` before calling `createAgent()`; if found and `COMPLETED`,
+return the cached response instead of creating a second agent.
+
+**Experience ingestion** (Phase 1, included here since it was the other piece flagged for
+refinement):
+
+```prisma
+model KultExperienceLog {
+  id          String    @id @default(uuid())
+  agentId     String
+  eventType   String    // BATTLE_RESULT | LEAGUE_PREDICTION_SETTLED | RIVALRY_UPDATED | ...
+  outcome     String?   // WIN | LOSS | DRAW | CORRECT | INCORRECT
+  delta       Json      @default("{}") // suggested trait deltas, consumed by the drift engine
+  rawPayload  Json
+  processedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  agent       Agent     @relation(fields: [agentId], references: [id])
+
+  @@index([agentId, createdAt])
+  @@index([processedAt])
+}
+```
+
+`processedAt` lets the drift-engine job claim a batch of unprocessed rows without a separate
+queue.
+
+### Pricing — the open item that actually blocks registering the Agent Card
+
+0G Compute billing is **dynamic and per-call** (`x_0g_trace.billing.total_cost` in neuron units,
+confirmed in `compute.client.ts` — no fixed per-model price exists in code). A2MCP requires one
+**fixed, declared** price up front. That mismatch needs to be resolved before submitting the
+Agent Card, via:
+
+1. Run a sample batch of real `createAgent()` calls (fast path, avatar async) and record
+   `x_0g_trace.billing.total_cost` for the personality-generation call — average it, convert
+   neuron → USD at the current 0G token rate.
+2. Add 0G Storage upload cost (2 uploads: avatar + metadata) — not currently metered anywhere in
+   code, so this needs a manual estimate from 0G Storage's own pricing, not from our codebase.
+3. Add 0G Chain gas for the INFT mint transaction (see correction above — this is 0G Chain, not
+   Solana) — also not currently logged; needs a manual check against 0G Chain's gas tracker.
+4. Sum 1–3, add margin, quote as a fixed USDG/USD₮0 amount on X Layer (gasless for the payer when
+   using USDG/USD₮0/USDC, per the Onchain OS docs in
+   [`okx_context.md`](okx_context.md#supported-networks--tokens)).
+
+Until step 1–3 produce real numbers, the Agent Card's `pricing` field stays a placeholder.
+
 ## Open questions before implementation
 
 - Is Phase 1 (drift engine) the right starting point, or is the OKX integration more
@@ -147,3 +276,6 @@ for the arena, then we could list it on the marketplace too"* — the cleanest f
   `IntelligenceLayer`-tracked "proposed traits" set that is approved before being applied?
 - New service (`kult-core-service`) vs. a module inside an existing service (e.g.
   `training-service` or `league-worker`)?
+- Who can run the sample-cost batch (step 1 above) against a real 0G Compute account to unblock
+  pricing — does this need the production `ZEROG_COMPUTE_API_KEY`, or is there a funded staging
+  account already?
