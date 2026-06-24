@@ -120,6 +120,10 @@ services:
         value: https://aiarena-inft.onrender.com
       - key: INTERNAL_SERVICE_SECRET
         sync: false
+      # OKX Agent Marketplace A2MCP bridge — checked by okxServiceMiddleware,
+      # issued/rotated independently of INTERNAL_SERVICE_SECRET. See docs/okx/.
+      - key: OKX_SERVICE_KEY
+        sync: false
 
   # ── Battle Service ────────────────────────────────────────────────────────────
   - type: web

@@ -264,9 +264,14 @@ Agent Card, via:
    Solana) — also not currently logged; needs a manual check against 0G Chain's gas tracker.
 4. Sum 1–3, add margin, quote as a fixed USDG/USD₮0 amount on X Layer (gasless for the payer when
    using USDG/USD₮0/USDC, per the Onchain OS docs in
-   [`okx_context.md`](okx_context.md#supported-networks--tokens)).
+   [`../okx/okx_context.md`](../okx/okx_context.md#supported-networks--tokens)).
 
 Until step 1–3 produce real numbers, the Agent Card's `pricing` field stays a placeholder.
+
+**Update (2026-06-24):** this phase has since moved from design to a built, typechecked endpoint.
+See [`../okx/`](../okx/README.md) for the live implementation reference, real (partial) pricing
+measurements, the draft Agent Card, and the full session log — `okx_context.md` itself has also
+moved there.
 
 ## Open questions before implementation
 

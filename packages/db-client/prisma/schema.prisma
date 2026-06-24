@@ -158,6 +158,8 @@ model Agent {
   wallet          AgentWallet?
   stakingRecords  StakingRecord[]
   leaderboardEntries LeaderboardEntry[]
+  okxRequests     OkxAgentRequest[]
+  experienceLogs  KultExperienceLog[]
 
   @@index([userId])
   @@index([eloRating])
@@ -288,6 +290,45 @@ model IntelligenceLayer {
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+/// Tracks each call into the OKX Agent Marketplace "create arena agent" A2MCP
+/// endpoint. The unique idempotencyKey lets a retried/duplicated OKX call return
+/// the cached result instead of creating a second agent. Mirrors the pattern
+/// already used by LeagueMoment.idempotencyKey.
+model OkxAgentRequest {
+  id             String    @id @default(uuid())
+  idempotencyKey String    @unique
+  agentId        String?
+  status         String    @default("PENDING") // PENDING | COMPLETED | FAILED
+  requestPayload Json
+  errorDetail    String?
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+
+  agent          Agent?    @relation(fields: [agentId], references: [id])
+
+  @@index([status])
+  @@index([agentId])
+}
+
+/// Per-agent refined record of a game/match outcome, sourced from NATS events
+/// (battle results, league settlements, rivalry updates). Consumed by the
+/// KULT Core Personality Drift Engine to nudge Agent.traits over time.
+model KultExperienceLog {
+  id          String    @id @default(uuid())
+  agentId     String
+  eventType   String    // BATTLE_RESULT | LEAGUE_PREDICTION_SETTLED | RIVALRY_UPDATED | ...
+  outcome     String?   // WIN | LOSS | DRAW | CORRECT | INCORRECT
+  delta       Json      @default("{}") // suggested trait deltas, consumed by the drift engine
+  rawPayload  Json
+  processedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  agent       Agent     @relation(fields: [agentId], references: [id])
+
+  @@index([agentId, createdAt])
+  @@index([processedAt])
 }
 
 model EscrowRecord {

@@ -1,0 +1,37 @@
+{
+  "name": "KULT — Arena Agent Creator",
+  "description": "Instantly creates a fully-formed combat agent for the AI Arena: AI-generated personality traits, backstory, and a minted on-chain Living NFT (0G Chain, ERC-7857). Avatar art generates asynchronously and is not included in the initial response.",
+  "service": "create-agent",
+  "serviceType": "A2MCP",
+  "endpoint": "https://aiarena-gateway.onrender.com/v1/okx/create-agent",
+  "auth": "X-OKX-Service-Key header (issued at ASP registration)",
+  "inputSchema": {
+    "name": "string (required)",
+    "clan": "string (required)",
+    "archetype": "string (optional, default: hybrid)",
+    "backstory": "string (optional)",
+    "idempotencyKey": "string (required) — caller-supplied, guards against duplicate billing on retry"
+  },
+  "outputSchema": {
+    "agentId": "string (uuid)",
+    "name": "string",
+    "clan": "string",
+    "archetype": "string",
+    "traits": "object (8 named trait scores, 0-100)",
+    "backstory": "string",
+    "inftTokenId": "string | null",
+    "avatarStatus": "\"pending\" | \"ready\"",
+    "avatarRootHash": "string | null"
+  },
+  "pricing": {
+    "model": "fixed-per-call",
+    "amount": "TBD — see docs/okx/pricing.md, blocked on 0G Storage + 0G Chain gas cost confirmation",
+    "currency": "USDG | USD₮0",
+    "network": "X Layer (eip155:196)"
+  },
+  "latency": {
+    "typical": "~15s (fast path: personality generation only, avatar deferred async)",
+    "note": "avatarStatus in the response is \"pending\" until the async avatar pipeline completes; no callback/poll endpoint exists yet for avatar completion"
+  },
+  "status": "endpoint implemented, not yet registered with OKX — pricing and payment integration still open, see docs/okx/create-agent-endpoint.md"
+}

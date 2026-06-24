@@ -102,6 +102,33 @@ async function main() {
     });
   }
 
+  // ── OKX bridge rate limiting (only when Redis is available) ────────────────
+  // Tighter than the global default since this is an externally-billed, pay-per-call
+  // surface (no OKX-side sandbox to absorb retries/abuse) — see docs/okx/.
+  if (rateLimitRedis) {
+    const redis = rateLimitRedis;
+    app.addHook('onRequest', async (req, reply) => {
+      if (req.url.startsWith('/v1/okx')) {
+        try {
+          const key   = `rl:okx:${req.ip ?? 'unknown'}`;
+          const limit = parseInt(process.env.OKX_RATE_LIMIT_MAX ?? '30');
+          const win   = parseInt(process.env.OKX_RATE_LIMIT_WINDOW_MS ?? '60000');
+          const count = await redis.incr(key);
+          if (count === 1) await redis.pexpire(key, win);
+          if (count > limit) {
+            return reply.status(429).send({
+              statusCode: 429,
+              error: 'Too Many Requests',
+              message: 'OKX bridge rate limit exceeded. Try again in 60 seconds.',
+            });
+          }
+        } catch {
+          // Redis error — skip rate limiting for this request
+        }
+      }
+    });
+  }
+
   // ── Health check ────────────────────────────────────────────────────────────
   app.get('/health', async () => ({
     status: 'ok',
@@ -150,6 +177,8 @@ async function main() {
     { prefix: '/v1/leaderboards', envKey: 'LEADERBOARD_SERVICE_URL', fallback: 'http://localhost:8041', rewritePrefix: '/leaderboards' },
     // league-service handles /v1/league/* itself — keep the prefix on the way through
     { prefix: '/v1/league',       envKey: 'LEAGUE_SERVICE_URL',      fallback: 'http://localhost:8060', rewritePrefix: '/v1/league'    },
+    // OKX Agent Marketplace A2MCP bridge — lives in agent-service, auth via X-OKX-Service-Key
+    { prefix: '/v1/okx',          envKey: 'AGENT_SERVICE_URL',       fallback: 'http://localhost:8002', rewritePrefix: '/okx'          },
   ];
 
   // ── Optional / not-yet-deployed services — proxy if URL set, else 503 ──────
