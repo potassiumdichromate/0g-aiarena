@@ -8,20 +8,23 @@ endpoint this fronts.
 
 ## Status: scaffold, not deployed
 
-This typechecks and runs against the **real** `mppx` / `@okxweb3/mpp` packages (verified by
-pulling their actual published `.d.ts` files — not guessed from doc summaries). It is **not**
-wired into `docker-compose.yml` or `render.yaml`, and it will refuse to start
-(`process.exit(1)`) until six env vars are set with real values:
+This typechecks and runs against the **real** `@okxweb3/mpp` package (verified by pulling its
+actual published `.d.ts` files — not guessed from doc summaries; also fixed a real
+`mppx`-version conflict in the process, see "Why no direct `mppx` dependency" below). It is
+**not** wired into `docker-compose.yml` or `render.yaml`.
 
-| Var | Why it's missing |
+Pricing defaults to **0.10 USDG per call**, paid to `0x63F63DC442299cCFe470657a769fdC6591d65eCa`
+(see [`../../docs/okx/pricing.md`](../../docs/okx/pricing.md)) — override via
+`OKX_CREATE_AGENT_PRICE_AMOUNT` / `OKX_CREATE_AGENT_PRICE_CURRENCY` /
+`OKX_PAYMENT_RECIPIENT_ADDRESS` if needed.
+
+It still refuses to start (`process.exit(1)`) on three env vars that genuinely don't exist yet —
+not because their values are uncertain, but because they're credentials OKX issues only after ASP
+registration:
+
+| Var | Source |
 |---|---|
-| `OKX_CREATE_AGENT_PRICE_AMOUNT` | Pricing isn't final — see [`../../docs/okx/pricing.md`](../../docs/okx/pricing.md). Two of three cost components are measured; storage cost and the 0G→USD rate aren't. |
-| `OKX_CREATE_AGENT_PRICE_CURRENCY` | Token contract address (USDG/USD₮0) on X Layer — depends on the price being final first. |
-| `OKX_PAYMENT_RECIPIENT_ADDRESS` | The wallet that should receive payment — needs deciding (treasury? service account?). |
 | `OKX_API_KEY` / `OKX_API_SECRET_KEY` / `OKX_API_PASSPHRASE` | Issued by OKX's Developer Portal at ASP registration — we aren't registered yet (whitelist beta, needs an OKX PoC contact). |
-
-Do not fill these with placeholder values to make it start — it would charge real OKX users a
-wrong, unreviewed price the moment it goes live.
 
 ## How it works
 
@@ -41,14 +44,26 @@ Note: this uses a manual Node↔Fetch `Request`/`Response` adapter rather than `
 — the latter consumes the request body itself, which conflicts with this proxy's need to read
 the body once and forward it untouched to agent-service after payment verification.
 
-## Running it (once real values exist)
+## Running it (once OKX credentials exist)
 
 ```bash
 pnpm --filter @ai-arena/okx-payment-proxy dev
 ```
 
-Requires the six env vars above, plus optionally `OKX_PROXY_UPSTREAM_URL`,
-`OKX_SERVICE_KEY` (must match agent-service's value), and `PORT` (default `8090`).
+Requires `OKX_API_KEY` / `OKX_API_SECRET_KEY` / `OKX_API_PASSPHRASE`, plus optionally
+`OKX_PROXY_UPSTREAM_URL`, `OKX_SERVICE_KEY` (must match agent-service's value), and `PORT`
+(default `8090`).
+
+## Why no direct `mppx` dependency
+
+`@okxweb3/mpp` depends on `mppx@^0.3.x` internally. An earlier version of this package also
+declared `mppx@^0.7.0` directly to get the top-level `Mppx` export — pnpm installed two
+incompatible copies, and the hoisted 0.7.0 copy broke at runtime
+(`ERR_PACKAGE_PATH_NOT_EXPORTED` resolving `viem/tempo/chains`, a subpath only the newer mppx
+expects). Fixed by importing `Mppx` from `@okxweb3/mpp`'s own root export instead — it re-exports
+`Mppx` from the exact `mppx` version it depends on, so there's only ever one copy in the graph.
+Caught via an actual runtime smoke test, not just `tsc --noEmit` (which doesn't catch
+module-resolution-only failures like this one).
 
 ## Why this is its own package
 

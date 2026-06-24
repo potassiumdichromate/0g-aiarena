@@ -1,5 +1,12 @@
 # OKX `create-agent` Pricing — Cost Sample
 
+## Final price: 0.10 USDG per call
+
+Set in [`agent-card.json`](agent-card.json) and as the default in
+`services/okx-payment-proxy/src/main.ts`. Comfortably covers the measured cost components below
+with wide margin. Recipient address: `0x63F63DC442299cCFe470657a769fdC6591d65eCa` (the existing
+operator wallet). Currency: USDG (`0x4ae46a509f6b1d9056937ba4500cb143933d2dc8` on X Layer).
+
 > Real measurements, not estimates, taken against the funded production 0G Compute account on
 > 2026-06-24. This unblocks the pricing gap flagged in
 > [`../architecture/KULT_CORE_INTELLIGENCE_LAYER.md`](../architecture/KULT_CORE_INTELLIGENCE_LAYER.md#pricing--the-open-item-that-actually-blocks-registering-the-agent-card).

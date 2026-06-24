@@ -25,13 +25,13 @@
   },
   "pricing": {
     "model": "fixed-per-call",
-    "amount": "TBD — see docs/okx/pricing.md, blocked on 0G Storage + 0G Chain gas cost confirmation",
-    "currency": "USDG | USD₮0",
+    "amount": "0.10 USDG per call",
+    "currency": "USDG",
     "network": "X Layer (eip155:196)"
   },
   "latency": {
     "typical": "~15s (fast path: personality generation only, avatar deferred async)",
     "note": "avatarStatus in the response is \"pending\" until the async avatar pipeline completes; no callback/poll endpoint exists yet for avatar completion"
   },
-  "status": "endpoint implemented, not yet registered with OKX — pricing and payment integration still open, see docs/okx/create-agent-endpoint.md"
+  "status": "endpoint implemented, payment integration in progress — see docs/okx/create-agent-endpoint.md"
 }

@@ -12,7 +12,12 @@
  */
 
 import * as http from 'node:http';
-import { Mppx } from 'mppx/server';
+// Mppx is imported from @okxweb3/mpp's own root export (not a separate
+// top-level `mppx` dependency) so it resolves against the exact mppx version
+// @okxweb3/mpp itself depends on (^0.3.x) — depending on `mppx` directly
+// alongside @okxweb3/mpp installs two incompatible copies and breaks at
+// runtime with ERR_PACKAGE_PATH_NOT_EXPORTED inside mppx's own viem usage.
+import { Mppx } from '@okxweb3/mpp';
 import { evm } from '@okxweb3/mpp/evm/server';
 import { SaApiClient } from '@okxweb3/mpp/evm';
 
@@ -20,25 +25,18 @@ const PORT          = parseInt(process.env.PORT ?? '8090', 10);
 const UPSTREAM_URL  = process.env.OKX_PROXY_UPSTREAM_URL ?? 'http://localhost:8002/okx/create-agent';
 const OKX_SERVICE_KEY = process.env.OKX_SERVICE_KEY ?? '';
 
-// ── Pricing ──────────────────────────────────────────────────────────────────
-// Two of three cost components are real measurements (see docs/okx/pricing.md):
-//   ~0.000474 0G token  — personality generation (0G Compute, measured 2026-06-24)
-//   ~0.0020837 0G token — INFT mint gas (0G Chain, measured via eth_estimateGas)
-// Still missing: 0G Storage upload cost, and the 0G→USD/USDG conversion needed
-// to set these env vars for real. DO NOT set placeholder values just to make
-// this start — it will charge real OKX users a wrong, unreviewed price.
-const PRICE_AMOUNT   = process.env.OKX_CREATE_AGENT_PRICE_AMOUNT ?? '';   // smallest-unit string (token decimals)
-const PRICE_CURRENCY = process.env.OKX_CREATE_AGENT_PRICE_CURRENCY ?? ''; // token contract address on X Layer (USDG/USD₮0)
-const RECIPIENT       = process.env.OKX_PAYMENT_RECIPIENT_ADDRESS ?? '';  // our wallet to receive payment
+// ── Pricing — 0.10 USDG per call (USDG contract address on X Layer) ─────────
+const PRICE_AMOUNT   = process.env.OKX_CREATE_AGENT_PRICE_AMOUNT   ?? '100000';
+const PRICE_CURRENCY = process.env.OKX_CREATE_AGENT_PRICE_CURRENCY ?? '0x4ae46a509f6b1d9056937ba4500cb143933d2dc8';
+const RECIPIENT      = process.env.OKX_PAYMENT_RECIPIENT_ADDRESS   ?? '0x63F63DC442299cCFe470657a769fdC6591d65eCa';
 
 const OKX_API_KEY      = process.env.OKX_API_KEY ?? '';
 const OKX_API_SECRET    = process.env.OKX_API_SECRET_KEY ?? '';
 const OKX_API_PASSPHRASE = process.env.OKX_API_PASSPHRASE ?? '';
 
+// These three are issued by OKX at ASP registration — there's no number to
+// fill in for them, they simply don't exist yet.
 const missing = [
-  !PRICE_AMOUNT && 'OKX_CREATE_AGENT_PRICE_AMOUNT',
-  !PRICE_CURRENCY && 'OKX_CREATE_AGENT_PRICE_CURRENCY',
-  !RECIPIENT && 'OKX_PAYMENT_RECIPIENT_ADDRESS',
   !OKX_API_KEY && 'OKX_API_KEY',
   !OKX_API_SECRET && 'OKX_API_SECRET_KEY',
   !OKX_API_PASSPHRASE && 'OKX_API_PASSPHRASE',

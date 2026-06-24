@@ -11,9 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "mppx": "^0.7.0",
-    "@okxweb3/mpp": "^0.1.0",
-    "viem": "^2.21.0"
+    "@okxweb3/mpp": "^0.1.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

@@ -100,6 +100,25 @@ After the first pass above, kept going on the parts that didn't need Render dash
   currency, recipient, and three OKX API credentials) are set with real values — see
   `services/okx-payment-proxy/README.md`.
 
+## Continued (same day): finalized price, fixed a real dependency bug
+
+- **Decided on 0.10 USDG per call** as the fixed A2MCP price (comfortable margin over the ~0.0026
+  0G token in measured costs so far) and wired it as the default in both
+  [`agent-card.json`](agent-card.json) and `services/okx-payment-proxy/src/main.ts`, paid to
+  `0x63F63DC442299cCFe470657a769fdC6591d65eCa` (the existing operator wallet). The 0G Storage
+  cost and exact FX rate are still not separately measured, but the margin is wide enough that
+  this price stands regardless.
+- **Found and fixed a real runtime bug while smoke-testing the proxy** (not caught by `tsc
+  --noEmit` — module resolution failures aren't type errors): depending on `mppx` directly
+  (^0.7.0) alongside `@okxweb3/mpp` (which depends on `mppx@^0.3.x` internally) installed two
+  incompatible copies; the hoisted 0.7.0 copy broke at runtime with
+  `ERR_PACKAGE_PATH_NOT_EXPORTED` trying to resolve a `viem` subpath. Fixed by importing `Mppx`
+  from `@okxweb3/mpp`'s own root export instead of a separate top-level `mppx` dependency — see
+  `services/okx-payment-proxy/README.md#why-no-direct-mppx-dependency`. Re-verified with an actual
+  `node --experimental-strip-types src/main.ts` run, not just a typecheck.
+- Remaining blocker to actually running this proxy is now down to exactly one thing: real
+  `OKX_API_KEY` / `OKX_API_SECRET_KEY` / `OKX_API_PASSPHRASE`, issued only after ASP registration.
+
 ## What's explicitly NOT done (and why)
 
 - **Migration not applied to the live Render Postgres** — same situation as the prior
