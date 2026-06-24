@@ -82,10 +82,10 @@ tenants in this design.
   before it completes, to keep latency low for a pay-per-call API with no sandbox. `avatarStatus`
   in the response tells the caller whether it's ready yet; there's no webhook/poll endpoint for
   the avatar specifically yet — would need one if OKX needs to know when it lands.
-- **Payment integration** (OKX Payment SDK / `mppx` reverse proxy) is not wired up — this endpoint
-  is unauthenticated against OKX's billing today, only gated by `OKX_SERVICE_KEY`. See
-  [`okx_context.md`](okx_context.md#implications-for-kult-cores-a2mcp-service) for the two
-  integration paths (SDK vs. reverse proxy) and [`pricing.md`](pricing.md) for what's needed
-  before a fixed price can be declared.
+- **Payment integration exists as a scaffold, not deployed**: `services/okx-payment-proxy`
+  implements the reverse-proxy path against the real `mppx` / `@okxweb3/mpp` packages and
+  typechecks clean, but refuses to start until real pricing and OKX API credentials exist (see
+  its README). Until it's actually running in front of this endpoint, `/v1/okx/create-agent`
+  remains unauthenticated against OKX's billing — only gated by `OKX_SERVICE_KEY`.
 - **Agent Card registration** with OKX itself — this is a business/manual step (contact the OKX
   PoC for whitelist beta access), not something to automate from this repo.

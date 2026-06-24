@@ -25,31 +25,50 @@ Cost scales with `completion_tokens` (the model's `max_tokens` is capped at 1024
 `generatePersonality()`), so this average should hold steady — large variance would only show up
 if response length varies a lot across different agent seeds.
 
+## INFT mint gas — measured 2026-06-24
+
+Ran a real, read-only `contract.mintAgent.estimateGas(...)` against the live `AIArenaINFT`
+contract on 0G Chain mainnet (`ZEROG_INFT_CONTRACT_ADDRESS`), using the operator address derived
+from `ZEROG_STORAGE_PRIVATE_KEY` as both `from` and dummy `to`, with placeholder trait/hash/string
+values. This is a **simulation only** — `estimateGas` never broadcasts a transaction, so it cost
+nothing and changed no state.
+
+| Metric | Value |
+|---|---|
+| Estimated gas units | 520,923 |
+| Gas price (at time of check) | 4,000,000,007 wei (~4 gwei) |
+| **Estimated mint cost** | **0.0020837 0G token** |
+
+This will vary slightly run-to-run with network gas price, and real calldata (longer `agentId`,
+real `genesisRootHash`, a non-trivial `sealedKey`) will push actual gas slightly above this
+estimate — treat this as a reasonable floor, not a hard ceiling.
+
 ## What's still missing (flagged, not guessed)
 
-These need a real number before the Agent Card's fixed price can be finalized — none of them are
-in the codebase's metering today:
-
 1. **0G Storage upload cost** for the metadata JSON blob (avatar upload is skipped in the OKX
-   fast path, so only one upload applies here). Check 0G Storage's own published pricing — not
-   something this codebase tracks per-call.
-2. **0G Chain gas** for the INFT mint transaction (`AIArenaINFT.sol`, Chain ID 16661). No gas
-   estimation/logging exists in `inft-service` today — check a 0G Chain gas tracker or run one
-   real mint and read the tx receipt.
-3. **0G token → USD conversion** — needed to quote a USDG/USD₮0 price on X Layer (per
+   fast path, so only one upload applies here). Unlike the gas estimate above, there's no
+   dry-run equivalent for `indexer.upload()` in the `@0gfoundation/0g-storage-ts-sdk` — it submits
+   a real on-chain transaction to the Flow contract every time
+   (`packages/zerog-client/src/storage.client.ts:51`). Getting a real number means either:
+   (a) running one real ~2KB upload and reading the actual fee from the tx receipt — a small,
+   real, irreversible spend that needs explicit go-ahead before doing it, or
+   (b) finding 0G's published per-byte storage fee schedule instead of measuring it directly.
+2. **0G token → USD conversion** — needed to quote a USDG/USD₮0 price on X Layer (per
    [`okx_context.md`](okx_context.md)). Use the live rate at the time of pricing, not a fixed
    assumption baked into docs.
 
 ## Suggested pricing approach
 
 ```
-price_per_call (USD) = (0.000474 0G token × 0G/USD rate)
-                      + (storage upload cost in USD)
-                      + (INFT mint gas in USD)
+price_per_call (USD) = (0.000474 0G token × 0G/USD rate)   // personality generation, measured
+                      + (0.0020837 0G token × 0G/USD rate) // INFT mint gas, measured
+                      + (storage upload cost in USD)        // still open, see above
                       + margin (suggest 30-50% given OKX's pay-per-call,
                         no-arbitration model — a single underpriced call
                         can't be renegotiated after the fact)
 ```
 
-Round up to a clean USDG/USD₮0 figure (A2MCP wants one fixed, declared price — see
-[`okx_context.md`](okx_context.md#a2mcp--standard-api)) once items 1–3 are filled in.
+Two of three cost components are now real numbers (~0.0026 0G token combined, before storage and
+FX). Round up to a clean USDG/USD₮0 figure (A2MCP wants one fixed, declared price — see
+[`okx_context.md`](okx_context.md#a2mcp--standard-api)) once the storage cost and FX rate are
+filled in.

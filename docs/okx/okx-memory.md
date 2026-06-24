@@ -72,6 +72,34 @@ pay-per-call, fixed-price, instant-settlement model is the right fit.
   as `TBD`, everything else filled in from the real endpoint contract.
 - Typechecked clean: `npx tsc --noEmit` on both `services/agent-service` and `services/api-gateway`.
 
+## Continued (same day): real gas estimate + payment proxy scaffold
+
+After the first pass above, kept going on the parts that didn't need Render dashboard access:
+
+- **INFT mint gas — measured, not guessed.** Ran a real, read-only
+  `contract.mintAgent.estimateGas(...)` against the live `AIArenaINFT` contract on 0G Chain
+  mainnet (the operator wallet derived from `ZEROG_STORAGE_PRIVATE_KEY` as `from`). This is a
+  simulation — `estimateGas` never broadcasts a transaction, so it cost nothing. Result: 520,923
+  gas units × ~4 gwei ≈ **0.0020837 0G token**. Combined with the personality-generation cost,
+  two of three pricing components are now real numbers — see the updated
+  [`pricing.md`](pricing.md).
+- **Did NOT run a real 0G Storage upload** to measure that cost, even though it would have been
+  technically easy — `@0gfoundation/0g-storage-ts-sdk`'s `indexer.upload()` has no dry-run/
+  estimate mode like `eth_estimateGas` does; it always submits a real on-chain transaction. That's
+  a real, irreversible (if small) spend, which is a different risk class from a read-only gas
+  estimate or a $0.0005 compute call — flagged for explicit go-ahead rather than just done.
+- **Built `services/okx-payment-proxy`** — a real, typechecked reverse-proxy scaffold that
+  pay-walls `/v1/okx/create-agent` using OKX's actual `mppx` + `@okxweb3/mpp` packages. Verified
+  against the real published `.d.ts` files (pulled via `npm pack` into a scratch dir, not guessed
+  from the doc summaries) — caught and fixed two real mistakes in the process: `Mppx.toNodeListener`
+  isn't a top-level export of `mppx/server` (it's a namespace member), and it consumes the Node
+  request stream itself, which conflicts with this proxy's need to forward the original body to
+  agent-service after payment — so it uses a manual Fetch `Request`/`Response` adapter instead.
+  Installed for real via `pnpm install --filter @ai-arena/okx-payment-proxy` (now in the workspace
+  lockfile) and typechecks clean. **It refuses to start** until six env vars (final price,
+  currency, recipient, and three OKX API credentials) are set with real values — see
+  `services/okx-payment-proxy/README.md`.
+
 ## What's explicitly NOT done (and why)
 
 - **Migration not applied to the live Render Postgres** — same situation as the prior
@@ -80,25 +108,31 @@ pay-per-call, fixed-price, instant-settlement model is the right fit.
 - **`OKX_SERVICE_KEY` not set anywhere real** — it's referenced in code and declared in
   `render.yaml` as `sync: false`, meaning someone has to generate a value and paste it into the
   Render dashboard manually. Not done here (no value exists yet to set).
-- **No payment integration** — the endpoint has no OKX Payment SDK / `mppx` reverse-proxy in
-  front of it yet. It's only gated by `OKX_SERVICE_KEY`, not by any payment verification. This
-  was flagged as a separate, later step in `create-agent-endpoint.md`.
-- **Pricing is not finalized** — three of four cost components are real measurements; the other
-  three (storage, gas, FX rate) are explicitly flagged as unknowns rather than guessed.
+- **`okx-payment-proxy` is not wired into `docker-compose.yml` or `render.yaml`** — it's not
+  deployable yet (no OKX credentials, no final price), so it isn't registered as a running
+  service anywhere. Wiring it in before those exist would just be a 503 in production.
+- **Pricing is not fully finalized** — personality-gen cost and INFT mint gas are now real
+  measurements; 0G Storage upload cost and the 0G→USD/USDG FX rate are still open, see
+  `pricing.md`.
 - **Nothing was registered with OKX** — no outreach to an OKX PoC happened in this session; that's
   a manual/business step outside what a coding session should do unprompted.
-- **No real INFT mint or 0G Storage upload was triggered as part of this session's testing** — only
-  the personality-generation chat call was sampled live (small, low-stakes real cost). Minting or
-  uploading for pricing purposes would spend real gas/storage fees and wasn't done without an
-  explicit ask.
+- **No real 0G Storage upload or INFT mint transaction was broadcast** — only read-only/simulated
+  checks (chat completion calls, `estimateGas`) were run. Anything that would spend real
+  storage/gas fees as a *transaction* (vs. a free simulation) was deliberately left for an
+  explicit go-ahead.
 
 ## If you're picking this up next
 
 1. Generate a real `OKX_SERVICE_KEY` value and set it in Render's dashboard for `aiarena-agent`.
 2. Apply the migration (`npx prisma migrate deploy` via Render Shell — and check whether
    `migrate resolve --applied` is needed first, same caveat as the prior league migration).
-3. Fill in the three missing pricing inputs in `pricing.md`, then update `agent-card.json`'s
-   `pricing.amount`.
-4. Decide SDK vs. reverse-proxy for the OKX Payment SDK integration (see `okx_context.md`'s
-   "Implications for KULT Core's A2MCP service" section) and build it.
-5. Only then: contact the OKX PoC for whitelist beta access and submit the Agent Card.
+3. Decide whether to spend the small real cost of one 0G Storage upload to measure that cost
+   directly, or find 0G's published per-byte storage rate instead — either closes the last real
+   pricing gap (`pricing.md`).
+4. Pick a 0G→USD/USDG FX source, finalize `OKX_CREATE_AGENT_PRICE_AMOUNT` /
+   `OKX_CREATE_AGENT_PRICE_CURRENCY`, and update `agent-card.json`'s `pricing.amount`.
+5. Register as an OKX ASP to get real `OKX_API_KEY` / `OKX_API_SECRET_KEY` / `OKX_API_PASSPHRASE`
+   and decide `OKX_PAYMENT_RECIPIENT_ADDRESS` — `services/okx-payment-proxy` is otherwise ready to
+   run once these and step 4's values exist.
+6. Wire `okx-payment-proxy` into `render.yaml`/`docker-compose.yml` once it's actually meant to run.
+7. Only then: contact the OKX PoC for whitelist beta access and submit the Agent Card.

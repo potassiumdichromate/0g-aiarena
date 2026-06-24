@@ -1,0 +1,23 @@
+{
+  "name": "@ai-arena/okx-payment-proxy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Reverse-proxy that pay-walls POST /v1/okx/create-agent via OKX's Onchain OS Payments (mppx + @okxweb3/mpp), per docs/okx/create-agent-endpoint.md. NOT deployed yet — see README.md for why. Pure ESM (its only deps are ESM-only), unlike the rest of this monorepo's services.",
+  "scripts": {
+    "dev": "node --import tsx src/main.ts",
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "mppx": "^0.7.0",
+    "@okxweb3/mpp": "^0.1.0",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0",
+    "tsx": "^4.19.0"
+  }
+}
