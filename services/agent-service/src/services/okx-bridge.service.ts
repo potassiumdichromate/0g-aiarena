@@ -37,7 +37,6 @@ export class OkxBridgeService {
 
   async createAgentForOkx(params: {
     name: string;
-    clan: string;
     archetype?: string;
     backstory?: string;
     idempotencyKey: string;
@@ -64,9 +63,12 @@ export class OkxBridgeService {
 
     try {
       const systemUserId = await this.ensureSystemUser();
+      // Every agent minted through the OKX bridge belongs to the OKX clan —
+      // not caller-supplied, since this is the one identifying trait of an
+      // OKX-marketplace-originated agent.
       const agent = await this.agentService.createAgent(systemUserId, {
         name:      params.name,
-        clan:      params.clan,
+        clan:      'OKX',
         archetype: params.archetype,
         backstory: params.backstory,
       });

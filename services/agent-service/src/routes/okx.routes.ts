@@ -13,20 +13,23 @@ export async function okxRoutes(app: FastifyInstance): Promise<void> {
    * JWT, since the caller is OKX's infra on a paying customer's behalf, not
    * an AI Arena account.
    *
+   * Every agent created here is clan: OKX (forced in OkxBridgeService, not
+   * caller-supplied) — it's the identifying trait of an OKX-marketplace
+   * agent, not something OKX needs to choose.
+   *
    * Returns fast (traits + backstory + DB row) without waiting on avatar
    * generation, which completes asynchronously via the existing pipeline.
    */
   app.post('/create-agent', { onRequest: [okxServiceMiddleware] as any }, async (req, reply) => {
     const body = req.body as {
       name?: string;
-      clan?: string;
       archetype?: string;
       backstory?: string;
       idempotencyKey?: string;
     };
 
-    if (!body?.name || !body?.clan) {
-      return reply.status(400).send({ error: 'name and clan are required' });
+    if (!body?.name) {
+      return reply.status(400).send({ error: 'name is required' });
     }
     if (!body?.idempotencyKey) {
       return reply.status(400).send({ error: 'idempotencyKey is required' });
@@ -35,7 +38,6 @@ export async function okxRoutes(app: FastifyInstance): Promise<void> {
     try {
       const { agent, replay } = await okxBridge.createAgentForOkx({
         name:           body.name,
-        clan:           body.clan,
         archetype:      body.archetype,
         backstory:      body.backstory,
         idempotencyKey: body.idempotencyKey,

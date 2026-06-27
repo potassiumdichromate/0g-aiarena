@@ -7,7 +7,6 @@
   "auth": "X-OKX-Service-Key header (issued at ASP registration)",
   "inputSchema": {
     "name": "string (required)",
-    "clan": "string (required)",
     "archetype": "string (optional, default: hybrid)",
     "backstory": "string (optional)",
     "idempotencyKey": "string (required) — caller-supplied, guards against duplicate billing on retry"
@@ -15,7 +14,7 @@
   "outputSchema": {
     "agentId": "string (uuid)",
     "name": "string",
-    "clan": "string",
+    "clan": "string (always \"OKX\" for agents created through this service)",
     "archetype": "string",
     "traits": "object (8 named trait scores, 0-100)",
     "backstory": "string",

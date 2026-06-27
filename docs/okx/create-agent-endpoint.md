@@ -14,7 +14,7 @@ existing `AgentService.createAgent()` flow for the OKX Agent Marketplace A2MCP s
 | Route mount | `services/agent-service/src/main.ts` — `app.register(okxRoutes, { prefix: '/okx' })` |
 | Gateway proxy | `services/api-gateway/src/main.ts` — `/v1/okx` → `AGENT_SERVICE_URL`, rewrite to `/okx` |
 | Idempotency + experience schema | `packages/db-client/prisma/schema.prisma` — `OkxAgentRequest`, `KultExperienceLog` |
-| Migration | `packages/db-client/prisma/migrations/20260624150000_okx_bridge_and_kult_experience_log/` |
+| Migration | `packages/db-client/prisma/migrations/20260624150000_okx_bridge_and_kult_experience_log/`, `packages/db-client/prisma/migrations/20260628030000_add_okx_clan/` |
 | Env var | `OKX_SERVICE_KEY` (set in `render.yaml` under `aiarena-agent`, `sync: false`) |
 
 ## Request / response
@@ -29,12 +29,16 @@ Content-Type: application/json
 // Request body
 {
   "name": "string (required)",
-  "clan": "string (required)",
   "archetype": "string (optional, default hybrid)",
   "backstory": "string (optional)",
   "idempotencyKey": "string (required)"
 }
 ```
+
+`clan` is **not** a request field — every agent created through this endpoint is forced to
+`clan: OKX` in `OkxBridgeService.createAgentForOkx()`, regardless of what (if anything) a caller
+sends. `ClanType.OKX` was added specifically to identify OKX-marketplace-originated agents,
+distinct from the platform's existing `ZEROG` / `BASE` / `SOLANA` clans.
 
 ```jsonc
 // Response — 201 first call, 200 on a replayed idempotencyKey, 409 if a request

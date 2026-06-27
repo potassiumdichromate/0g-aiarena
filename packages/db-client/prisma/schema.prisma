@@ -13,6 +13,7 @@ enum ClanType {
   ZEROG
   BASE
   SOLANA
+  OKX
 }
 
 enum CombatArchetype {
