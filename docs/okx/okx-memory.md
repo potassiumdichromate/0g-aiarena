@@ -119,39 +119,75 @@ After the first pass above, kept going on the parts that didn't need Render dash
 - Remaining blocker to actually running this proxy is now down to exactly one thing: real
   `OKX_API_KEY` / `OKX_API_SECRET_KEY` / `OKX_API_PASSPHRASE`, issued only after ASP registration.
 
+## Continued: whitelist access, ASP registration, real payment credentials, deployment
+
+Picked up after OKX granted whitelist access (an OKX.AI invite email landed, confirming the
+account was approved):
+
+- **Migration applied** to the live Render Postgres (`npx prisma migrate deploy` via Render
+  Shell — all three pending migrations, including `OkxAgentRequest`/`KultExperienceLog` and the
+  later OKX-clan one, applied cleanly with no `resolve --applied` workaround needed).
+- **`OKX_SERVICE_KEY` generated and set** in Render for `aiarena-agent` — confirmed via a live
+  smoke test (`/v1/okx/create-agent` went from 503 → real 400/201 responses).
+- **Installed `onchainos` (Onchain OS CLI) and registered ASP `#2170`**, "KULT Agent Creator":
+  - Hit a real CLI bug along the way — `onchainos upgrade --beta` consistently failed checksum
+    verification, even when re-downloading the *already-installed, verified-good* version.
+    Diagnosed by manually downloading the same GitHub release asset directly and hashing it —
+    matched the official checksum exactly, proving the bug was inside `onchainos upgrade`'s own
+    verification step, not a tampered file or network/AV interference. Manually swapped in the
+    verified binary to unblock the `agent` subcommand family (absent from the older CLI version).
+  - Accepted OKX's marketplace terms (explicit user consent, not auto-accepted), ran
+    `agent pre-check --role provider`, uploaded an avatar, and ran `agent create` with one A2MCP
+    service ("Arena Agent Creation", 0.10 USDT, endpoint `/v1/okx/create-agent`). Hit and fixed
+    real PowerShell↔native-exe argument-quoting bugs along the way (embedded JSON quotes silently
+    mangled by PowerShell 5.1's native-arg handling) — worked around with a manually
+    Win32-escaped command line.
+  - `agent activate --agent-id 2170` submitted it for OKX review (response shape:
+    `activate` + `submitApproval`, not an immediate `success: true`).
+- **OKX flagged a real design gap during their own testing**: their agent calls
+  `/v1/okx/create-agent` directly (no central relay), so a single static `OKX_SERVICE_KEY` known
+  only to "OKX" can't work as the public auth mechanism — payment itself needs to be the gate.
+  This is exactly what `okx-payment-proxy` was built for; it just hadn't been deployed yet.
+- **Obtained real OKX API credentials** via the OKX Developer Portal
+  (`https://web3.okx.com/onchainos/dev-portal`), tied to the same wallet that owns ASP `#2170`
+  (required exporting that wallet from OKX's TEE custody into a browser-extension wallet first,
+  since the Dev Portal only accepts plugin-wallet connections, not the CLI/email-based session —
+  a deliberate, explicit, user-confirmed action given it permanently changes how that wallet is
+  managed going forward).
+- **Deployed `aiarena-okx-payment-proxy` as a real Render service** (added to `render.yaml`,
+  `GET /health` route added for Render's health check). Smoke-testing the deployed build (locally,
+  before pushing) caught two more real bugs no typecheck would have found:
+  1. `Mppx.create()` also needs its own local HMAC secret (`MPPX_SECRET_KEY`, distinct from the
+     OKX API credentials) to sign/verify its 402 challenges — generated one the same way as
+     `OKX_SERVICE_KEY` (`openssl rand -hex 32`).
+  2. An em-dash (`—`) in the hardcoded service description broke HTTP header encoding
+     (`ByteString` conversion requires Latin-1 bytes) — replaced with a plain hyphen.
+  After both fixes, a real unpaid `POST /create-agent` call through the proxy returned a correct
+  `402 Payment Required` challenge from `mppx` — the payment gate works end-to-end locally.
+
 ## What's explicitly NOT done (and why)
 
-- **Migration not applied to the live Render Postgres** — same situation as the prior
-  league-economy migration: needs `npx prisma migrate deploy` run via Render Shell on
-  `aiarena-agent` after the next deploy. Nothing in this session ran that.
-- **`OKX_SERVICE_KEY` not set anywhere real** — it's referenced in code and declared in
-  `render.yaml` as `sync: false`, meaning someone has to generate a value and paste it into the
-  Render dashboard manually. Not done here (no value exists yet to set).
-- **`okx-payment-proxy` is not wired into `docker-compose.yml` or `render.yaml`** — it's not
-  deployable yet (no OKX credentials, no final price), so it isn't registered as a running
-  service anywhere. Wiring it in before those exist would just be a 503 in production.
-- **Pricing is not fully finalized** — personality-gen cost and INFT mint gas are now real
-  measurements; 0G Storage upload cost and the 0G→USD/USDG FX rate are still open, see
-  `pricing.md`.
-- **Nothing was registered with OKX** — no outreach to an OKX PoC happened in this session; that's
-  a manual/business step outside what a coding session should do unprompted.
-- **No real 0G Storage upload or INFT mint transaction was broadcast** — only read-only/simulated
-  checks (chat completion calls, `estimateGas`) were run. Anything that would spend real
-  storage/gas fees as a *transaction* (vs. a free simulation) was deliberately left for an
-  explicit go-ahead.
+- **OKX hasn't approved ASP `#2170` yet** — submitted for review, typically ~2 business days,
+  nothing to do here but wait.
+- **The deployed proxy hasn't processed a real OKX payment yet** — only verified locally that it
+  issues a correct 402 challenge; settling an actual payment requires OKX's side to actually call
+  it once their agent stops hitting the old static-key wall.
+- **The OKX API key was shared in this session's chat** — OKX's own Developer Portal UI
+  explicitly warns against this. Not rotated yet; worth doing once the proxy is confirmed working,
+  by generating a fresh key/secret/passphrase set and updating Render.
+- **0G Storage upload cost and exact 0G→USD FX rate are still not separately measured** — doesn't
+  block anything since the fixed 0.10 USDG/USDT price already has wide margin over the real costs
+  measured so far.
+- **No real 0G Storage upload or INFT mint transaction was broadcast for pricing purposes** —
+  only read-only/simulated checks were run; any real spend was left for explicit go-ahead.
 
 ## If you're picking this up next
 
-1. Generate a real `OKX_SERVICE_KEY` value and set it in Render's dashboard for `aiarena-agent`.
-2. Apply the migration (`npx prisma migrate deploy` via Render Shell — and check whether
-   `migrate resolve --applied` is needed first, same caveat as the prior league migration).
-3. Decide whether to spend the small real cost of one 0G Storage upload to measure that cost
-   directly, or find 0G's published per-byte storage rate instead — either closes the last real
-   pricing gap (`pricing.md`).
-4. Pick a 0G→USD/USDG FX source, finalize `OKX_CREATE_AGENT_PRICE_AMOUNT` /
-   `OKX_CREATE_AGENT_PRICE_CURRENCY`, and update `agent-card.json`'s `pricing.amount`.
-5. Register as an OKX ASP to get real `OKX_API_KEY` / `OKX_API_SECRET_KEY` / `OKX_API_PASSPHRASE`
-   and decide `OKX_PAYMENT_RECIPIENT_ADDRESS` — `services/okx-payment-proxy` is otherwise ready to
-   run once these and step 4's values exist.
-6. Wire `okx-payment-proxy` into `render.yaml`/`docker-compose.yml` once it's actually meant to run.
-7. Only then: contact the OKX PoC for whitelist beta access and submit the Agent Card.
+1. Wait for OKX's review of ASP `#2170` (or follow up with them if it's taking longer than
+   ~2 business days).
+2. Once OKX's agent retries against the new payment-gated flow, confirm a real payment settles
+   end-to-end (not just the 402 challenge, which is already verified).
+3. Rotate the OKX API key/secret/passphrase (Dev Portal) since it was shared in chat, and update
+   `aiarena-okx-payment-proxy`'s env vars in Render to match.
+4. Optionally tighten pricing further (0G Storage cost, real FX rate) — not blocking, just more
+   precise.

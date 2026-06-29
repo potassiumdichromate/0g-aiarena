@@ -6,25 +6,30 @@ Payments "charge" (one-time payment) method — the integration path described i
 [`../../docs/okx/create-agent-endpoint.md`](../../docs/okx/create-agent-endpoint.md) for the
 endpoint this fronts.
 
-## Status: scaffold, not deployed
+## Status: deployed (`aiarena-okx-payment-proxy` on Render)
 
-This typechecks and runs against the **real** `@okxweb3/mpp` package (verified by pulling its
-actual published `.d.ts` files — not guessed from doc summaries; also fixed a real
-`mppx`-version conflict in the process, see "Why no direct `mppx` dependency" below). It is
-**not** wired into `docker-compose.yml` or `render.yaml`.
+This runs against the **real** `@okxweb3/mpp` package (verified by pulling its actual published
+`.d.ts` files — not guessed from doc summaries) and has been smoke-tested end-to-end: a real,
+unpaid `POST /create-agent` call returns a correct `402 Payment Required` challenge from
+`mppx`.
+
+Two real runtime bugs were caught only by actually running it (not by `tsc --noEmit`, which
+checks types, not module resolution or byte-encoding rules):
+1. A duplicate `mppx` dependency conflict — see "Why no direct `mppx` dependency" below.
+2. An em-dash (`—`) in the service description broke HTTP header encoding (`ByteString`
+   conversion requires Latin-1 bytes) — replaced with a plain hyphen.
 
 Pricing defaults to **0.10 USDG per call**, paid to `0x63F63DC442299cCFe470657a769fdC6591d65eCa`
 (see [`../../docs/okx/pricing.md`](../../docs/okx/pricing.md)) — override via
 `OKX_CREATE_AGENT_PRICE_AMOUNT` / `OKX_CREATE_AGENT_PRICE_CURRENCY` /
 `OKX_PAYMENT_RECIPIENT_ADDRESS` if needed.
 
-It still refuses to start (`process.exit(1)`) on three env vars that genuinely don't exist yet —
-not because their values are uncertain, but because they're credentials OKX issues only after ASP
-registration:
+Refuses to start (`process.exit(1)`) unless four env vars are set:
 
 | Var | Source |
 |---|---|
-| `OKX_API_KEY` / `OKX_API_SECRET_KEY` / `OKX_API_PASSPHRASE` | Issued by OKX's Developer Portal at ASP registration — we aren't registered yet (whitelist beta, needs an OKX PoC contact). |
+| `OKX_API_KEY` / `OKX_API_SECRET_KEY` / `OKX_API_PASSPHRASE` | Issued by OKX's Developer Portal (`https://web3.okx.com/onchainos/dev-portal`), tied to the wallet/account that owns ASP `#2170`. |
+| `MPPX_SECRET_KEY` | Local HMAC secret `mppx` uses to bind/verify its own 402 challenges — **not** an OKX credential, generate with `openssl rand -hex 32` same as `OKX_SERVICE_KEY`. A leak lets attackers forge challenges; rotating it requires a restart. |
 
 ## How it works
 
@@ -44,15 +49,15 @@ Note: this uses a manual Node↔Fetch `Request`/`Response` adapter rather than `
 — the latter consumes the request body itself, which conflicts with this proxy's need to read
 the body once and forward it untouched to agent-service after payment verification.
 
-## Running it (once OKX credentials exist)
+## Running it
 
 ```bash
 pnpm --filter @ai-arena/okx-payment-proxy dev
 ```
 
-Requires `OKX_API_KEY` / `OKX_API_SECRET_KEY` / `OKX_API_PASSPHRASE`, plus optionally
-`OKX_PROXY_UPSTREAM_URL`, `OKX_SERVICE_KEY` (must match agent-service's value), and `PORT`
-(default `8090`).
+Requires `OKX_API_KEY` / `OKX_API_SECRET_KEY` / `OKX_API_PASSPHRASE` / `MPPX_SECRET_KEY`, plus
+optionally `OKX_PROXY_UPSTREAM_URL`, `OKX_SERVICE_KEY` (must match agent-service's value), and
+`PORT` (default `8090`). `GET /health` is unauthenticated, for Render's health checks.
 
 ## Why no direct `mppx` dependency
 

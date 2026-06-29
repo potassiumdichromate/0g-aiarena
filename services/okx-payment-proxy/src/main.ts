@@ -5,10 +5,8 @@
  * docs/okx/okx_context.md#reverse-proxy. Verified against the real published
  * type definitions of `mppx` and `@okxweb3/mpp` (not guessed from docs prose).
  *
- * STATUS: scaffold only — see docs/okx/README.md. This process is not wired
- * into docker-compose/render.yaml and will refuse to start until the four
- * required env vars below are set with real values (final price, OKX API
- * credentials, recipient address). None of those exist yet.
+ * Deployed as its own Render service (see render.yaml). Refuses to start
+ * unless OKX_API_KEY / OKX_API_SECRET_KEY / OKX_API_PASSPHRASE are set.
  */
 
 import * as http from 'node:http';
@@ -34,12 +32,20 @@ const OKX_API_KEY      = process.env.OKX_API_KEY ?? '';
 const OKX_API_SECRET    = process.env.OKX_API_SECRET_KEY ?? '';
 const OKX_API_PASSPHRASE = process.env.OKX_API_PASSPHRASE ?? '';
 
-// These three are issued by OKX at ASP registration — there's no number to
-// fill in for them, they simply don't exist yet.
+// Local HMAC secret mppx uses to bind/verify its own 402 challenges — distinct
+// from the OKX SA API credentials above. Per OKX's own reverse-proxy docs
+// (docs/okx/okx_context.md#reverse-proxy): "a leak lets attackers forge
+// Challenges, and rotation requires a proxy restart." Generate with
+// `openssl rand -hex 32`, same as OKX_SERVICE_KEY.
+const MPPX_SECRET_KEY = process.env.MPPX_SECRET_KEY ?? '';
+
 const missing = [
+  // Issued by OKX at ASP registration — there's no number to fill in for
+  // these, they simply don't exist until then.
   !OKX_API_KEY && 'OKX_API_KEY',
   !OKX_API_SECRET && 'OKX_API_SECRET_KEY',
   !OKX_API_PASSPHRASE && 'OKX_API_PASSPHRASE',
+  !MPPX_SECRET_KEY && 'MPPX_SECRET_KEY',
 ].filter(Boolean);
 
 if (missing.length > 0) {
@@ -55,8 +61,9 @@ const saClient = new SaApiClient({
 });
 
 const mppx = Mppx.create({
-  methods: [evm.charge({ saClient })],
-  realm:   'kult-arena-agent-creator',
+  methods:   [evm.charge({ saClient })],
+  realm:     'kult-arena-agent-creator',
+  secretKey: MPPX_SECRET_KEY,
 });
 
 async function handler(request: Request): Promise<Response> {
@@ -64,7 +71,7 @@ async function handler(request: Request): Promise<Response> {
     amount:      PRICE_AMOUNT,
     currency:    PRICE_CURRENCY,
     recipient:   RECIPIENT,
-    description: 'KULT — Arena Agent Creator (create-agent)',
+    description: 'KULT - Arena Agent Creator (create-agent)',
     methodDetails: { chainId: 196, feePayer: true },
   })(request);
 
@@ -116,6 +123,13 @@ async function toFetchRequest(req: http.IncomingMessage): Promise<Request> {
 }
 
 http.createServer(async (req, res) => {
+  if (req.method === 'GET' && req.url === '/health') {
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ status: 'ok', service: 'okx-payment-proxy' }));
+    return;
+  }
+
   if (req.method !== 'POST' || req.url !== '/create-agent') {
     res.statusCode = 404;
     res.end('Not found');

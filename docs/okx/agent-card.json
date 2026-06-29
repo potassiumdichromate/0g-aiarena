@@ -4,7 +4,7 @@
   "service": "create-agent",
   "serviceType": "A2MCP",
   "endpoint": "https://aiarena-gateway.onrender.com/v1/okx/create-agent",
-  "auth": "X-OKX-Service-Key header (issued at ASP registration)",
+  "auth": "Payment via OKX Onchain OS Payments (mppx charge, see services/okx-payment-proxy) — no separate account or API key needed by the calling user.",
   "inputSchema": {
     "name": "string (required)",
     "archetype": "string (optional, default: hybrid)",
@@ -24,13 +24,14 @@
   },
   "pricing": {
     "model": "fixed-per-call",
-    "amount": "0.10 USDG per call",
-    "currency": "USDG",
+    "amount": "0.10 USDT per call",
+    "currency": "USDT",
     "network": "X Layer (eip155:196)"
   },
   "latency": {
     "typical": "~15s (fast path: personality generation only, avatar deferred async)",
     "note": "avatarStatus in the response is \"pending\" until the async avatar pipeline completes; no callback/poll endpoint exists yet for avatar completion"
   },
-  "status": "endpoint implemented, payment integration in progress — see docs/okx/create-agent-endpoint.md"
+  "agentId": "2170",
+  "status": "ASP #2170 registered on-chain, submitted for OKX review. Endpoint live, payment proxy (aiarena-okx-payment-proxy) deployed and verified locally (correct 402 challenge on unpaid calls) — see docs/okx/okx-memory.md."
 }

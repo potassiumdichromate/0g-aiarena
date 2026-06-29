@@ -125,6 +125,37 @@ services:
       - key: OKX_SERVICE_KEY
         sync: false
 
+  # ── OKX Payment Proxy (pay-walls aiarena-agent's /okx/create-agent) ───────────
+  # Pure ESM, no Prisma/db-client dependency — standalone build, see
+  # services/okx-payment-proxy/README.md.
+  - type: web
+    name: aiarena-okx-payment-proxy
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: services/okx-payment-proxy
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && node_modules/.bin/turbo run build --filter=@ai-arena/okx-payment-proxy
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8090"
+      - key: NODE_ENV
+        value: production
+      - key: OKX_PROXY_UPSTREAM_URL
+        value: https://aiarena-agent.onrender.com/okx/create-agent
+      # Must match aiarena-agent's OKX_SERVICE_KEY above exactly.
+      - key: OKX_SERVICE_KEY
+        sync: false
+      # Issued at OKX Developer Portal (https://web3.okx.com/onchainos/dev-portal),
+      # tied to the wallet/account that owns ASP #2170. See docs/okx/pricing.md.
+      - key: OKX_API_KEY
+        sync: false
+      - key: OKX_API_SECRET_KEY
+        sync: false
+      - key: OKX_API_PASSPHRASE
+        sync: false
+
   # ── Battle Service ────────────────────────────────────────────────────────────
   - type: web
     name: aiarena-battle
