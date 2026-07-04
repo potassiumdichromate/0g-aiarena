@@ -63,6 +63,7 @@ export async function inferenceRoutes(app: FastifyInstance): Promise<void> {
       loserHpPercent:  number;
       durationSeconds: number;
       endReason:       string;
+      gameName?:       string;
       playerStats?:    Record<string, {
         jumps: number;
         shotsAttempted: number;

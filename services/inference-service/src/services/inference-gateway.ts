@@ -325,6 +325,7 @@ export class InferenceGateway {
     loserHpPercent:  number;
     durationSeconds: number;
     endReason:       string;
+    gameName?:       string;
     playerStats?:    Record<string, {
       jumps: number;
       shotsAttempted: number;
@@ -333,26 +334,49 @@ export class InferenceGateway {
       distanceCovered: number;
     }>;
   }): Promise<{ commentary: string; teeVerified?: boolean | null }> {
-    const model = process.env.ZEROG_COMMENTARY_MODEL ?? 'zai-org/GLM-4-9B';
+    const model    = process.env.ZEROG_COMMENTARY_MODEL ?? 'zai-org/GLM-4-9B';
+    const gameName = params.gameName ?? 'AI Arena';
 
     const winnerStats = params.playerStats?.[params.winnerName]
       ?? Object.values(params.playerStats ?? {})[0];
     const loserStats  = params.playerStats?.[params.loserName]
       ?? Object.values(params.playerStats ?? {})[1];
 
-    const statsLine = (name: string, s?: typeof winnerStats) =>
-      s ? `${name}: ${s.jumps} jumps · ${s.shotsConnected} shots connected · took ${s.timesHit} hits · ${s.distanceCovered}m covered`
-        : `${name}: stats unavailable`;
+    // Game-specific stat line — Highway Hustle is distance-based, others are combat-based.
+    const statsLine = (name: string, s?: typeof winnerStats) => {
+      if (!s) return `${name}: stats unavailable`;
+      if (gameName === 'Highway Hustle')
+        return `${name}: ${s.distanceCovered}m driven before crash`;
+      if (gameName === 'Robowar')
+        return `${name}: dealt ${s.shotsConnected} hits · took ${s.timesHit} hits · ${s.distanceCovered}m moved`;
+      return `${name}: ${s.jumps} jumps · ${s.shotsConnected} shots connected · took ${s.timesHit} hits · ${s.distanceCovered}m covered`;
+    };
 
-    const prompt = `You are an electrifying AI Arena battle commentator for WarzoneWarrior — a futuristic AI combat league running on the 0G decentralised network.
+    // Game-specific context injected into the system prompt.
+    const gameContext: Record<string, string> = {
+      'Highway Hustle': 'an endless neon highway race where AI drivers dodge traffic at breakneck speed — the loser crashed while the winner survived longer',
+      'Robowar':        'a brutal robot combat arena called the Crush Pit where bots battle to destruction',
+    };
+    const context = gameContext[gameName] ?? 'a futuristic AI combat league';
+
+    // Human-readable end reason.
+    const endReasonLabel =
+      params.endReason === 'death'                ? 'KO'
+      : params.endReason === 'timeout'            ? 'timeout'
+      : params.endReason === 'highway-hustle-crash' ? 'crash'
+      : params.endReason === 'robowar-battle-end'   ? 'destruction'
+      : params.endReason;
+
+    const prompt = `You are an electrifying AI Arena battle commentator for ${gameName} — ${context} running on the 0G decentralised network.
 
 Write exactly ONE paragraph (2-3 sentences) of vivid, punchy post-match commentary for this battle. Be dramatic. Reference the fighters' archetypes and clans. Mention key stats. Allude to what this means for their on-chain legacy and ELO standing.
 
 BATTLE SUMMARY
+Game      : ${gameName}
 Battle ID : ${params.battleId}
 Winner    : ${params.winnerName} (${params.winnerArchetype} · ${params.winnerClan} clan · ${params.winnerElo} ELO) — ${params.winnerHpPercent}% HP remaining
 Loser     : ${params.loserName} (${params.loserArchetype} · ${params.loserClan} clan · ${params.loserElo} ELO) — ${params.loserHpPercent}% HP remaining
-Duration  : ${params.durationSeconds}s · ended by ${params.endReason === 'death' ? 'KO' : 'timeout'}
+Duration  : ${params.durationSeconds}s · ended by ${endReasonLabel}
 ${statsLine(params.winnerName, winnerStats)}
 ${statsLine(params.loserName, loserStats)}
 
@@ -369,11 +393,11 @@ Write the commentary paragraph now:`;
       const commentary = (response.choices?.[0]?.message?.content ?? '').trim();
       const teeVerified = (response as any).x_0g_trace?.tee_verified ?? null;
 
-      return { commentary: commentary || 'An epic battle concluded in the WarzoneWarrior arena.', teeVerified };
+      return { commentary: commentary || `An epic battle concluded in the ${gameName} arena.`, teeVerified };
     } catch (err) {
       console.error('[InferenceGateway] Battle commentary generation failed:', err);
       return {
-        commentary: `${params.winnerName} (${params.winnerArchetype}) defeated ${params.loserName} (${params.loserArchetype}) in a ${params.durationSeconds}s clash, cementing their dominance in the WarzoneWarrior AI Arena.`,
+        commentary: `${params.winnerName} (${params.winnerArchetype}) defeated ${params.loserName} (${params.loserArchetype}) in a ${params.durationSeconds}s clash, cementing their dominance in the ${gameName} AI Arena.`,
       };
     }
   }
