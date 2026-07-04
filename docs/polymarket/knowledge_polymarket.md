@@ -172,7 +172,8 @@ Ordered so the safest, most-independently-valuable part ships first, and the mon
 | 0 | Architecture drafted and confirmed with user (Section 3) | ✅ Done |
 | 0 | `@polymarket/clob-client` browser-compatibility verified (Section 4) | ✅ Done |
 | 0 | This doc created | ✅ Done |
-| 1 | `PolymarketSignal` Prisma model | ⬜ Not started |
+| 0 | **Found + fixed a real League bug while wiring this**: `/league-prediction` route was never registered in `inference-service` — every League prediction has been silently running the deterministic FALLBACK generator, never real 0G Compute. Route added (`services/inference-service/src/routes/inference.routes.ts`), committed `8469d3b`. **Still needs**: `prisma migrate deploy` run manually via Render shell once services redeploy (build commands only run `prisma generate`, not migrate), then a live `generatePrediction` call to confirm `source: 'AI'`. | 🟡 Code fixed, deploy+verify pending |
+| 1 | `PolymarketSignal` Prisma model + migration | ✅ Done (schema/migration committed `1bd0989`; needs `prisma migrate deploy` on Render — same pending step as above) |
 | 1 | Signal generation service (0G Compute + League reputation reuse) | ⬜ Not started |
 | 1 | `POST /v1/polymarket/signals/:marketId/:agentId/generate` | ⬜ Not started |
 | 1 | `GET /v1/polymarket/signals/:marketId` | ⬜ Not started |
@@ -184,6 +185,12 @@ Ordered so the safest, most-independently-valuable part ships first, and the mon
 | 4 | Live test with a real funded wallet | ⬜ Not started |
 
 **Update this table every time a checkbox changes state. Do not let it go stale.**
+
+**Pending manual step (blocks Phase 1 completion):** once `aiarena-league` (or any service sharing `db-client`) redeploys on Render, run via its shell:
+```
+cd ../../packages/db-client && npx prisma migrate deploy
+```
+This applies both the `PolymarketSignal` table and — separately — has no effect on the `/league-prediction` route fix (that's a code deploy, not a migration; it just needs the redeploy itself to go live).
 
 ---
 
@@ -199,3 +206,4 @@ Ordered so the safest, most-independently-valuable part ships first, and the mon
 ## 8. Changelog
 
 - **2026-07-05** — Doc created. Product intent, architecture, compatibility verification, and phased plan captured following user discussion. No implementation started yet.
+- **2026-07-05** — Started Phase 1. Added `PolymarketSignal` model + hand-authored migration (`packages/db-client`, commit `1bd0989`). While wiring the signal-generation service to reuse League's 0G Compute pipeline, discovered `/league-prediction` was never registered as an HTTP route in `inference-service` despite `decideLeaguePrediction` being fully implemented — every League prediction has silently been falling back to the deterministic generator instead of real AI. Fixed by registering the route (commit `8469d3b`), per user's explicit choice to fix it now rather than defer it. Both fixes are pushed to `main`; a manual `prisma migrate deploy` on Render is the one remaining blocker before Phase 1's signal service can be built against a live table.
