@@ -172,8 +172,8 @@ Ordered so the safest, most-independently-valuable part ships first, and the mon
 | 0 | Architecture drafted and confirmed with user (Section 3) | ✅ Done |
 | 0 | `@polymarket/clob-client` browser-compatibility verified (Section 4) | ✅ Done |
 | 0 | This doc created | ✅ Done |
-| 0 | **Found + fixed a real League bug while wiring this**: `/league-prediction` route was never registered in `inference-service` — every League prediction has been silently running the deterministic FALLBACK generator, never real 0G Compute. Route added (`services/inference-service/src/routes/inference.routes.ts`), committed `8469d3b`. **Still needs**: `prisma migrate deploy` run manually via Render shell once services redeploy (build commands only run `prisma generate`, not migrate), then a live `generatePrediction` call to confirm `source: 'AI'`. | 🟡 Code fixed, deploy+verify pending |
-| 1 | `PolymarketSignal` Prisma model + migration | ✅ Done (schema/migration committed `1bd0989`; needs `prisma migrate deploy` on Render — same pending step as above) |
+| 0 | **Found + fixed two stacked League bugs while wiring this**: (1) `/league-prediction` route was never registered in `inference-service` (fixed, commit `8469d3b`) — but (2) once reachable, live-log verification showed `decideLeaguePrediction` was *also* crashing with `PrismaClientInitializationError: DATABASE_URL not found`, because `aiarena-inference` never had that env var configured at all (every other DB-backed service does). Both bugs independently caused the exact same symptom: silent fallback to `"Agent is thinking..."`. `DATABASE_URL` added to `render.yaml` (commit `7c4f727`) — **still needs the user to also add it manually in Render's dashboard Environment tab for `aiarena-inference`** (Blueprint YAML changes don't always auto-sync to a running service), then a fresh-match test to confirm `source: 'AI'`. | 🟡 Both fixes pushed, manual Render env var + final verification pending |
+| 1 | `PolymarketSignal` Prisma model + migration | ✅ Done — migration applied to production DB, confirmed via Render shell ("All migrations have been successfully applied") |
 | 1 | Signal generation service (0G Compute + League reputation reuse) | ⬜ Not started |
 | 1 | `POST /v1/polymarket/signals/:marketId/:agentId/generate` | ⬜ Not started |
 | 1 | `GET /v1/polymarket/signals/:marketId` | ⬜ Not started |
@@ -186,11 +186,7 @@ Ordered so the safest, most-independently-valuable part ships first, and the mon
 
 **Update this table every time a checkbox changes state. Do not let it go stale.**
 
-**Pending manual step (blocks Phase 1 completion):** once `aiarena-league` (or any service sharing `db-client`) redeploys on Render, run via its shell:
-```
-cd ../../packages/db-client && npx prisma migrate deploy
-```
-This applies both the `PolymarketSignal` table and — separately — has no effect on the `/league-prediction` route fix (that's a code deploy, not a migration; it just needs the redeploy itself to go live).
+**Pending manual step (blocks Phase 1 completion):** `PolymarketSignal` migration is applied — done. What's left is purely the League-inference verification: add `DATABASE_URL` to `aiarena-inference` in Render's dashboard (Environment tab → Add from database → `aiarena-db` → `connectionString`), wait for its redeploy, then make one fresh (never-predicted) League pick and confirm the response shows `"source": "AI"` instead of `"source": "FALLBACK"` / `"reasoning": "Agent is thinking..."`.
 
 ---
 
@@ -206,4 +202,5 @@ This applies both the `PolymarketSignal` table and — separately — has no eff
 ## 8. Changelog
 
 - **2026-07-05** — Doc created. Product intent, architecture, compatibility verification, and phased plan captured following user discussion. No implementation started yet.
-- **2026-07-05** — Started Phase 1. Added `PolymarketSignal` model + hand-authored migration (`packages/db-client`, commit `1bd0989`). While wiring the signal-generation service to reuse League's 0G Compute pipeline, discovered `/league-prediction` was never registered as an HTTP route in `inference-service` despite `decideLeaguePrediction` being fully implemented — every League prediction has silently been falling back to the deterministic generator instead of real AI. Fixed by registering the route (commit `8469d3b`), per user's explicit choice to fix it now rather than defer it. Both fixes are pushed to `main`; a manual `prisma migrate deploy` on Render is the one remaining blocker before Phase 1's signal service can be built against a live table.
+- **2026-07-05** — Started Phase 1. Added `PolymarketSignal` model + hand-authored migration (`packages/db-client`, commit `1bd0989`). While wiring the signal-generation service to reuse League's 0G Compute pipeline, discovered `/league-prediction` was never registered as an HTTP route in `inference-service` despite `decideLeaguePrediction` being fully implemented — every League prediction has silently been falling back to the deterministic generator instead of real AI. Fixed by registering the route (commit `8469d3b`), per user's explicit choice to fix it now rather than defer it.
+- **2026-07-05** — User applied the `PolymarketSignal` migration to production via Render shell (confirmed applied). Live-tested the route fix with a fresh League pick — still fell back. Render logs showed a second, independent bug: `aiarena-inference` has never had `DATABASE_URL` configured, so `decideLeaguePrediction`'s own `prisma.agent.findUnique()` call throws before its internal 0G Compute try/catch is even reached, 500ing the request, which `league-service`'s outer catch silently swallows into its own fallback. Added `DATABASE_URL` to `aiarena-inference` in `render.yaml` (commit `7c4f727`) matching every other DB-backed service's config; asked user to also set it manually in Render's Environment tab since Blueprint YAML changes don't reliably auto-sync to already-running services. Final live verification (checking for `source: 'AI'` on a fresh pick) still pending.
