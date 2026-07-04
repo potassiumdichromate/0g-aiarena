@@ -264,7 +264,10 @@ Analyse the battle context and opponent profile, then produce a structured strat
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      max_tokens: opts.maxTokens ?? 300,
+      // 300 was too tight for a thinking model (see parseToolArguments' doc comment on
+      // GLM-5.1-FP8 prepending chain-of-thought): the reasoning alone could exhaust the
+      // budget before the model ever emitted the tool call, leaving nothing parseable.
+      max_tokens: opts.maxTokens ?? 1200,
       temperature: opts.temperature ?? 0.7,
       tools: [LEAGUE_PREDICTION_TOOL],
       tool_choice: { type: 'function', function: { name: 'submit_league_prediction' } },
