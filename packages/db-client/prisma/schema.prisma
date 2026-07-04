@@ -823,3 +823,38 @@ model LeagueSettlementLog {
   errorDetail String?
   processedAt DateTime @default(now())
 }
+
+// ===== POLYMARKET SIGNALS =====
+// docs/polymarket/knowledge_polymarket.md — separate feature from League.
+// Real Polymarket markets are never synced into this DB (no local "market"
+// table); they're read live from Polymarket's Gamma API and referenced here
+// only by their external id, same loose-coupling principle League uses for
+// agentId/userId. Trading itself (real funds) happens entirely client-side
+// against Polymarket's own CLOB — this table only stores the AI signal.
+
+enum PolymarketSignalOutcome {
+  YES
+  NO
+}
+
+/// One row per (marketId, agentId) — the agent's read on a real, external
+/// Polymarket market. Generated on demand via 0G Compute (reusing the
+/// agent's League tribe + reputation), persisted so a signal survives page
+/// refresh from day one — see the LOCKED/SETTLED-only agentBets gap this
+/// project hit once already in League, not to be repeated here.
+model PolymarketSignal {
+  id         String                  @id @default(uuid())
+  marketId   String                  // Polymarket condition/market id — external, not FK'd
+  agentId    String                  // loose reference, validated at the application layer
+  question   String                  // snapshot of the market question at generation time
+  signal     PolymarketSignalOutcome
+  confidence ConvictionLevel         @default(LOW)  // reuses League's LOW/MEDIUM/HIGH scale
+  reasoning  String?
+  source     PredictionSource        @default(AI)   // reuses League's AI/FALLBACK/USER_OVERRIDE enum
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+
+  @@unique([marketId, agentId])
+  @@index([agentId])
+  @@index([marketId])
+}
