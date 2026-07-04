@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { InferenceGateway } from '../services/inference-gateway';
+import { InferenceGateway, MatchContext } from '../services/inference-gateway';
 
 const gateway = new InferenceGateway();
 
@@ -39,6 +39,23 @@ export async function inferenceRoutes(app: FastifyInstance): Promise<void> {
     const { agentId } = req.params as { agentId: string };
     const model = await gateway.getActiveModel(agentId);
     return { model };
+  });
+
+  /**
+   * POST /v1/inference/league-prediction
+   *
+   * §7.2/§15.8 — decideLeaguePrediction, called by league-service (lazy-gen)
+   * and league-worker (pre-gen cron). Was previously unreachable — this
+   * method existed on the gateway but had no route, so every caller's fetch
+   * 404'd and silently fell back to the deterministic generator every time.
+   */
+  app.post('/league-prediction', async (req, reply) => {
+    const body = req.body as { agentId: string; matchContext: MatchContext };
+    if (!body?.agentId || !body?.matchContext) {
+      return reply.status(400).send({ error: 'agentId and matchContext are required' });
+    }
+    const prediction = await gateway.decideLeaguePrediction(body.agentId, body.matchContext);
+    return { prediction };
   });
 
   /**
