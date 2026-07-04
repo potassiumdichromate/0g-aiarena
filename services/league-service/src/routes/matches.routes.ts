@@ -11,7 +11,7 @@ const LEAGUE_STAGES = new Set<LeagueStage>(['GROUP', 'ROUND_OF_32', 'ROUND_OF_16
 
 export async function matchesRoutes(app: FastifyInstance): Promise<void> {
   // §15.1 — GET /v1/league/matches
-  app.get('/matches', async (req) => {
+  app.get('/matches', { onRequest: [optionalJwt(app)] }, async (req) => {
     const { status, stage, page, limit } = req.query as { status?: string; stage?: string; page?: string; limit?: string };
 
     if (status !== undefined && !MATCH_STATUSES.has(status as LeagueMatchStatus)) {
@@ -21,11 +21,13 @@ export async function matchesRoutes(app: FastifyInstance): Promise<void> {
       throw new BadRequestError(`invalid stage '${stage}'`);
     }
 
+    const user = req.user as { userId: string } | undefined;
     return leagueReadService.listMatches({
       status: status as LeagueMatchStatus | undefined,
       stage: stage as LeagueStage | undefined,
       page: parseIntParam(page, 1, { min: 1 }),
       limit: parseIntParam(limit, 20, { min: 1, max: 100 }),
+      userId: user?.userId,
     });
   });
 

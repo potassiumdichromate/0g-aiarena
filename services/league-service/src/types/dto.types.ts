@@ -58,6 +58,7 @@ export interface MatchListItemDTO {
   venue: string | null;
   kickoffAt: string;
   status: LeagueMatchStatus;
+  userAgentPick: UserAgentPickDTO | null;
 }
 
 export interface MatchListResultDTO {
@@ -110,6 +111,7 @@ export interface TodayPredictionDTO {
 /** GET /v1/league/me/predictions item */
 export interface RecentPickDTO {
   id: string;
+  agentName: string;
   home: string;
   away: string;
   pick: string;

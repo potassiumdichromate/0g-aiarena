@@ -64,9 +64,16 @@ class LeagueReadService {
     stage?: LeagueStage;
     page?: number;
     limit?: number;
+    userId?: string;
   }): Promise<MatchListResultDTO> {
+    const { userId, ...listParams } = params;
     const season = await requireActiveSeason();
-    const { matches, total } = await leagueRepo.listMatches({ seasonId: season.id, ...params });
+    const { matches, total } = await leagueRepo.listMatches({ seasonId: season.id, ...listParams });
+
+    const userAgentPickByMatch = await this.buildUserAgentPickMap(
+      matches.map((m) => m.id),
+      userId,
+    );
 
     return {
       matches: matches.map((m) => ({
@@ -78,9 +85,38 @@ class LeagueReadService {
         venue: m.venue,
         kickoffAt: m.kickoffAt.toISOString(),
         status: m.status,
+        userAgentPick: userAgentPickByMatch.get(m.id) ?? null,
       })),
       total,
     };
+  }
+
+  /** Batch version of the per-match `userAgentPick` lookup used by `buildMatchSummary` — one query for N matches instead of N. */
+  private async buildUserAgentPickMap(matchIds: string[], userId?: string): Promise<Map<string, UserAgentPickDTO>> {
+    const map = new Map<string, UserAgentPickDTO>();
+    if (!userId || matchIds.length === 0) return map;
+
+    const userAgents = await prisma.agent.findMany({ where: { userId }, select: { id: true, name: true } });
+    if (userAgents.length === 0) return map;
+    const nameById = new Map(userAgents.map((a) => [a.id, a.name]));
+
+    const predictions = await prisma.leaguePrediction.findMany({
+      where: { matchId: { in: matchIds }, agentId: { in: userAgents.map((a) => a.id) } },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    for (const p of predictions) {
+      if (map.has(p.matchId)) continue;
+      map.set(p.matchId, {
+        agentId: p.agentId,
+        agentName: nameById.get(p.agentId) ?? 'Unknown',
+        conviction: p.conviction,
+        scoreHome: p.scoreHome,
+        scoreAway: p.scoreAway,
+        predictedWinner: p.winner,
+      });
+    }
+    return map;
   }
 
   /** §15.3 — GET /v1/league/matches/featured */
@@ -178,11 +214,12 @@ class LeagueReadService {
 
   /** GET /v1/league/me/predictions?status=settled */
   async getMyRecentPicks(userId: string, limit: number): Promise<RecentPickDTO[]> {
-    const agentIds = (await prisma.agent.findMany({ where: { userId }, select: { id: true } })).map((a) => a.id);
-    if (agentIds.length === 0) return [];
+    const userAgents = await prisma.agent.findMany({ where: { userId }, select: { id: true, name: true } });
+    if (userAgents.length === 0) return [];
+    const nameById = new Map(userAgents.map((a) => [a.id, a.name]));
 
     const predictions = await prisma.leaguePrediction.findMany({
-      where: { agentId: { in: agentIds }, status: 'SETTLED' },
+      where: { agentId: { in: userAgents.map((a) => a.id) }, status: 'SETTLED' },
       include: { match: true },
       orderBy: { settledAt: 'desc' },
       take: limit,
@@ -192,6 +229,7 @@ class LeagueReadService {
       const actual = (p.match.result ?? {}) as { winner?: string; scoreHome?: number; scoreAway?: number };
       return {
         id: p.id,
+        agentName: nameById.get(p.agentId) ?? 'Unknown',
         home: p.match.homeTeam,
         away: p.match.awayTeam,
         pick: `${pickLabel(p.winner, p.match.homeTeam, p.match.awayTeam)} ${p.scoreHome}-${p.scoreAway}`,
