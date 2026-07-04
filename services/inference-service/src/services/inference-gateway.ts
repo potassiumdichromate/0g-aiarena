@@ -53,7 +53,12 @@ interface StrategyInferenceParams {
   useMemory?: boolean;
 }
 
-const LEAGUE_PREDICTION_TIMEOUT_MS = 12_000; // [DECISION §7.2] between the 5s combat and 20s strategy timeouts
+// [DECISION §7.2] originally 12s ("between the 5s combat and 20s strategy timeouts") — raised after
+// live testing showed the configured reasoning-capable chat model (zai-org/GLM-5.1-FP8) consistently
+// exceeds 12s on this call's structured tool-call response, timing out and silently falling back
+// every time. 25s matches/slightly exceeds strategy-plan's budget, which uses a similar structured
+// response shape.
+const LEAGUE_PREDICTION_TIMEOUT_MS = 25_000;
 
 export interface MatchContext {
   matchId: string;
