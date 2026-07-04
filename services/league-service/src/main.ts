@@ -4,6 +4,7 @@ import helmet from '@fastify/helmet';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import { leagueRoutes } from './routes/league.routes';
+import { polymarketRoutes } from './routes/polymarket.routes';
 import { leagueErrorHandler } from './lib/error-handler';
 
 const PORT = parseInt(process.env.PORT ?? '8060', 10);
@@ -20,6 +21,8 @@ async function bootstrap(): Promise<void> {
 
   app.get('/health', async () => ({ status: 'ok', service: 'league-service' }));
   await app.register(leagueRoutes, { prefix: '/v1/league' });
+  // docs/polymarket/knowledge_polymarket.md — separate feature, own prefix, same service (§3 rationale)
+  await app.register(polymarketRoutes, { prefix: '/v1/polymarket' });
 
   await app.listen({ port: PORT, host: '0.0.0.0' });
   app.log.info(`League service running on port ${PORT}`);

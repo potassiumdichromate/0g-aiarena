@@ -87,6 +87,12 @@ export interface LeaguePredictionToolArgs {
   reasoning: string;
 }
 
+export interface PolymarketSignalToolArgs {
+  signal: 'YES' | 'NO';
+  confidence: 'LOW' | 'MEDIUM' | 'HIGH';
+  reasoning: string;
+}
+
 export interface ImageGenerationResult {
   base64: string;          // b64_json (only format 0G currently supports)
   mimeType: 'image/png';
@@ -291,6 +297,53 @@ Analyse the battle context and opponent profile, then produce a structured strat
     }
 
     throw new Error('No parseable league prediction in 0G Compute response');
+  }
+
+  // ── Inference: Polymarket Signal ───────────────────────────────────────────
+
+  /**
+   * Request a structured YES/NO read on a real Polymarket market question
+   * (docs/polymarket/knowledge_polymarket.md). `systemPrompt` carries the
+   * agent's tribe voice (same TRIBE_SYSTEM_PROMPTS as League), `userPrompt`
+   * carries the market question. Same tool-call-with-content-fallback and
+   * <think>-stripping shape as inferLeaguePrediction — same model, same
+   * failure modes apply, so max_tokens is deliberately generous here too.
+   */
+  async inferPolymarketSignal(
+    systemPrompt: string,
+    userPrompt: string,
+    opts: { maxTokens?: number; temperature?: number } = {},
+  ): Promise<PolymarketSignalToolArgs> {
+    const response = await (this.openai.chat.completions.create as Function)({
+      model: this.config.modelChat,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: opts.maxTokens ?? 1200,
+      temperature: opts.temperature ?? 0.7,
+      tools: [POLYMARKET_SIGNAL_TOOL],
+      tool_choice: { type: 'function', function: { name: 'submit_polymarket_signal' } },
+      ...(this.config.verifyTee && { verify_tee: true }),
+      ...(this.buildProviderField() && { provider: this.buildProviderField() }),
+    }) as ZeroGChatCompletion;
+
+    const toolCall = response.choices[0]?.message?.tool_calls?.[0];
+    const content = response.choices[0]?.message?.content ?? '';
+
+    if (toolCall?.function?.arguments) {
+      try {
+        return parseToolArguments<PolymarketSignalToolArgs>(toolCall.function.arguments);
+      } catch {
+        // fall through to content extraction
+      }
+    }
+
+    if (content) {
+      return parseToolArguments<PolymarketSignalToolArgs>(content);
+    }
+
+    throw new Error('No parseable Polymarket signal in 0G Compute response');
   }
 
   // ── Agent Personality Generation ──────────────────────────────────────────
@@ -569,6 +622,24 @@ export const LEAGUE_PREDICTION_TOOL: OpenAI.Chat.ChatCompletionTool = {
         reasoning:  { type: 'string', description: 'One or two sentences, in your archetype voice.' },
       },
       required: ['winner', 'scoreHome', 'scoreAway', 'conviction', 'reasoning'],
+      additionalProperties: false,
+    },
+  },
+};
+
+export const POLYMARKET_SIGNAL_TOOL: OpenAI.Chat.ChatCompletionTool = {
+  type: 'function',
+  function: {
+    name: 'submit_polymarket_signal',
+    description: 'Submit a structured YES/NO read on a real Polymarket prediction market question.',
+    parameters: {
+      type: 'object',
+      properties: {
+        signal:     { type: 'string', enum: ['YES', 'NO'] },
+        confidence: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'] },
+        reasoning:  { type: 'string', description: 'One or two sentences, in your archetype voice.' },
+      },
+      required: ['signal', 'confidence', 'reasoning'],
       additionalProperties: false,
     },
   },

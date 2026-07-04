@@ -1,4 +1,4 @@
-import { ConvictionLevel, LeagueStage, PredictionOutcome } from '@ai-arena/db-client';
+import { ConvictionLevel, LeagueStage, PredictionOutcome, PolymarketSignalOutcome } from '@ai-arena/db-client';
 
 const INFERENCE_SERVICE_URL = process.env.INFERENCE_SERVICE_URL ?? 'http://localhost:8013';
 const FINANCIAL_SERVICE_URL = process.env.FINANCIAL_SERVICE_URL ?? 'http://localhost:8003';
@@ -48,6 +48,42 @@ export async function requestLeaguePrediction(agentId: string, matchContext: Lea
 
   const data = (await res.json()) as { prediction: LeaguePredictionResult };
   return data.prediction;
+}
+
+export interface PolymarketMarketContext {
+  marketId: string;
+  question: string;
+  category?: string;
+}
+
+export interface PolymarketSignalResult {
+  signal: PolymarketSignalOutcome;
+  confidence: ConvictionLevel;
+  reasoning: string;
+  source: 'AI' | 'FALLBACK';
+}
+
+/**
+ * docs/polymarket/knowledge_polymarket.md — decidePolymarketSignal lives in
+ * inference-service; called by league-service's polymarket signal
+ * generation endpoint. Never throws on inference failure (inference-service
+ * itself falls back) — only throws on transport/auth errors, which the
+ * caller treats as a 502.
+ */
+export async function requestPolymarketSignal(agentId: string, marketContext: PolymarketMarketContext): Promise<PolymarketSignalResult> {
+  const res = await fetch(`${INFERENCE_SERVICE_URL}/polymarket-signal`, {
+    method: 'POST',
+    headers: serviceHeaders(),
+    body: JSON.stringify({ agentId, marketContext }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`inference-service /polymarket-signal returned ${res.status}: ${text}`);
+  }
+
+  const data = (await res.json()) as { signal: PolymarketSignalResult };
+  return data.signal;
 }
 
 /** Thrown when financial-service rejects an escrow lock (e.g. insufficient balance) — maps to 400. */

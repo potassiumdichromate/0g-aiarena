@@ -22,6 +22,7 @@ import {
   mapAgentToTribe,
   validatePrediction,
   generateFallbackPrediction,
+  generateFallbackSignal,
   normalizeTraits,
   AgentTraitVector,
   LeagueTribe,
@@ -79,6 +80,22 @@ export interface LeaguePredictionResult {
   source: 'AI' | 'FALLBACK';
 }
 
+// Same model, same reasoning-model latency profile as league-prediction — same 25s budget.
+const POLYMARKET_SIGNAL_TIMEOUT_MS = 25_000;
+
+export interface MarketContext {
+  marketId: string;
+  question: string;
+  category?: string;
+}
+
+export interface PolymarketSignalResult {
+  signal: 'YES' | 'NO';
+  confidence: 'LOW' | 'MEDIUM' | 'HIGH';
+  reasoning: string;
+  source: 'AI' | 'FALLBACK';
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
     promise,
@@ -99,6 +116,11 @@ Kickoff: ${ctx.kickoffAt}
 ${h2h}
 ${ctx.stage !== 'GROUP' ? 'This is a knockout match — your prediction must pick a winner (no draw).' : ''}
 Predict the winner, the final score, and your conviction level. Submit your prediction using the tool.`;
+}
+
+function buildMarketPrompt(ctx: MarketContext): string {
+  return `Prediction market question: "${ctx.question}"${ctx.category ? `\nCategory: ${ctx.category}` : ''}
+Give your read: will this resolve YES or NO? Submit your signal, confidence, and reasoning using the tool.`;
 }
 
 /**
@@ -130,6 +152,39 @@ chaos — unconventional scorelines, wildcard reasoning, gut feeling over
 logic. Your reasoning should feel unpredictable and a little unhinged, but
 the winner/score/conviction fields must still be internally consistent.
 Agent traits: ${JSON.stringify(traits)}.`,
+};
+
+/**
+ * Same 4 tribe personas as League, rephrased for a generic YES/NO
+ * Polymarket question instead of a match winner/score — kept as a
+ * parallel map rather than reusing TRIBE_SYSTEM_PROMPTS verbatim, since
+ * those hardcode "predict football matches" framing that doesn't fit
+ * questions like transfer/award markets (docs/polymarket).
+ */
+export const POLYMARKET_TRIBE_SYSTEM_PROMPTS: Record<LeagueTribe, (traits: AgentTraitVector) => string> = {
+  NEXUS_01: (traits) => `You are Nexus-01, a Statistician. You read prediction-market questions using
+cold, numerical reasoning — base rates, form, and precedent. Never use
+emotional language. Keep your confidence proportional to how one-sided the
+evidence is; only go HIGH when the case is clear-cut. Agent traits:
+${JSON.stringify(traits)}.`,
+
+  SHADOW_9: (traits) => `You are Shadow-9, the Villain. You read prediction-market questions with
+cynicism and a taste for chaos. You enjoy taking the contrarian side of a
+crowded market and frame your reasoning as daring the consensus to prove
+you wrong. Lean toward HIGH confidence when going against the popular
+answer. Agent traits: ${JSON.stringify(traits)}.`,
+
+  ATHENA: (traits) => `You are Athena, the Oracle. You read prediction-market questions with calm,
+principled authority — as if the outcome were foretold. Your reasoning is
+short, declarative, and confident without being boastful. Confidence
+reflects how settled the outcome feels to you, not how popular the answer
+is. Agent traits: ${JSON.stringify(traits)}.`,
+
+  VOIDWALKER: (traits) => `You are Voidwalker, the Madman. You read prediction-market questions by
+embracing chaos — wildcard reasoning, gut feeling over logic. Your
+reasoning should feel unpredictable and a little unhinged, but the
+signal/confidence fields must still be internally consistent. Agent
+traits: ${JSON.stringify(traits)}.`,
 };
 
 export class InferenceGateway {
@@ -268,6 +323,36 @@ export class InferenceGateway {
       );
       validatePrediction(retry, matchContext.stage);
       return retry;
+    }
+  }
+
+  /**
+   * Read on a real Polymarket market question (docs/polymarket). Never
+   * throws — falls back to a deterministic, per-(agent,market) signal if
+   * 0G Compute is degraded or returns an invalid response, same shape as
+   * decideLeaguePrediction.
+   */
+  async decidePolymarketSignal(agentId: string, marketContext: MarketContext): Promise<PolymarketSignalResult> {
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) {
+      throw new Error(`decidePolymarketSignal: agent ${agentId} not found`);
+    }
+
+    const traits = normalizeTraits(agent.traits);
+    const tribe = mapAgentToTribe(agent.id, agent.archetype, traits);
+    const systemPrompt = POLYMARKET_TRIBE_SYSTEM_PROMPTS[tribe](traits);
+
+    try {
+      const signal = await withTimeout(
+        this.compute.inferPolymarketSignal(systemPrompt, buildMarketPrompt(marketContext)),
+        POLYMARKET_SIGNAL_TIMEOUT_MS,
+        'inferPolymarketSignal',
+      );
+      return { ...signal, source: 'AI' };
+    } catch (err) {
+      console.error('[InferenceGateway] Polymarket signal inference failed, using fallback:', err);
+      const fallback = generateFallbackSignal(agentId, marketContext.marketId, traits);
+      return { ...fallback, source: 'FALLBACK' };
     }
   }
 

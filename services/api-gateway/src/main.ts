@@ -177,6 +177,8 @@ async function main() {
     { prefix: '/v1/leaderboards', envKey: 'LEADERBOARD_SERVICE_URL', fallback: 'http://localhost:8041', rewritePrefix: '/leaderboards' },
     // league-service handles /v1/league/* itself — keep the prefix on the way through
     { prefix: '/v1/league',       envKey: 'LEAGUE_SERVICE_URL',      fallback: 'http://localhost:8060', rewritePrefix: '/v1/league'    },
+    // Polymarket signals live in league-service too (docs/polymarket) — same rationale, own prefix
+    { prefix: '/v1/polymarket',   envKey: 'LEAGUE_SERVICE_URL',      fallback: 'http://localhost:8060', rewritePrefix: '/v1/polymarket'},
     // OKX Agent Marketplace A2MCP bridge — lives in agent-service, auth via X-OKX-Service-Key
     { prefix: '/v1/okx',          envKey: 'AGENT_SERVICE_URL',       fallback: 'http://localhost:8002', rewritePrefix: '/okx'          },
   ];

@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { InferenceGateway, MatchContext } from '../services/inference-gateway';
+import { InferenceGateway, MatchContext, MarketContext } from '../services/inference-gateway';
 
 const gateway = new InferenceGateway();
 
@@ -56,6 +56,21 @@ export async function inferenceRoutes(app: FastifyInstance): Promise<void> {
     }
     const prediction = await gateway.decideLeaguePrediction(body.agentId, body.matchContext);
     return { prediction };
+  });
+
+  /**
+   * POST /v1/inference/polymarket-signal
+   *
+   * docs/polymarket/knowledge_polymarket.md — decidePolymarketSignal,
+   * called by league-service's polymarket signal generation endpoint.
+   */
+  app.post('/polymarket-signal', async (req, reply) => {
+    const body = req.body as { agentId: string; marketContext: MarketContext };
+    if (!body?.agentId || !body?.marketContext) {
+      return reply.status(400).send({ error: 'agentId and marketContext are required' });
+    }
+    const signal = await gateway.decidePolymarketSignal(body.agentId, body.marketContext);
+    return { signal };
   });
 
   /**
