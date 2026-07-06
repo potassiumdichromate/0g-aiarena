@@ -125,9 +125,9 @@ services:
       - key: OKX_SERVICE_KEY
         sync: false
 
-  # ── OKX Payment Proxy (pay-walls aiarena-agent's /okx/create-agent) ───────────
-  # Pure ESM, no Prisma/db-client dependency — standalone build, see
-  # services/okx-payment-proxy/README.md.
+  # ── OKX Payment Proxy (x402 v2 gate in front of /okx/create-agent) ────────────
+  # Pure ESM, no Prisma/db-client dependency — standalone build.
+  # Protocol: x402 v2, eip155:196 (X Layer), EIP-3009 transferWithAuthorization.
   - type: web
     name: aiarena-okx-payment-proxy
     env: node
@@ -147,14 +147,19 @@ services:
       # Must match aiarena-agent's OKX_SERVICE_KEY above exactly.
       - key: OKX_SERVICE_KEY
         sync: false
-      # Issued at OKX Developer Portal (https://web3.okx.com/onchainos/dev-portal),
-      # tied to the wallet/account that owns ASP #2170. See docs/okx/pricing.md.
-      - key: OKX_API_KEY
+      # Private key of an X Layer (eip155:196) wallet with a small OKB balance for
+      # gas. Used to call transferWithAuthorization on the USDT contract on behalf
+      # of each buyer. Gas cost is ~$0.0001/tx; 0.01 OKB covers ~1,000 calls.
+      - key: XLAYER_OPERATOR_PRIVATE_KEY
         sync: false
-      - key: OKX_API_SECRET_KEY
-        sync: false
-      - key: OKX_API_PASSPHRASE
-        sync: false
+      # x402 v2 payment terms — defaults match OKX's specification for ASP #2170.
+      # Override here if OKX changes payTo or the USDT contract address.
+      - key: X402_ASSET
+        value: "0x779ded0c9e1022225f8e0630b35a9b54be713736"
+      - key: X402_PAY_TO
+        value: "0xaa1860e22184852ae8b1890169b732da23459990"
+      - key: X402_AMOUNT
+        value: "100000"
 
   # ── Battle Service ────────────────────────────────────────────────────────────
   - type: web
@@ -254,41 +259,61 @@ services:
         sync: false
       - key: NATS_URL
         sync: false
-      - key: SOLANA_RPC_URL
-        value: https://api.devnet.solana.com
-      - key: AGENT_WALLET_PROGRAM_ID
+      - key: ZEROG_RPC_URL
+        value: https://evmrpc.0g.ai
+      - key: ARENA_TOKEN_ADDRESS
         sync: false
-      - key: ESCROW_VAULT_PROGRAM_ID
+      - key: ARENA_TREASURY_ADDRESS
+        sync: false
+      - key: ARENA_REWARD_DISTRIBUTOR_ADDRESS
+        sync: false
+      - key: ARENA_ESCROW_ADDRESS
+        sync: false
+      - key: ARENA_TOURNAMENT_ADDRESS
+        sync: false
+      - key: ARENA_RELAYER_PRIVATE_KEY
+        sync: false
+      - key: ARENA_CHAIN_SERVICE_URL
+        value: https://aiarena-arena-chain.onrender.com
+      - key: INTERNAL_SERVICE_SECRET
         sync: false
 
-  # ── Token Service ─────────────────────────────────────────────────────────────
+  # ── $ARENA Chain Service (0G Chain relayer/indexer — replaces Solana token-service) ──
   - type: web
-    name: aiarena-token
+    name: aiarena-arena-chain
     env: node
     plan: starter
     region: oregon
-    rootDir: services/token-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/token-service...
+    rootDir: services/arena-chain-service
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/arena-chain-service...
     startCommand: node dist/main.js
     healthCheckPath: /health
     envVars:
       - key: PORT
-        value: "8006"
+        value: "8050"
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
         fromDatabase:
           name: aiarena-db
           property: connectionString
-      - key: JWT_SECRET
-        sync: false
       - key: NATS_URL
         sync: false
-      - key: SOLANA_RPC_URL
-        value: https://api.devnet.solana.com
-      - key: ARENA_TOKEN_PROGRAM_ID
+      - key: ZEROG_RPC_URL
+        value: https://evmrpc.0g.ai
+      - key: ARENA_TOKEN_ADDRESS
         sync: false
-      - key: ARENA_RESERVE_PROGRAM_ID
+      - key: ARENA_TREASURY_ADDRESS
+        sync: false
+      - key: ARENA_REWARD_DISTRIBUTOR_ADDRESS
+        sync: false
+      - key: ARENA_ESCROW_ADDRESS
+        sync: false
+      - key: ARENA_TOURNAMENT_ADDRESS
+        sync: false
+      - key: ARENA_RELAYER_PRIVATE_KEY
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
         sync: false
 
   # ── Leaderboard Service ───────────────────────────────────────────────────────
@@ -349,8 +374,8 @@ services:
         value: https://aiarena-matchmaking.onrender.com
       - key: FINANCIAL_SERVICE_URL
         value: https://aiarena-financial.onrender.com
-      - key: TOKEN_SERVICE_URL
-        value: https://aiarena-token.onrender.com
+      - key: ARENA_CHAIN_SERVICE_URL
+        value: https://aiarena-arena-chain.onrender.com
       - key: LEADERBOARD_SERVICE_URL
         value: https://aiarena-leaderboard.onrender.com
       - key: INFT_SERVICE_URL
@@ -486,6 +511,8 @@ services:
         value: https://aiarena-financial.onrender.com
       - key: INFERENCE_SERVICE_URL
         value: https://aiarena-inference.onrender.com
+      - key: ARENA_CHAIN_SERVICE_URL
+        value: https://aiarena-arena-chain.onrender.com
       - key: LEAGUE_DATA_PROVIDER
         value: internal-admin
       - key: SPORTMONKS_API_KEY
@@ -525,6 +552,8 @@ services:
         value: https://aiarena-financial.onrender.com
       - key: INFERENCE_SERVICE_URL
         value: https://aiarena-inference.onrender.com
+      - key: ARENA_CHAIN_SERVICE_URL
+        value: https://aiarena-arena-chain.onrender.com
       - key: LEAGUE_DATA_PROVIDER
         value: internal-admin
       - key: SPORTMONKS_API_KEY
