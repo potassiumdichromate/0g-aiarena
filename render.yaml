@@ -147,12 +147,8 @@ services:
       # Must match aiarena-agent's OKX_SERVICE_KEY above exactly.
       - key: OKX_SERVICE_KEY
         sync: false
-      # Private key of an X Layer (eip155:196) wallet with a small OKB balance for
-      # gas. Used to call transferWithAuthorization on the USDT contract on behalf
-      # of each buyer. Gas cost is ~$0.0001/tx; 0.01 OKB covers ~1,000 calls.
-      - key: XLAYER_OPERATOR_PRIVATE_KEY
-        sync: false
       # x402 v2 payment terms — defaults match OKX's specification for ASP #2170.
+      # OKX's facilitator executes transferWithAuthorization on-chain (gasless for us).
       # Override here if OKX changes payTo or the USDT contract address.
       - key: X402_ASSET
         value: "0x779ded0c9e1022225f8e0630b35a9b54be713736"

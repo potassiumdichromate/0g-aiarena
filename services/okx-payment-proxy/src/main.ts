@@ -1,28 +1,24 @@
 /**
  * okx-payment-proxy — x402 v2 payment gate in front of POST /okx/create-agent.
  *
- * Protocol: https://x402.org  (x402 v2, "exact" scheme, eip155:196 / X Layer)
- * On each request the proxy either:
- *   - returns HTTP 402 with the x402 v2 payment-required JSON (no X-PAYMENT header)
- *   - decodes the X-PAYMENT header, calls transferWithAuthorization on the USDT
- *     contract (EIP-3009), waits for confirmation, then forwards to agent-service
+ * Protocol: x402 v2, "exact" scheme, eip155:196 (X Layer)
+ * Settlement model: OKX facilitator (gasless — OKX executes transferWithAuthorization
+ * on-chain; our server only reads authorizationState to confirm it happened).
  *
- * Required env vars:
- *   XLAYER_OPERATOR_PRIVATE_KEY  — private key of a wallet with OKB on X Layer
- *                                   (pays gas for transferWithAuthorization, ~$0.0001/tx)
- *   OKX_SERVICE_KEY              — forwarded to agent-service as X-OKX-Service-Key
- *   OKX_PROXY_UPSTREAM_URL       — agent-service /okx/create-agent endpoint
+ * Flow:
+ *   1. No X-PAYMENT → return HTTP 402 with x402 v2 challenge JSON
+ *   2. X-PAYMENT present → verify EIP-3009 sig is valid, check on-chain that OKX's
+ *      facilitator already executed the transfer (authorizationState = true),
+ *      then forward to agent-service. No gas wallet needed.
  */
 
 import * as http from 'node:http';
 import {
-  createWalletClient,
   createPublicClient,
   http as viemHttp,
   parseAbi,
-  parseSignature,
+  verifyTypedData,
 } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -30,19 +26,13 @@ const PORT         = parseInt(process.env.PORT ?? '8090', 10);
 const UPSTREAM_URL = process.env.OKX_PROXY_UPSTREAM_URL ?? 'http://localhost:8002/okx/create-agent';
 const SERVICE_KEY  = process.env.OKX_SERVICE_KEY ?? '';
 
-// x402 v2 payment terms — values per OKX's specification
+// x402 v2 payment terms — values per OKX's specification for ASP #2170
 const ASSET   = (process.env.X402_ASSET   ?? '0x779ded0c9e1022225f8e0630b35a9b54be713736') as `0x${string}`;
 const PAY_TO  = (process.env.X402_PAY_TO  ?? '0xaa1860e22184852ae8b1890169b732da23459990') as `0x${string}`;
 const AMOUNT  =   process.env.X402_AMOUNT  ?? '100000'; // 0.10 USDT (6 decimals)
 const TIMEOUT = parseInt(process.env.X402_MAX_TIMEOUT_SECONDS ?? '300', 10);
 
-const OPERATOR_KEY = process.env.XLAYER_OPERATOR_PRIVATE_KEY ?? '';
-if (!OPERATOR_KEY) {
-  console.error('[okx-payment-proxy] Refusing to start — XLAYER_OPERATOR_PRIVATE_KEY not set.');
-  process.exit(1);
-}
-
-// ── X Layer chain + viem clients ──────────────────────────────────────────────
+// ── X Layer public client (read-only, no gas wallet needed) ───────────────────
 
 const xlayer = {
   id: 196,
@@ -54,27 +44,34 @@ const xlayer = {
   },
 } as const;
 
-const account = privateKeyToAccount(
-  OPERATOR_KEY.startsWith('0x') ? (OPERATOR_KEY as `0x${string}`) : `0x${OPERATOR_KEY}`,
-);
-
 const publicClient = createPublicClient({
   chain: xlayer,
   transport: viemHttp('https://rpc.xlayer.tech', { timeout: 10_000 }),
 });
 
-const walletClient = createWalletClient({
-  account,
-  chain: xlayer,
-  transport: viemHttp('https://rpc.xlayer.tech', { timeout: 10_000 }),
-});
-
-const EIP3009_ABI = parseAbi([
-  'function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s) external',
+// EIP-3009: authorizationState(authorizer, nonce) → bool (true = already used/settled)
+const EIP3009_STATE_ABI = parseAbi([
+  'function authorizationState(address authorizer, bytes32 nonce) external view returns (bool)',
 ]);
 
-// In-memory nonce guard (single-instance protection; contract enforces on-chain too)
-const usedNonces = new Set<string>();
+// EIP-712 types for TransferWithAuthorization (EIP-3009)
+const EIP3009_DOMAIN = {
+  name: 'USD Tether',
+  version: '1',
+  chainId: 196,
+  verifyingContract: ASSET,
+} as const;
+
+const EIP3009_TYPES = {
+  TransferWithAuthorization: [
+    { name: 'from',        type: 'address' },
+    { name: 'to',          type: 'address' },
+    { name: 'value',       type: 'uint256' },
+    { name: 'validAfter',  type: 'uint256' },
+    { name: 'validBefore', type: 'uint256' },
+    { name: 'nonce',       type: 'bytes32' },
+  ],
+} as const;
 
 // ── x402 v2 helpers ───────────────────────────────────────────────────────────
 
@@ -118,7 +115,7 @@ interface X402Payment {
   };
 }
 
-async function settlePayment(xPaymentHeader: string): Promise<`0x${string}`> {
+async function verifyPayment(xPaymentHeader: string): Promise<void> {
   let payment: X402Payment;
   try {
     payment = JSON.parse(Buffer.from(xPaymentHeader, 'base64').toString('utf8'));
@@ -136,40 +133,36 @@ async function settlePayment(xPaymentHeader: string): Promise<`0x${string}`> {
   if (BigInt(auth.value) < BigInt(AMOUNT)) {
     throw new Error(`X-PAYMENT amount too low: got ${auth.value}, need ${AMOUNT}`);
   }
-  const validBefore = BigInt(auth.validBefore);
-  if (validBefore * 1000n < BigInt(Date.now())) {
+  if (BigInt(auth.validBefore) * 1000n < BigInt(Date.now())) {
     throw new Error('X-PAYMENT authorization has expired');
   }
 
-  // Replay guard
-  const nonceKey = `${auth.from.toLowerCase()}:${auth.nonce}`;
-  if (usedNonces.has(nonceKey)) throw new Error('X-PAYMENT nonce already used');
-
-  // Decode ECDSA signature
-  const { v, r, s } = parseSignature(signature as `0x${string}`);
-
-  // Execute EIP-3009 transferWithAuthorization on-chain
-  const txHash = await walletClient.writeContract({
-    address: ASSET,
-    abi: EIP3009_ABI,
-    functionName: 'transferWithAuthorization',
-    args: [
-      auth.from          as `0x${string}`,
-      auth.to            as `0x${string}`,
-      BigInt(auth.value),
-      BigInt(auth.validAfter ?? 0),
-      validBefore,
-      auth.nonce         as `0x${string}`,
-      Number(v),           // uint8
-      r,                   // bytes32
-      s,                   // bytes32
-    ],
+  // Verify the EIP-3009 signature (proves the buyer authorised this payment)
+  const valid = await verifyTypedData({
+    address: auth.from as `0x${string}`,
+    domain: EIP3009_DOMAIN,
+    types: EIP3009_TYPES,
+    primaryType: 'TransferWithAuthorization',
+    message: {
+      from:        auth.from          as `0x${string}`,
+      to:          auth.to            as `0x${string}`,
+      value:       BigInt(auth.value),
+      validAfter:  BigInt(auth.validAfter ?? 0),
+      validBefore: BigInt(auth.validBefore),
+      nonce:       auth.nonce         as `0x${string}`,
+    },
+    signature: signature as `0x${string}`,
   });
+  if (!valid) throw new Error('X-PAYMENT signature invalid');
 
-  await publicClient.waitForTransactionReceipt({ hash: txHash, pollingInterval: 500 });
-
-  usedNonces.add(nonceKey);
-  return txHash;
+  // Confirm OKX facilitator already executed the transfer on-chain (free read call)
+  const settled = await publicClient.readContract({
+    address: ASSET,
+    abi: EIP3009_STATE_ABI,
+    functionName: 'authorizationState',
+    args: [auth.from as `0x${string}`, auth.nonce as `0x${string}`],
+  });
+  if (!settled) throw new Error('Payment not yet settled on-chain — facilitator has not executed the transfer');
 }
 
 // ── Node http server ──────────────────────────────────────────────────────────
@@ -181,7 +174,6 @@ async function readBody(req: http.IncomingMessage): Promise<Buffer> {
 }
 
 http.createServer(async (req, res) => {
-  // Health check
   if (req.method === 'GET' && req.url === '/health') {
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
@@ -195,12 +187,11 @@ http.createServer(async (req, res) => {
     return;
   }
 
-  const body       = await readBody(req);
-  const xPayment   = req.headers['x-payment'] as string | undefined;
-  const host       = req.headers.host ?? 'aiarena-okx-payment-proxy.onrender.com';
+  const body     = await readBody(req);
+  const xPayment = req.headers['x-payment'] as string | undefined;
+  const host     = req.headers.host ?? 'aiarena-okx-payment-proxy.onrender.com';
 
   if (!xPayment) {
-    // No payment — return x402 v2 challenge
     const payload = make402Body(host);
     const encoded = Buffer.from(JSON.stringify(payload)).toString('base64');
     res.statusCode = 402;
@@ -210,27 +201,25 @@ http.createServer(async (req, res) => {
     return;
   }
 
-  // Settle payment on-chain, then forward
-  let txHash: `0x${string}`;
   try {
-    txHash = await settlePayment(xPayment);
+    await verifyPayment(xPayment);
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Payment settlement failed';
-    console.error('[okx-payment-proxy] Settlement error:', msg);
+    const msg = err instanceof Error ? err.message : 'Payment verification failed';
+    console.error('[okx-payment-proxy] Payment rejected:', msg);
     res.statusCode = 402;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ error: msg }));
     return;
   }
 
-  // Forward to agent-service
+  // Payment confirmed — forward to agent-service
   let upstream: Response;
   try {
     upstream = await fetch(UPSTREAM_URL, {
       method:  'POST',
       headers: {
-        'Content-Type':       'application/json',
-        'X-OKX-Service-Key':  SERVICE_KEY,
+        'Content-Type':      'application/json',
+        'X-OKX-Service-Key': SERVICE_KEY,
       },
       body,
     });
@@ -244,18 +233,19 @@ http.createServer(async (req, res) => {
   }
 
   const upstreamBody = await upstream.text();
-  const paymentResp  = Buffer.from(JSON.stringify({
-    txHash,
-    success: true,
+  const receipt      = Buffer.from(JSON.stringify({
+    settled: true,
     network: 'eip155:196',
+    asset: ASSET,
+    amount: AMOUNT,
   })).toString('base64');
 
   res.statusCode = upstream.status;
   res.setHeader('Content-Type', 'application/json');
-  res.setHeader('X-PAYMENT-RESPONSE', paymentResp);
+  res.setHeader('X-PAYMENT-RESPONSE', receipt);
   res.end(upstreamBody);
 }).listen(PORT, () => {
-  console.log(`[okx-payment-proxy] :${PORT} → x402 v2 (eip155:196) operator=${account.address}`);
+  console.log(`[okx-payment-proxy] :${PORT} → x402 v2 gasless (eip155:196)`);
   console.log(`[okx-payment-proxy] upstream=${UPSTREAM_URL}`);
   console.log(`[okx-payment-proxy] payTo=${PAY_TO} asset=${ASSET} amount=${AMOUNT}`);
 });
