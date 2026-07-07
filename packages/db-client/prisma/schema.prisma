@@ -858,3 +858,65 @@ model PolymarketSignal {
   @@index([agentId])
   @@index([marketId])
 }
+
+// ── ARENA 0G Chain economy (indexed read-model) ──────────────────────────────
+//
+// The chain (ArenaToken/ArenaTreasury/RewardDistributor/ArenaEscrow/
+// ArenaTournament on 0G Chain) is the source of truth for balances and
+// settlement. These two models are a write-once, indexer-fed cache used for
+// fast dashboards/history — never written to directly by request-handling
+// code, only by the arena-chain-service event indexer. See
+// docs/ARENA_TOKEN_0G.md.
+
+enum ArenaEventName {
+  AGENT_REWARD_GRANTED
+  REWARD_GRANTED
+  DAILY_REWARD_CLAIMED
+  REFERRAL_REWARD_GRANTED
+  TOURNAMENT_REWARD_GRANTED
+  MATCH_CREATED
+  MATCH_JOINED
+  MATCH_STARTED
+  MATCH_SETTLED
+  MATCH_CANCELLED
+  COMMISSION_COLLECTED
+  TREASURY_UPDATED
+}
+
+/// Raw indexed log of every ARENA-economy contract event on 0G Chain.
+/// Populated by arena-chain-service's indexer worker; this is the backing
+/// store for the Explorer page and per-wallet transaction history.
+model OnChainEvent {
+  id              String         @id @default(uuid())
+  eventName       ArenaEventName
+  contractAddress String
+  txHash          String
+  logIndex        Int
+  blockNumber     BigInt
+  /// Denormalized for fast "wallet activity" queries — the player/recipient
+  /// address most relevant to this event, when the event has one.
+  playerAddress   String?
+  /// Full decoded event args as emitted (amounts as decimal-string ARENA, not wei).
+  args            Json
+  occurredAt      DateTime
+
+  @@unique([txHash, logIndex])
+  @@index([playerAddress])
+  @@index([eventName])
+  @@index([blockNumber])
+}
+
+/// Periodic snapshot of ArenaTreasury's on-chain state, for the Treasury
+/// dashboard's historical charts (inflows/outflows over time). Captured by
+/// arena-chain-service on a schedule and after every settlement.
+model TreasurySnapshot {
+  id                String   @id @default(uuid())
+  balance           String   // decimal-string ARENA
+  totalDistributed  String
+  totalCommissions  String
+  totalRewardsPaid  String
+  circulatingSupply String   // 1,000,000 - balance
+  capturedAt        DateTime @default(now())
+
+  @@index([capturedAt])
+}
