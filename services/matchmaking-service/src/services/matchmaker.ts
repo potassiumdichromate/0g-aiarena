@@ -150,6 +150,72 @@ export class Matchmaker {
   }
 
   /**
+   * Fallback for agents that have been waiting in queue for at least
+   * `minWaitMs` with no real opponent found: pull in any idle agent that has
+   * autonomous mode enabled and match them immediately (see
+   * queue-fallback-loop.ts, which calls this on a periodic sweep).
+   *
+   * "Idle" = not already queued and not already in a non-terminal battle.
+   * Prefers a candidate within the waiting agent's eloRange; falls back to
+   * the closest-ELO autonomous agent available if none are in range, since
+   * the whole point of this fallback is "get a match at all" once a real
+   * opponent hasn't shown up.
+   */
+  async fillWithAutonomousAgent(agentId: string, minWaitMs: number): Promise<{ matched: boolean; opponentId?: string }> {
+    const entry = await this.redis.getJson<{
+      gameId: string; mode: string; eloRating: number; eloRange: number; joinedAt: number;
+    }>(CACHE_KEYS.queueEntry(agentId));
+    if (!entry) return { matched: false }; // already matched, or left the queue
+
+    if (Date.now() - entry.joinedAt < minWaitMs) return { matched: false };
+
+    const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { userId: true } });
+    if (!agent) return { matched: false };
+
+    let candidates: Array<{ id: string; eloRating: number }> = [];
+    try {
+      candidates = await prisma.agent.findMany({
+        where: {
+          id:        { not: agentId },
+          userId:    { not: agent.userId }, // don't auto-match a player against their own agent
+          isRetired: false,
+          metadata:  { path: ['autonomousMode'], equals: true },
+        },
+        select: { id: true, eloRating: true },
+      });
+    } catch (err) {
+      console.warn('[Matchmaker] Autonomous fallback candidate query failed:', (err as Error).message);
+      return { matched: false };
+    }
+    if (candidates.length === 0) return { matched: false };
+
+    // Exclude candidates already queued or already in a live battle.
+    const busyBattles = await prisma.battle.findMany({
+      where: { status: { in: ['PENDING', 'IN_PROGRESS'] as any[] }, agentIds: { hasSome: candidates.map((c) => c.id) } },
+      select: { agentIds: true },
+    });
+    const busyIds = new Set(busyBattles.flatMap((b) => b.agentIds));
+
+    const idle: Array<{ id: string; eloRating: number }> = [];
+    for (const candidate of candidates) {
+      if (busyIds.has(candidate.id)) continue;
+      const alreadyQueued = await this.redis.getJson(CACHE_KEYS.queueEntry(candidate.id));
+      if (alreadyQueued) continue;
+      idle.push(candidate);
+    }
+    if (idle.length === 0) return { matched: false };
+
+    const inRange = idle.filter((c) => Math.abs(c.eloRating - entry.eloRating) <= entry.eloRange);
+    const pool = inRange.length > 0 ? inRange : idle;
+    pool.sort((a, b) => Math.abs(a.eloRating - entry.eloRating) - Math.abs(b.eloRating - entry.eloRating));
+    const opponent = pool[0];
+
+    await this.directChallenge(agentId, opponent.id, entry.gameId, entry.mode);
+    console.info(`[Matchmaker] Autonomous fallback: matched ${agentId} with idle autonomous agent ${opponent.id} after ${minWaitMs}ms wait`);
+    return { matched: true, opponentId: opponent.id };
+  }
+
+  /**
    * Cancel and purge all battles that have been stuck in a non-terminal status
    * for more than 10 minutes, then clean their Redis queue / match-found keys.
    */

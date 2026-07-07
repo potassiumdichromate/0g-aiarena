@@ -4,6 +4,7 @@ import helmet from '@fastify/helmet';
 import jwt from '@fastify/jwt';
 import { matchmakingRoutes } from './routes/matchmaking.routes';
 import { startAutonomousLoop } from './services/autonomous-loop';
+import { startQueueFallbackLoop } from './services/queue-fallback-loop';
 import { Matchmaker } from './services/matchmaker';
 
 const PORT = parseInt(process.env.PORT ?? '8020', 10);
@@ -39,6 +40,9 @@ async function bootstrap(): Promise<void> {
 
   // Start the background autonomous agent loop
   startAutonomousLoop();
+
+  // Start the queue fallback loop (30s wait -> match with an idle autonomous agent)
+  startQueueFallbackLoop();
 
   // Start the stale-battle cleanup loop (10-minute TTL)
   startCleanupLoop();
