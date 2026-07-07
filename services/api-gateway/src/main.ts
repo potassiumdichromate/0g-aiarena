@@ -173,14 +173,17 @@ async function main() {
     { prefix: '/v1/escrow',       envKey: 'FINANCIAL_SERVICE_URL',   fallback: 'http://localhost:8005', rewritePrefix: '/escrow'       },
     { prefix: '/v1/battles',      envKey: 'BATTLE_SERVICE_URL',      fallback: 'http://localhost:8003', rewritePrefix: '/battles'      },
     { prefix: '/v1/matchmaking',  envKey: 'MATCHMAKING_SERVICE_URL', fallback: 'http://localhost:8004', rewritePrefix: '/queue'        },
-    { prefix: '/v1/token',        envKey: 'TOKEN_SERVICE_URL',       fallback: 'http://localhost:8050', rewritePrefix: '/v1/token'     },
+    // arena-chain-service — $ARENA 0G Chain economy (replaces the archived Solana token-service)
+    { prefix: '/v1/arena',        envKey: 'ARENA_CHAIN_SERVICE_URL', fallback: 'http://localhost:8050', rewritePrefix: '/v1/arena'     },
     { prefix: '/v1/leaderboards', envKey: 'LEADERBOARD_SERVICE_URL', fallback: 'http://localhost:8041', rewritePrefix: '/leaderboards' },
     // league-service handles /v1/league/* itself — keep the prefix on the way through
     { prefix: '/v1/league',       envKey: 'LEAGUE_SERVICE_URL',      fallback: 'http://localhost:8060', rewritePrefix: '/v1/league'    },
     // Polymarket signals live in league-service too (docs/polymarket) — same rationale, own prefix
     { prefix: '/v1/polymarket',   envKey: 'LEAGUE_SERVICE_URL',      fallback: 'http://localhost:8060', rewritePrefix: '/v1/polymarket'},
-    // OKX Agent Marketplace A2MCP bridge — lives in agent-service, auth via X-OKX-Service-Key
-    { prefix: '/v1/okx',          envKey: 'AGENT_SERVICE_URL',       fallback: 'http://localhost:8002', rewritePrefix: '/okx'          },
+    // OKX Agent Marketplace — routed through payment proxy (x402 v2 gate), which
+    // verifies payment then forwards to agent-service. Strip /v1/okx so the proxy
+    // receives /create-agent (its own route). Fallback hits agent-service directly in dev.
+    { prefix: '/v1/okx',          envKey: 'OKX_PAYMENT_PROXY_URL',   fallback: 'http://localhost:8090', rewritePrefix: ''              },
   ];
 
   // ── Optional / not-yet-deployed services — proxy if URL set, else 503 ──────

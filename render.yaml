@@ -382,6 +382,8 @@ services:
         value: https://aiarena-memory.onrender.com
       - key: LEAGUE_SERVICE_URL
         value: https://aiarena-league.onrender.com
+      - key: OKX_PAYMENT_PROXY_URL
+        value: https://aiarena-okx-payment-proxy.onrender.com
 
   # ── INFT Service (ERC-7857 Living NFT on 0G Chain) ───────────────────────────
   - type: web
