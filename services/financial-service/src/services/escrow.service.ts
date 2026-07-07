@@ -1,35 +1,54 @@
 /**
- * EscrowService — locks $ARENA from two agents before a wager battle
- * and settles the 90/10 split when the battle ends.
+ * EscrowService — 1v1 wager and League Battle escrow, now backed by the
+ * on-chain ArenaEscrow contract (see contracts/evm/contracts/arena/ArenaEscrow.sol)
+ * instead of Postgres fund math. financial-service's job here is to be the
+ * caller that talks to arena-chain-service (the only relayer/signer for the
+ * $ARENA 0G Chain economy) rather than writing settlement math into Postgres.
  *
- * Flow:
+ * Flow (mirrors ArenaEscrow.sol exactly, driven through arena-chain-service):
  *   1. lockEscrow(agentId1, agentId2, stakeAmount, battleId)
- *      → deducts stakeAmount from each wallet
- *      → creates EscrowRecord (state = LOCKED)
+ *      → resolves each agent's owner wallet address
+ *      → arena-chain-service: createMatch (playerA stakes) + joinMatch (playerB stakes) + startMatch
  *
  *   2. settleEscrow(battleId, winnerId)
- *      → total pool = stakeAmount * 2
- *      → winner receives pool * 0.90
- *      → platform commission = pool * 0.10  (kept in reserve)
- *      → EscrowRecord state → SETTLED
+ *      → arena-chain-service: settleMatch(winner) — on-chain 90/10 split,
+ *        commission routed to ArenaTreasury automatically by the contract.
+ *
+ * `EscrowRecord` rows are still written (state/idempotency bookkeeping only,
+ * e.g. `LeagueBattle.escrowId` needs a row to point at) but are no longer the
+ * source of truth for fund movement — `OnChainEvent` is. Balances are no
+ * longer read from or written to `AgentWallet.balanceArena` / `LedgerEntry`
+ * for wager/League settlement; a player's real balance now lives on-chain
+ * (query via GET /v1/arena/wallet/:address on arena-chain-service).
+ *
+ * IMPORTANT: before create/join, each player must have approved the
+ * ArenaEscrow contract to spend their ARENA from their own wallet — this
+ * service (like arena-chain-service) never signs on a player's behalf.
+ * arena-chain-service's create/join calls will revert if the player hasn't
+ * approved yet; that surfaces here as an ArenaChainError.
  */
 
 import { prisma, FinancialRepository, LeagueRepository } from '@ai-arena/db-client';
 import { getEventBus } from '@ai-arena/event-bus';
-import { AgentWalletClient } from '@ai-arena/solana-client';
-import { FinancialOrchestrator } from './financial-orchestrator';
-
-const walletClient = new AgentWalletClient();
+import { arenaChain, ArenaChainError } from './arena-chain.client';
 
 const finRepo = new FinancialRepository(prisma);
 const leagueRepo = new LeagueRepository(prisma);
-const orchestrator = new FinancialOrchestrator();
 
-export const COMMISSION_RATE = 0.10; // 10% platform fee
+export const COMMISSION_RATE = 0.10; // mirrors ArenaEscrow.commissionBps default (1000 = 10%)
+
+/** Resolves an agent's owner wallet address (User.walletAddress) — the address that stakes/receives ARENA on-chain. */
+async function resolveOwnerWalletAddress(agentId: string): Promise<string> {
+  const agent = await prisma.agent.findUnique({ where: { id: agentId }, select: { userId: true } });
+  if (!agent) throw new Error(`Agent ${agentId} not found`);
+  const user = await prisma.user.findUnique({ where: { id: agent.userId }, select: { walletAddress: true } });
+  if (!user?.walletAddress) throw new Error(`No walletAddress for owner of agent ${agentId}`);
+  return user.walletAddress;
+}
 
 export class EscrowService {
 
-  // ── Lock ───────────────────────────────────────────────────────────────────
+  // ── Lock (ad-hoc wager) ──────────────────────────────────────────────────
 
   async lockEscrow(
     agentId1:    string,
@@ -37,63 +56,35 @@ export class EscrowService {
     stakeAmount: number,   // per-agent stake (e.g. 5 ARENA each)
     battleId:    string,
   ): Promise<{ escrowId: string; totalPool: number }> {
-    const [wallet1, wallet2] = await Promise.all([
-      finRepo.getWallet(agentId1),
-      finRepo.getWallet(agentId2),
+    const existing = await prisma.escrowRecord.findFirst({ where: { battleId, state: 'LOCKED' } });
+    if (existing) return { escrowId: existing.id, totalPool: stakeAmount * 2 };
+
+    const [playerA, playerB] = await Promise.all([
+      resolveOwnerWalletAddress(agentId1),
+      resolveOwnerWalletAddress(agentId2),
     ]);
 
-    if (!wallet1) throw new Error(`Wallet not found for agent ${agentId1}`);
-    if (!wallet2) throw new Error(`Wallet not found for agent ${agentId2}`);
-    if (wallet1.isFrozen) throw new Error(`Wallet frozen for agent ${agentId1}`);
-    if (wallet2.isFrozen) throw new Error(`Wallet frozen for agent ${agentId2}`);
-    if (wallet1.balanceArena < stakeAmount)
-      throw new Error(`Insufficient ARENA balance for agent ${agentId1} (need ${stakeAmount}, have ${wallet1.balanceArena})`);
-    if (wallet2.balanceArena < stakeAmount)
-      throw new Error(`Insufficient ARENA balance for agent ${agentId2} (need ${stakeAmount}, have ${wallet2.balanceArena})`);
+    const stakeStr = String(stakeAmount);
+    await arenaChain.createMatch(battleId, playerA, stakeStr);
+    await arenaChain.joinMatch(battleId, playerB);
+    await arenaChain.startMatch(battleId);
 
-    // Deduct from both wallets atomically
-    await Promise.all([
-      finRepo.updateBalance(agentId1, -stakeAmount, 0),
-      finRepo.updateBalance(agentId2, -stakeAmount, 0),
-    ]);
-
-    // Create ledger entries for both
-    await Promise.all([
-      finRepo.createLedgerEntry({
-        wallet:   { connect: { id: wallet1.id } },
-        type:     'BATTLE_WAGER',
-        amount:   stakeAmount,
-        currency: 'ARENA',
-        status:   'CONFIRMED',
-        metadata: { battleId, role: 'escrow_lock' } as any,
-      }),
-      finRepo.createLedgerEntry({
-        wallet:   { connect: { id: wallet2.id } },
-        type:     'BATTLE_WAGER',
-        amount:   stakeAmount,
-        currency: 'ARENA',
-        status:   'CONFIRMED',
-        metadata: { battleId, role: 'escrow_lock' } as any,
-      }),
-    ]);
-
-    // Create EscrowRecord
     const escrow = await prisma.escrowRecord.create({
       data: {
         battleId,
         agentIds:      [agentId1, agentId2],
         amounts:       { [agentId1]: stakeAmount, [agentId2]: stakeAmount },
-        solanaAddress: `escrow_${battleId}`,   // real: on-chain escrow PDA
+        solanaAddress: `onchain_escrow_${battleId}`, // legacy column name — now just a marker this is on-chain-backed
         state:         'LOCKED',
       },
     });
 
-    console.log(`[EscrowService] Locked ${stakeAmount} ARENA from each agent. Escrow ${escrow.id}, battle ${battleId}`);
+    console.log(`[EscrowService] On-chain match created+joined+started for battle ${battleId}: ${playerA} vs ${playerB}, stake ${stakeAmount} ARENA each`);
 
     return { escrowId: escrow.id, totalPool: stakeAmount * 2 };
   }
 
-  // ── Settle ─────────────────────────────────────────────────────────────────
+  // ── Settle (ad-hoc wager) ────────────────────────────────────────────────
 
   async settleEscrow(
     battleId: string,
@@ -114,43 +105,29 @@ export class EscrowService {
     const commission   = parseFloat((totalPool * COMMISSION_RATE).toFixed(6));
     const winnerPayout = parseFloat((totalPool - commission).toFixed(6));
 
-    // Credit winner
-    const winnerWallet = await finRepo.getWallet(winnerId);
-    if (!winnerWallet) throw new Error(`Winner wallet not found for agent ${winnerId}`);
+    const winnerAddress = await resolveOwnerWalletAddress(winnerId);
 
-    await finRepo.updateBalance(winnerId, winnerPayout, 0);
-    await finRepo.createLedgerEntry({
-      wallet:   { connect: { id: winnerWallet.id } },
-      type:     'BATTLE_REWARD',
-      amount:   winnerPayout,
-      currency: 'ARENA',
-      status:   'CONFIRMED',
-      metadata: { battleId, escrowId: escrow.id, commission, totalPool } as any,
-    });
-
-    // ── On-chain credit: write winner payout to Solana PDA ───────────────────
-    // winnerPayout is in ARENA float (e.g. 9.0). Store as lamport-style u64 (×1000).
-    // Falls back silently if program not yet deployed — Postgres is source of truth.
-    let solanaTxHash: string | null = null;
+    let txHash: string | null = null;
     try {
-      const arenaUnits = Math.round(winnerPayout * 1000); // 1 ARENA = 1000 units on-chain
-      solanaTxHash = await walletClient.creditWallet(winnerId, arenaUnits);
+      const result = await arenaChain.settleMatch(battleId, winnerAddress);
+      txHash = result.txHash;
     } catch (err) {
-      console.warn('[EscrowService] On-chain credit failed (non-fatal):', (err as Error).message);
+      if (err instanceof ArenaChainError) {
+        console.error(`[EscrowService] On-chain settle failed for battle ${battleId}:`, err.message);
+      }
+      throw err;
     }
 
-    // Mark escrow as settled
     await prisma.escrowRecord.update({
       where: { id: escrow.id },
       data: {
         state:     'SETTLED',
         winnerId,
         settledAt: new Date(),
-        txHashes:  { settlement: solanaTxHash ?? `settle_${battleId}_${Date.now()}` },
+        txHashes:  { settlement: txHash ?? `settle_${battleId}_${Date.now()}` },
       },
     });
 
-    // Publish settlement event
     try {
       const bus = await getEventBus();
       await bus.publish('financial.escrow.settled', {
@@ -160,11 +137,12 @@ export class EscrowService {
         winnerPayout,
         commission,
         totalPool,
+        txHash,
         occurredAt:  new Date(),
       });
     } catch { /* NATS optional */ }
 
-    console.log(`[EscrowService] Settled battle ${battleId}: winner ${winnerId} receives ${winnerPayout} ARENA, commission ${commission} ARENA`);
+    console.log(`[EscrowService] Settled battle ${battleId} on-chain: winner ${winnerId} (${winnerAddress}) receives ${winnerPayout} ARENA, commission ${commission} ARENA, tx ${txHash}`);
 
     return { winnerId, winnerPayout, commission };
   }
@@ -173,10 +151,11 @@ export class EscrowService {
 
   /**
    * §9.2 — locks `LeagueBattle.stakeArena` from both the challenger and
-   * opponent's `AgentWallet.balanceArena`, creates an `EscrowRecord` (state
-   * LOCKED, linked via `leagueBattleId`), and transitions the battle
-   * PENDING -> LOCKED. Idempotent: a battle already LOCKED returns its
-   * existing `escrowId` rather than locking funds twice.
+   * opponent's on-chain wallets via ArenaEscrow (createMatch/joinMatch/
+   * startMatch), creates an `EscrowRecord` (state LOCKED, linked via
+   * `leagueBattleId`), and transitions the battle PENDING -> LOCKED.
+   * Idempotent: a battle already LOCKED returns its existing `escrowId`
+   * rather than locking funds twice.
    */
   async lockLeagueEscrow(battleId: string): Promise<{ escrowId: string }> {
     const battle = await prisma.leagueBattle.findUnique({ where: { id: battleId } });
@@ -190,49 +169,22 @@ export class EscrowService {
     }
 
     const stake = battle.stakeArena;
-    const [challengerWallet, opponentWallet] = await Promise.all([
-      orchestrator.ensureWallet(battle.challengerId),
-      orchestrator.ensureWallet(battle.opponentId),
-    ]);
-    if (!challengerWallet) throw new Error(`Wallet not found for agent ${battle.challengerId}`);
-    if (!opponentWallet) throw new Error(`Wallet not found for agent ${battle.opponentId}`);
-    if (challengerWallet.isFrozen) throw new Error(`Wallet frozen for agent ${battle.challengerId}`);
-    if (opponentWallet.isFrozen) throw new Error(`Wallet frozen for agent ${battle.opponentId}`);
-    if (challengerWallet.balanceArena < stake)
-      throw new Error(`Insufficient ARENA balance for agent ${battle.challengerId} (need ${stake}, have ${challengerWallet.balanceArena})`);
-    if (opponentWallet.balanceArena < stake)
-      throw new Error(`Insufficient ARENA balance for agent ${battle.opponentId} (need ${stake}, have ${opponentWallet.balanceArena})`);
-
-    await Promise.all([
-      finRepo.updateBalance(battle.challengerId, -stake, 0),
-      finRepo.updateBalance(battle.opponentId, -stake, 0),
+    const [challengerAddress, opponentAddress] = await Promise.all([
+      resolveOwnerWalletAddress(battle.challengerId),
+      resolveOwnerWalletAddress(battle.opponentId),
     ]);
 
-    await Promise.all([
-      finRepo.createLedgerEntry({
-        wallet:   { connect: { id: challengerWallet.id } },
-        type:     'LEAGUE_BATTLE_WAGER',
-        amount:   stake,
-        currency: 'ARENA',
-        status:   'CONFIRMED',
-        metadata: { battleId, role: 'escrow_lock' } as any,
-      }),
-      finRepo.createLedgerEntry({
-        wallet:   { connect: { id: opponentWallet.id } },
-        type:     'LEAGUE_BATTLE_WAGER',
-        amount:   stake,
-        currency: 'ARENA',
-        status:   'CONFIRMED',
-        metadata: { battleId, role: 'escrow_lock' } as any,
-      }),
-    ]);
+    const stakeStr = String(stake);
+    await arenaChain.createMatch(battleId, challengerAddress, stakeStr);
+    await arenaChain.joinMatch(battleId, opponentAddress);
+    await arenaChain.startMatch(battleId);
 
     const escrow = await prisma.escrowRecord.create({
       data: {
         battleId,
         agentIds:       [battle.challengerId, battle.opponentId],
         amounts:        { [battle.challengerId]: stake, [battle.opponentId]: stake },
-        solanaAddress:  `escrow_league_${battleId}`,
+        solanaAddress:  `onchain_escrow_league_${battleId}`,
         state:          'LOCKED',
         leagueBattleId: battle.id,
       },
@@ -243,18 +195,19 @@ export class EscrowService {
       acceptedAt: new Date(),
     });
 
-    console.log(`[EscrowService] League escrow locked: battle ${battleId}, ${stake} ARENA each, escrow ${escrow.id}`);
+    console.log(`[EscrowService] League escrow locked on-chain: battle ${battleId}, ${stake} ARENA each, escrow ${escrow.id}`);
     return { escrowId: escrow.id };
   }
 
   // ── League: Settle ───────────────────────────────────────────────────────
 
   /**
-   * §9.3/§9.4 — settles a LOCKED League Battle escrow.
-   *   winnerId set  -> winner receives 90% of the pool, 10% commission stays
-   *                    in the platform reserve (never paid out).
-   *   winnerId null -> void: both stakes are refunded in full (tie or the
-   *                    match was cancelled).
+   * §9.3/§9.4 — settles a LOCKED League Battle escrow via ArenaEscrow.
+   *   winnerId set  -> on-chain settleMatch(winner): winner receives 90% of
+   *                    the pool, 10% commission routed to ArenaTreasury by
+   *                    the contract itself.
+   *   winnerId null -> on-chain cancelMatch: both stakes refunded in full
+   *                    (tie or the match was cancelled).
    * Idempotent: a battle already SETTLED/VOID, or an escrow already
    * SETTLED/CANCELLED, is a no-op.
    */
@@ -274,111 +227,61 @@ export class EscrowService {
       throw new Error(`Escrow ${escrow.id} is not LOCKED (state=${escrow.state})`);
     }
 
-    const amounts = escrow.amounts as Record<string, number>;
-    const totalPool = Object.values(amounts).reduce((sum, v) => sum + v, 0);
     const now = new Date();
 
     if (winnerId) {
-      const commission   = parseFloat((totalPool * COMMISSION_RATE).toFixed(6));
-      const winnerPayout = parseFloat((totalPool - commission).toFixed(6));
-
-      const winnerWallet = await orchestrator.ensureWallet(winnerId);
-      if (!winnerWallet) throw new Error(`Winner wallet not found for agent ${winnerId}`);
-
-      await finRepo.updateBalance(winnerId, winnerPayout, 0);
-      await finRepo.createLedgerEntry({
-        wallet:   { connect: { id: winnerWallet.id } },
-        type:     'LEAGUE_BATTLE_REWARD',
-        amount:   winnerPayout,
-        currency: 'ARENA',
-        status:   'CONFIRMED',
-        metadata: { battleId, escrowId: escrow.id, commission, totalPool } as any,
-      });
+      const winnerAddress = await resolveOwnerWalletAddress(winnerId);
+      const { txHash } = await arenaChain.settleMatch(battleId, winnerAddress);
 
       await prisma.escrowRecord.update({
         where: { id: escrow.id },
-        data:  { state: 'SETTLED', winnerId, settledAt: now },
+        data:  { state: 'SETTLED', winnerId, settledAt: now, txHashes: { settlement: txHash } },
       });
 
       await leagueRepo.transitionBattleStatus(battle.id, 'LOCKED', 'SETTLED', { winnerId, settledAt: now });
 
-      console.log(`[EscrowService] League battle ${battleId} settled: winner ${winnerId} receives ${winnerPayout} ARENA, commission ${commission} ARENA`);
+      console.log(`[EscrowService] League battle ${battleId} settled on-chain: winner ${winnerId} (${winnerAddress}), tx ${txHash}`);
     } else {
-      await Promise.all(
-        Object.entries(amounts).map(async ([agentId, amount]) => {
-          const wallet = await orchestrator.ensureWallet(agentId);
-          if (!wallet) return;
-          await finRepo.updateBalance(agentId, amount, 0);
-          await finRepo.createLedgerEntry({
-            wallet:   { connect: { id: wallet.id } },
-            type:     'LEAGUE_BATTLE_REFUND',
-            amount,
-            currency: 'ARENA',
-            status:   'CONFIRMED',
-            metadata: { battleId, escrowId: escrow.id } as any,
-          });
-        }),
-      );
+      const { txHash } = await arenaChain.cancelMatch(battleId);
 
       await prisma.escrowRecord.update({
         where: { id: escrow.id },
-        data:  { state: 'CANCELLED', settledAt: now },
+        data:  { state: 'CANCELLED', settledAt: now, txHashes: { cancellation: txHash } },
       });
 
       await leagueRepo.transitionBattleStatus(battle.id, 'LOCKED', 'VOID', { settledAt: now });
 
-      console.log(`[EscrowService] League battle ${battleId} voided: refunded ${totalPool} ARENA total`);
+      console.log(`[EscrowService] League battle ${battleId} voided on-chain (refund), tx ${txHash}`);
     }
   }
 
   // ── League: Prediction reward ───────────────────────────────────────────
+  //
+  // §5.6/§10.2 step 4 — grants the on-chain "TRAINING"-category ARENA reward
+  // for a settled League prediction via arena-chain-service instead of
+  // crediting AgentWallet.balanceArena in Postgres. Idempotency now lives at
+  // the arena-chain-service/on-chain layer's caller (league-worker still
+  // guards on `(predictionId, LEAGUE_PREDICTION_REWARD)` via its own
+  // settlement log — see services/league-worker/src/lib/settlement.ts).
 
-  /**
-   * §5.6/§10.2 step 4 — credits `AgentWallet.balanceArena` for a settled
-   * League prediction. Idempotent on `(predictionId, LEAGUE_PREDICTION_REWARD)`
-   * — a duplicate call for an already-credited prediction is a no-op.
-   */
   async creditLeaguePrediction(
     agentId:      string,
     predictionId: string,
     amount:       number,
     metadata:     Record<string, unknown>,
   ): Promise<void> {
-    const wallet = await orchestrator.ensureWallet(agentId);
-    if (!wallet) throw new Error(`Wallet not found for agent ${agentId}`);
-
-    const existing = await prisma.ledgerEntry.findFirst({
-      where: {
-        walletId: wallet.id,
-        type:     'LEAGUE_PREDICTION_REWARD',
-        metadata: { path: ['predictionId'], equals: predictionId },
-      },
-    });
-    if (existing) return;
-
-    await finRepo.updateBalance(agentId, amount, 0);
-    await finRepo.createLedgerEntry({
-      wallet:   { connect: { id: wallet.id } },
-      type:     'LEAGUE_PREDICTION_REWARD',
-      amount,
-      currency: 'ARENA',
-      status:   'CONFIRMED',
-      metadata: { predictionId, ...metadata } as any,
-    });
+    const playerAddress = await resolveOwnerWalletAddress(agentId);
+    const reason = `LEAGUE_PREDICTION:${predictionId}`;
+    await arenaChain.grantTrainingReward(playerAddress, String(amount), reason);
+    console.log(`[EscrowService] League prediction reward granted on-chain: ${amount} ARENA to ${playerAddress} (prediction ${predictionId})`, metadata);
   }
 
   // ── x402 Auto-Pay (custodial wallet) ─────────────────────────────────────
+  //
+  // Left on the old off-chain Postgres path — x402 is a distinct
+  // pay-per-request compute-fee mechanism (training/inference/clone fees),
+  // not part of the wager/League escrow-settlement rewiring in this pass.
 
-  /**
-   * Initiate an x402 payment from the agent's custodial ARENA wallet.
-   *
-   * Called by the frontend x402 interceptor when it receives a 402.
-   * Deducts the amount up-front and returns a synthetic txHash the client
-   * can immediately use to retry the original request.
-   *
-   * The gateway's verifyX402Payment will recognise this as a pre-paid entry
-   * and let the request through without double-charging.
-   */
   async initiateX402Payment(
     agentId: string,
     amount:  number,
@@ -391,10 +294,8 @@ export class EscrowService {
       throw new Error(`Insufficient ARENA balance (need ${amount}, have ${wallet.balanceArena})`);
     }
 
-    // Deduct balance up-front
     await finRepo.updateBalance(agentId, -amount, 0);
 
-    // Synthetic internal txHash — unique and traceable
     const txHash = `x402_internal_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
     await finRepo.createLedgerEntry({
@@ -413,14 +314,6 @@ export class EscrowService {
 
   // ── x402 Payment Verification ──────────────────────────────────────────────
 
-  /**
-   * Verify an x402 payment proof submitted via X-Payment-Tx-Hash header.
-   *
-   * Handles two flows:
-   *   A. Pre-paid (initiateX402Payment)  — finds the ledger entry by txHash,
-   *      checks it hasn't been consumed yet.
-   *   B. Manual Solana transfer          — checks the agent has sufficient balance.
-   */
   async verifyX402Payment(
     txHash:         string,
     agentId:        string,
@@ -429,7 +322,6 @@ export class EscrowService {
     const wallet = await finRepo.getWallet(agentId);
     if (!wallet) return { valid: false, reason: 'Wallet not found' };
 
-    // ── Flow A: pre-paid internal payment ─────────────────────────────────────
     const prePaid = await prisma.ledgerEntry.findFirst({
       where: {
         walletId: wallet.id,
@@ -447,7 +339,6 @@ export class EscrowService {
       return { valid: true };
     }
 
-    // ── Flow B: external Solana tx — guard against replay ─────────────────────
     const existing = await prisma.ledgerEntry.findFirst({
       where: {
         walletId: wallet.id,
@@ -466,11 +357,6 @@ export class EscrowService {
 
   // ── Charge x402 ───────────────────────────────────────────────────────────
 
-  /**
-   * Finalise an x402 payment after verification:
-   *   - Pre-paid entries: mark as consumed (balance already deducted).
-   *   - External Solana txs: deduct balance and record.
-   */
   async chargeX402(
     txHash:   string,
     agentId:  string,
@@ -480,7 +366,6 @@ export class EscrowService {
     const wallet = await finRepo.getWallet(agentId);
     if (!wallet) throw new Error('Wallet not found');
 
-    // Mark pre-paid entry as consumed
     const prePaid = await prisma.ledgerEntry.findFirst({
       where: {
         walletId: wallet.id,
@@ -497,7 +382,6 @@ export class EscrowService {
       return;
     }
 
-    // External Solana flow: deduct + record
     await finRepo.updateBalance(agentId, -amount, 0);
     await finRepo.createLedgerEntry({
       wallet:   { connect: { id: wallet.id } },

@@ -16,6 +16,13 @@
  *   4. Build metadata blob → upload to 0G Storage → get metadataRootHash
  *   5. Persist agent to Postgres with rootHashes
  *   6. Emit AGENT_CREATED event (inft-service mints the INFT)
+ *   7. Direct HTTP mint via inft-service (real on-chain INFT mint)
+ *   8. On mint success -> arena-chain-service grants the Agent Mint reward
+ *      (100 ARENA) directly to the agent owner's 0G-chain wallet
+ *      (User.walletAddress) via RewardDistributor.grantAgentMintReward.
+ *      This replaces the old off-chain Postgres "starter allocation" —
+ *      the reward is now conditioned on and sequenced after a successful
+ *      on-chain mint, not granted unconditionally up front.
  */
 
 import { prisma, AgentRepository } from '@ai-arena/db-client';
@@ -172,16 +179,6 @@ export class AgentService {
       });
     }
 
-    // ── Step 6: Pre-create agent wallet via financial-service (no NATS needed) ──
-    const financialUrl = process.env.FINANCIAL_SERVICE_URL ?? 'http://localhost:8005';
-    try {
-      await fetch(`${financialUrl}/wallets/ensure/${agent.id}`, { method: 'POST' });
-      console.info(`[AgentService] Wallet ensured for agent ${agent.id}`);
-    } catch (err) {
-      // Non-fatal — wallet will be auto-created on first GET /wallets/:agentId
-      console.warn('[AgentService] Could not pre-create wallet (will auto-create on first access):', (err as Error).message);
-    }
-
     // ── Step 7: Publish event → inft-service will mint the INFT ─────────────
     try {
       const bus = await getEventBus();
@@ -238,6 +235,49 @@ export class AgentService {
       }
     } else {
       console.info('[AgentService] INFT_SERVICE_URL not set — skipping on-chain INFT mint');
+    }
+
+    // ── Step 9: NFT Mint success → Reward Distributor → Transfer 100 ARENA ──
+    // to the agent owner's real 0G-chain wallet (User.walletAddress, the
+    // same Privy embedded wallet used for login). Only fires after a
+    // successful mint (inftTokenId set) — this is the replacement for the
+    // old unconditional off-chain "starter allocation" removed in step 6
+    // above. Non-fatal like the mint call itself: agent creation must not
+    // fail if the reward grant fails.
+    // TODO: a retry/reconciliation job for agents whose mint succeeded but
+    // whose reward grant failed would be a good follow-up — out of scope here.
+    if (inftTokenId) {
+      const arenaChainServiceUrl = process.env.ARENA_CHAIN_SERVICE_URL ?? 'http://localhost:8050';
+      try {
+        const owner = await prisma.user.findUnique({ where: { id: userId }, select: { walletAddress: true } });
+        if (!owner?.walletAddress) {
+          console.warn(`[AgentService] No walletAddress for user ${userId} — skipping agent-mint ARENA reward`);
+        } else {
+          await withTimeout(
+            fetch(`${arenaChainServiceUrl}/v1/arena/rewards/agent-mint`, {
+              method:  'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Service-Key': process.env.INTERNAL_SERVICE_SECRET ?? '',
+              },
+              body: JSON.stringify({
+                playerAddress: owner.walletAddress,
+                agentTokenId:  inftTokenId,
+              }),
+            }).then(async r => {
+              if (!r.ok) throw new Error(`arena-chain-service responded ${r.status}`);
+              return r.json() as Promise<{ txHash: string; amountArena: string }>;
+            }),
+            20_000,
+            'grantAgentMintReward',
+          ).then(rewardResp => {
+            console.info(`[AgentService] Agent Mint reward granted: ${rewardResp.amountArena} ARENA to ${owner.walletAddress} (tx: ${rewardResp.txHash})`);
+          });
+        }
+      } catch (err) {
+        // Non-fatal — agent + INFT are created, the reward grant can be retried later
+        console.warn('[AgentService] Agent Mint ARENA reward failed (non-fatal):', (err as Error).message);
+      }
     }
 
     return { ...agent, avatarRootHash, metadataRootHash, inftTokenId };

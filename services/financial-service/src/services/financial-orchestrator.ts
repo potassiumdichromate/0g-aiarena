@@ -1,8 +1,5 @@
 import { prisma, FinancialRepository } from '@ai-arena/db-client';
 import { getEventBus, SUBJECTS } from '@ai-arena/event-bus';
-import { AgentWalletClient } from '@ai-arena/solana-client';
-
-const walletClient = new AgentWalletClient();
 
 const finRepo = new FinancialRepository(prisma);
 
@@ -27,21 +24,14 @@ export class FinancialOrchestrator {
     const agent = await prisma.agent.findUnique({ where: { id: agentId } });
     if (!agent) return null;
 
-    // Derive real Solana PDA for this agent via the agent_wallet Anchor program.
-    // Wrapped in try-catch so any Solana error (PDA seed issue, network, etc.)
-    // never blocks DB wallet creation — Postgres is always the source of truth.
-    let solanaAddress = `pending_${agentId.replace(/-/g, '')}`;
-    try {
-      const result = await walletClient.createAgentWallet(agentId);
-      solanaAddress = result.address;
-      if (result.txSignature) {
-        console.info(`[FinancialOrchestrator] On-chain wallet created: ${solanaAddress} (tx: ${result.txSignature})`);
-      } else {
-        console.info(`[FinancialOrchestrator] Wallet PDA derived: ${solanaAddress}`);
-      }
-    } catch (err) {
-      console.warn(`[FinancialOrchestrator] Solana PDA derivation failed, using fallback address: ${(err as Error).message}`);
-    }
+    // The old Solana vault-share stack (agent_wallet Anchor program PDAs) has
+    // been archived — see archive/solana-vault-stack/. Agents no longer have
+    // their own on-chain wallet in the $ARENA 0G Chain economy; rewards and
+    // stakes target the owning player's User.walletAddress instead (see
+    // arena-chain-service). This `solanaAddress` column is legacy/off-chain
+    // bookkeeping only — kept populated with a stable placeholder so existing
+    // AgentWallet rows and queries keep working without a schema migration.
+    const solanaAddress = `legacy_${agentId.replace(/-/g, '')}`;
 
     const wallet = await finRepo.createWallet({
       agent:         { connect: { id: agentId } },

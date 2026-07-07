@@ -34,6 +34,11 @@ const evmRpc = process.env.ZEROG_EVM_RPC
 // struct AgentTraits { aggression, patience, adaptability, riskTolerance, precision, endurance, creativity, teamwork }
 const TRAITS_TUPLE = 'tuple(uint8 aggression, uint8 patience, uint8 adaptability, uint8 riskTolerance, uint8 precision, uint8 endurance, uint8 creativity, uint8 teamwork)';
 
+// AgentMetadata tuple as defined in AIArenaINFT.sol — matches the real
+// public-getter ABI exactly (verified against the compiled artifact; the
+// nested AgentTraits struct IS included since it has no arrays/mappings).
+const AGENT_METADATA_TUPLE = `tuple(string agentId, string clan, string archetype, uint8 evolutionStage, uint32 wins, uint32 losses, uint32 draws, uint32 totalBattles, bytes32 memoryRootHash, string modelRootHash, string genesisRootHash, bytes32 encryptedMetadataHash, bytes sealedKey, uint256 mintedAt, uint256 lastEvolvedAt, uint256 lastBattleAt, uint256 lastTrainingAt, ${TRAITS_TUPLE} traits)`;
+
 const INFT_ABI = [
   // ERC-7857 core
   'function transfer(address from, address to, uint256 tokenId, bytes calldata sealedKey, bytes calldata proof) external',
@@ -41,20 +46,31 @@ const INFT_ABI = [
   'function authorizeUsage(uint256 tokenId, address executor, bytes calldata permissions) external',
   'function revokeUsage(uint256 tokenId, address executor) external',
   'function hasValidUsage(uint256 tokenId, address executor) external view returns (bool)',
-  // Metadata reads
+  // Metadata reads — matches AIArenaINFT.sol exactly (verified against the compiled ABI)
   'function ownerOf(uint256 tokenId) external view returns (address)',
   'function tokenURI(uint256 tokenId) external view returns (string)',
   `function getTraits(uint256 tokenId) external view returns (${TRAITS_TUPLE})`,
+  'function getEvolutionStage(uint256 tokenId) external view returns (uint8)',
+  `function agentMetadata(uint256 tokenId) external view returns (${AGENT_METADATA_TUPLE})`,
+  'function cloneParent(uint256 tokenId) external view returns (uint256)',
+  'function cloneCount(uint256 tokenId) external view returns (uint256)',
   'function agentIdToTokenId(string calldata agentId) external view returns (uint256)',
   'function setOperator(address operator, bool authorised) external',
   // Mint — matches AIArenaINFT.sol exactly
   // mintAgent(to, agentId, clan, archetype, traits, encryptedMetadataHash, sealedKey, genesisRootHash, tokenUri)
   `function mintAgent(address to, string calldata agentId, string calldata clan, string calldata archetype, ${TRAITS_TUPLE} calldata traits, bytes32 encryptedMetadataHash, bytes calldata sealedKey, string calldata genesisRootHash, string calldata tokenUri) external returns (uint256)`,
-  // Evolve — matches AIArenaINFT.sol
-  `function evolveAgent(uint256 tokenId, uint8 newStage, ${TRAITS_TUPLE} calldata newTraits) external`,
+  // Evolve — matches AIArenaINFT.sol exactly: evolveAgent(tokenId, newTraits, newTokenUri).
+  // The contract auto-increments evolutionStage; there is no newStage parameter.
+  `function evolveAgent(uint256 tokenId, ${TRAITS_TUPLE} calldata newTraits, string calldata newTokenUri) external`,
   'function updateMemoryRoot(uint256 tokenId, bytes32 newMemoryRoot) external',
-  'function updateModelRoot(uint256 tokenId, string calldata newModelRootHash) external',
-  'function recordBattleResult(uint256 tokenId, bool won, uint256 eloChange) external',
+  // updateModelVersion(tokenId, modelRootHash, newEncryptedMetadataHash) — matches AIArenaINFT.sol exactly.
+  // (The old ABI called a nonexistent `updateModelRoot(tokenId, modelRootHash)`.)
+  'function updateModelVersion(uint256 tokenId, string calldata modelRootHash, bytes32 newEncryptedMetadataHash) external',
+  // recordBattleResult(tokenId, won, draw) — matches AIArenaINFT.sol exactly.
+  // (The old ABI called recordBattleResult(tokenId, won, eloChange) with a uint256 third
+  // arg; the real contract's third parameter is a bool "draw" flag, not an ELO delta.
+  // ELO is computed and stored off-chain in Postgres, not on this contract.)
+  'function recordBattleResult(uint256 tokenId, bool won, bool draw) external',
   // Events — matches AIArenaINFT.sol
   'event AgentMinted(uint256 indexed tokenId, string agentId, address indexed owner, string clan)',
   'event AgentEvolved(uint256 indexed tokenId, uint8 fromStage, uint8 toStage)',
@@ -117,11 +133,13 @@ async function bootstrap(): Promise<void> {
     const tokenId = BigInt(req.params.tokenId);
     const contract = getContract();
 
-    const [owner, uri, metadata, traits] = await Promise.all([
+    const [owner, uri, metadata, traits, parentTokenId, cloneCount] = await Promise.all([
       contract.ownerOf(tokenId),
       contract.tokenURI(tokenId),
-      contract.getAgentMetadata(tokenId),
+      contract.agentMetadata(tokenId),
       contract.getTraits(tokenId),
+      contract.cloneParent(tokenId),
+      contract.cloneCount(tokenId),
     ]);
 
     return {
@@ -129,24 +147,36 @@ async function bootstrap(): Promise<void> {
       owner,
       tokenUri: uri,
       metadata: {
+        agentId:               metadata.agentId,
+        clan:                  metadata.clan,
+        archetype:             metadata.archetype,
         encryptedMetadataHash: metadata.encryptedMetadataHash,
         memoryRootHash:        metadata.memoryRootHash,
         modelRootHash:         metadata.modelRootHash,
+        genesisRootHash:       metadata.genesisRootHash,
         evolutionStage:        Number(metadata.evolutionStage),
-        isClone:               metadata.isClone,
-        parentTokenId:         metadata.parentTokenId.toString(),
-        cloneCount:            Number(metadata.cloneCount),
-        lastUpdateBlock:       Number(metadata.lastUpdateBlock),
+        wins:                  Number(metadata.wins),
+        losses:                Number(metadata.losses),
+        draws:                 Number(metadata.draws),
+        totalBattles:          Number(metadata.totalBattles),
+        isClone:               parentTokenId !== 0n,
+        parentTokenId:         parentTokenId.toString(),
+        cloneCount:            Number(cloneCount),
+        mintedAt:              Number(metadata.mintedAt),
+        lastEvolvedAt:         Number(metadata.lastEvolvedAt),
+        lastBattleAt:          Number(metadata.lastBattleAt),
+        lastTrainingAt:        Number(metadata.lastTrainingAt),
       },
+      // Trait field names match AIArenaINFT.sol's AgentTraits struct exactly.
       traits: {
         aggression:    Number(traits.aggression),
-        intelligence:  Number(traits.intelligence),
-        adaptability:  Number(traits.adaptability),
-        resilience:    Number(traits.resilience),
-        creativity:    Number(traits.creativity),
-        loyalty:       Number(traits.loyalty),
-        deception:     Number(traits.deception),
         patience:      Number(traits.patience),
+        adaptability:  Number(traits.adaptability),
+        riskTolerance: Number(traits.riskTolerance),
+        precision:     Number(traits.precision),
+        endurance:     Number(traits.endurance),
+        creativity:    Number(traits.creativity),
+        teamwork:      Number(traits.teamwork),
       },
     };
   });
@@ -269,64 +299,88 @@ async function bootstrap(): Promise<void> {
   });
 
   // ── POST /inft/:tokenId/update-model — anchor new LoRA model root hash ────
+  // Matches AIArenaINFT.updateModelVersion(tokenId, modelRootHash, newEncryptedMetadataHash).
+  // If the caller doesn't supply a fresh encryptedMetadataHash (most callers only have a
+  // new model root), we derive one deterministically from the model root hash rather than
+  // silently reusing the previous value — the contract requires a bytes32 either way.
 
   app.post<{
     Params: { tokenId: string };
-    Body: { modelRootHash: string };
+    Body: { modelRootHash: string; encryptedMetadataHash?: string };
   }>('/inft/:tokenId/update-model', async (req, reply) => {
     const tokenId  = BigInt(req.params.tokenId);
     const signer   = getAdminSigner();
     const contract = getContract(signer);
 
-    const tx      = await contract.updateModelRoot(tokenId, req.body.modelRootHash);
+    const encryptedMetadataHashBytes = req.body.encryptedMetadataHash && ethers.isHexString(req.body.encryptedMetadataHash, 32)
+      ? req.body.encryptedMetadataHash
+      : ethers.keccak256(ethers.toUtf8Bytes(req.body.modelRootHash));
+
+    const tx      = await contract.updateModelVersion(tokenId, req.body.modelRootHash, encryptedMetadataHashBytes);
     const receipt = await tx.wait();
 
     return { txHash: receipt.hash, tokenId: req.params.tokenId, modelRootHash: req.body.modelRootHash };
   });
 
   // ── POST /inft/:tokenId/evolve — evolve to next stage ────────────────────
+  // Matches AIArenaINFT.evolveAgent(tokenId, newTraits, newTokenUri) — the contract
+  // auto-increments evolutionStage itself; there is no newStage parameter to pass.
+  // Trait field names match AgentTraits exactly: aggression, patience, adaptability,
+  // riskTolerance, precision, endurance, creativity, teamwork.
 
   app.post<{
     Params: { tokenId: string };
-    Body: { newStage: number; newTraits: Record<string, number> };
+    Body: { newTraits: Record<string, number>; newTokenUri?: string };
   }>('/inft/:tokenId/evolve', async (req, reply) => {
-    const { newStage, newTraits } = req.body;
+    const { newTraits, newTokenUri = '' } = req.body;
     const tokenId  = BigInt(req.params.tokenId);
     const signer   = getAdminSigner();
     const contract = getContract(signer);
 
     const traitsStruct = {
-      aggression:   newTraits.aggression   ?? 50,
-      intelligence: newTraits.intelligence ?? 50,
-      adaptability: newTraits.adaptability ?? 50,
-      resilience:   newTraits.resilience   ?? 50,
-      creativity:   newTraits.creativity   ?? 50,
-      loyalty:      newTraits.loyalty      ?? 50,
-      deception:    newTraits.deception    ?? 50,
-      patience:     newTraits.patience     ?? 50,
+      aggression:    Math.round(newTraits.aggression    ?? 50),
+      patience:      Math.round(newTraits.patience      ?? 50),
+      adaptability:  Math.round(newTraits.adaptability  ?? 50),
+      riskTolerance: Math.round(newTraits.riskTolerance ?? newTraits.resilience ?? 50),
+      precision:     Math.round(newTraits.precision     ?? 50),
+      endurance:     Math.round(newTraits.endurance     ?? newTraits.loyalty    ?? 50),
+      creativity:    Math.round(newTraits.creativity    ?? 50),
+      teamwork:      Math.round(newTraits.teamwork      ?? newTraits.deception  ?? 50),
     };
 
-    const tx      = await contract.evolveAgent(tokenId, newStage, traitsStruct);
+    const tx      = await contract.evolveAgent(tokenId, traitsStruct, newTokenUri);
     const receipt = await tx.wait();
 
-    return { txHash: receipt.hash, tokenId: req.params.tokenId, newStage };
+    const evolvedEvent = receipt.logs
+      .map((l: ethers.Log) => { try { return contract.interface.parseLog(l); } catch { return null; } })
+      .find((e: ethers.LogDescription | null) => e?.name === 'AgentEvolved');
+
+    return {
+      txHash: receipt.hash,
+      tokenId: req.params.tokenId,
+      newStage: evolvedEvent ? Number(evolvedEvent.args.toStage) : null,
+    };
   });
 
   // ── POST /inft/:tokenId/battle-result — record battle outcome on-chain ────
+  // Matches AIArenaINFT.recordBattleResult(tokenId, won, draw) — the third
+  // parameter is a draw flag, not an ELO delta. ELO itself is computed and
+  // stored off-chain (see leaderboard-service); this call only updates the
+  // on-chain wins/losses/draws counters.
 
   app.post<{
     Params: { tokenId: string };
-    Body: { won: boolean; eloChange: number };
+    Body: { won: boolean; draw?: boolean };
   }>('/inft/:tokenId/battle-result', async (req, reply) => {
-    const { won, eloChange } = req.body;
+    const { won, draw = false } = req.body;
     const tokenId  = BigInt(req.params.tokenId);
     const signer   = getAdminSigner();
     const contract = getContract(signer);
 
-    const tx      = await contract.recordBattleResult(tokenId, won, BigInt(eloChange));
+    const tx      = await contract.recordBattleResult(tokenId, won, draw);
     const receipt = await tx.wait();
 
-    return { txHash: receipt.hash, tokenId: req.params.tokenId, won, eloChange };
+    return { txHash: receipt.hash, tokenId: req.params.tokenId, won, draw };
   });
 
   // ── POST /inft/agent-mint — internal service-to-service INFT mint ────────
