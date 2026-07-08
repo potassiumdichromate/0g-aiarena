@@ -52,6 +52,11 @@ export function arenaTokenRead(): ethers.Contract {
   return new ethers.Contract(requireEnv('ARENA_TOKEN_ADDRESS'), ArenaTokenAbi, getProvider());
 }
 
+/** Relayer-signed writes against ArenaToken -- currently only `permit()` (see /v1/arena/permit). */
+export function arenaTokenWrite(): ethers.Contract {
+  return new ethers.Contract(requireEnv('ARENA_TOKEN_ADDRESS'), ArenaTokenAbi, getRelayerSigner());
+}
+
 export function arenaTreasuryRead(): ethers.Contract {
   return new ethers.Contract(requireEnv('ARENA_TREASURY_ADDRESS'), ArenaTreasuryAbi, getProvider());
 }

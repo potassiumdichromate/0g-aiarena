@@ -76,4 +76,14 @@ export const arenaChain = {
 
   grantTrainingReward: (playerAddress: string, amountArena: string, reason: string) =>
     post<{ txHash: string; amountArena: string }>('/v1/arena/rewards/training', { playerAddress, amountArena, reason }),
+
+  /**
+   * Relays a player's off-chain EIP-2612 permit signature into
+   * `token.permit()` on arena-chain-service, gas-paid by the relayer. This is
+   * what lets a player authorize ArenaEscrow/ArenaTournament to spend their
+   * ARENA without ever submitting an on-chain approve() tx themselves (see
+   * useArenaStaking.ts on the frontend, which builds and signs the message).
+   */
+  permit: (params: { owner: string; spender: string; value: string; deadline: number; v: number; r: string; s: string }) =>
+    post<{ txHash: string; owner: string; spender: string; valueArena: string }>('/v1/arena/permit', params),
 };

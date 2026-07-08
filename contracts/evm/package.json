@@ -5,11 +5,12 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
-    "deploy:testnet":       "hardhat run scripts/deploy.ts --network zerog-testnet",
-    "deploy:local":         "hardhat run scripts/deploy.ts --network localhost",
-    "deploy:vault:base":    "hardhat run scripts/deploy-vault-base.ts --network base-mainnet",
-    "deploy:vault:zerog":   "hardhat run scripts/deploy-vault-zerog.ts --network zerog-mainnet",
-    "verify:base":          "hardhat verify --network base-mainnet"
+    "deploy:testnet":         "hardhat run scripts/deploy.ts --network zerog-testnet",
+    "deploy:local":           "hardhat run scripts/deploy.ts --network localhost",
+    "deploy:arena:testnet":   "hardhat run scripts/deploy-arena-economy.ts --network zerog-testnet",
+    "deploy:arena:mainnet":   "hardhat run scripts/deploy-arena-economy.ts --network zerog-mainnet",
+    "redeploy:arena:permit:mainnet": "hardhat run scripts/redeploy-arena-permit.ts --network zerog-mainnet",
+    "verify:zerog":           "hardhat verify --network zerog-mainnet"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",

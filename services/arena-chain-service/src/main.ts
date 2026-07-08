@@ -20,7 +20,9 @@ import helmet from '@fastify/helmet';
 import { ethers } from 'ethers';
 import { prisma, ArenaEventName, Prisma } from '@ai-arena/db-client';
 import {
+  getProvider,
   arenaTokenRead,
+  arenaTokenWrite,
   arenaTreasuryRead,
   rewardDistributorWrite,
   arenaEscrowRead,
@@ -93,6 +95,60 @@ async function bootstrap(): Promise<void> {
       tournamentAddress: addresses.tournament,
       rewardDistributorAddress: addresses.rewardDistributor,
     };
+  });
+
+  // ── Gasless approval (EIP-2612 permit) ─────────────────────────────────
+  //
+  // Players never hold native 0G, so even the one-time "approve the escrow
+  // contract to spend my ARENA" step can't be a normal wallet-submitted tx.
+  // Instead the frontend has the player sign a free off-chain EIP-712 permit
+  // message, and this relayer submits `token.permit()` on their behalf,
+  // paying the gas itself -- same pattern as every other write in this
+  // service. GET /nonce + /domain give the frontend what it needs to build
+  // that signature; POST /permit relays it.
+
+  app.get<{ Params: { address: string } }>('/v1/arena/wallet/:address/nonce', async (req, reply) => {
+    try {
+      const token = arenaTokenRead();
+      const nonce: bigint = await token.nonces(req.params.address);
+      return reply.send({ address: req.params.address, nonce: nonce.toString() });
+    } catch (err) {
+      return reply.code(400).send({ error: revertReason(err) });
+    }
+  });
+
+  app.get('/v1/arena/permit/domain', async (_req, reply) => {
+    try {
+      const token = arenaTokenRead();
+      const network = await getProvider().getNetwork();
+      const name: string = await token.name();
+      return reply.send({
+        name,
+        version: '1',
+        chainId: Number(network.chainId),
+        verifyingContract: contractAddresses().token,
+      });
+    } catch (err) {
+      return reply.code(400).send({ error: revertReason(err) });
+    }
+  });
+
+  app.post<{
+    // `value` is the raw uint256 wei string signed into the permit message --
+    // NOT a decimal ARENA amount -- so it must pass through unconverted
+    // (ethers.parseEther here would silently re-scale it by 1e18 and break
+    // every signature).
+    Body: { owner: string; spender: string; value: string; deadline: number; v: number; r: string; s: string };
+  }>('/v1/arena/permit', async (req, reply) => {
+    const { owner, spender, value, deadline, v, r, s } = req.body;
+    try {
+      const token = arenaTokenWrite();
+      const tx = await token.permit(owner, spender, BigInt(value), BigInt(deadline), v, r, s);
+      const receipt = await tx.wait();
+      return reply.send({ txHash: receipt.hash, owner, spender, valueArena: formatArena(BigInt(value)) });
+    } catch (err) {
+      return reply.code(400).send({ error: revertReason(err) });
+    }
   });
 
   // ── Reward endpoints ────────────────────────────────────────────────────
@@ -215,16 +271,14 @@ async function bootstrap(): Promise<void> {
 
   // ── Escrow endpoints (1v1 wager) ────────────────────────────────────────
   //
-  // IMPORTANT: before create/join, each player must have approved the
-  // ArenaEscrow contract to spend their ARENA (ERC20 approve). This service
-  // holds only the relayer key — it can never sign as a player, and
-  // `approve()` can only ever be authorized by the token owner's own wallet.
-  // So the ONE step in this entire system a player's own wallet must sign is
-  // the escrow/tournament approve() transaction; every other on-chain action
-  // (create/join/start/settle, reward grants, etc.) is relayer-submitted.
-  // The frontend should use GET /v1/arena/wallet/:address/allowance/:spender
-  // to check whether that approve() is still needed before calling
-  // create/join here.
+  // Before create/join, each player must have approved the ArenaEscrow
+  // contract to spend their ARENA. That approval itself is now gasless too:
+  // the frontend gets the player to sign an EIP-712 permit (POST /v1/arena/
+  // permit relays it) instead of submitting an on-chain approve() tx. The
+  // player's wallet only ever produces signatures here -- every actual
+  // transaction (permit included) is submitted and gas-paid by this relayer.
+  // GET /v1/arena/wallet/:address/allowance/:spender still tells the
+  // frontend whether a permit is needed before calling create/join.
 
   app.post<{ Body: { matchId: string; playerAAddress: string; stakeAmountArena: string } }>(
     '/v1/arena/escrow/create',
