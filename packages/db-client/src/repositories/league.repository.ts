@@ -243,7 +243,10 @@ export class LeagueRepository {
     id: string,
     fromStatus: LeagueBattleStatus,
     toStatus: LeagueBattleStatus,
-    data: Prisma.LeagueBattleUpdateInput = {},
+    // Uncheck­ed + scalar-only: this runs through updateMany() below, which
+    // (unlike update()) can't accept nested relation writes like
+    // `escrow: { connect: ... } }` -- callers must pass `escrowId` directly.
+    data: Prisma.LeagueBattleUncheckedUpdateManyInput = {},
   ): Promise<LeagueBattle | null> {
     const result = await this.db.leagueBattle.updateMany({
       where: { id, status: fromStatus },

@@ -191,7 +191,9 @@ export class EscrowService {
     });
 
     await leagueRepo.transitionBattleStatus(battle.id, 'PENDING', 'LOCKED', {
-      escrow:     { connect: { id: escrow.id } },
+      // updateMany() only accepts scalar writes, not a nested relation
+      // `connect` -- Prisma rejects that with "Unknown argument `escrow`".
+      escrowId:   escrow.id,
       acceptedAt: new Date(),
     });
 
