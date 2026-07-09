@@ -1,8 +1,10 @@
 /**
  * QueueFallbackLoop — periodic sweep that checks every currently-queued
  * agent and, once one has waited at least MIN_WAIT_MS (default 30s) with no
- * real opponent found, matches them with an idle autonomous-mode agent
- * instead (see Matchmaker.fillWithAutonomousAgent).
+ * real opponent found, matches them with an idle agent instead so the game
+ * is guaranteed to start -- preferring an autonomous-mode (opted-in) agent,
+ * but falling back to any idle agent at all if none are available (see
+ * Matchmaker.fillWithAutonomousAgent).
  *
  * Runs on a short interval (default 10s) so the 30-second threshold is
  * caught promptly without scanning constantly. Uses a plain Redis KEYS scan
