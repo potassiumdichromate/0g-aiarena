@@ -55,8 +55,9 @@ const EIP3009_STATE_ABI = parseAbi([
 ]);
 
 // EIP-712 types for TransferWithAuthorization (EIP-3009)
+// name sourced from contract name() on X Layer: 0x779ded... → "USD₮0"
 const EIP3009_DOMAIN = {
-  name: 'USD Tether',
+  name: 'USD₮0',
   version: '1',
   chainId: 196,
   verifyingContract: ASSET,
@@ -77,7 +78,7 @@ const EIP3009_TYPES = {
 
 function make402Body(host: string): object {
   return {
-    x402Version: 1,
+    x402Version: 2,
     accepts: [
       {
         scheme: 'exact',
@@ -89,7 +90,7 @@ function make402Body(host: string): object {
         resource: `https://${host}/create-agent`,
         description: 'KULT Agent Creator — create-agent (0.10 USDT on X Layer)',
         mimeType: 'application/json',
-        extra: {},
+        extra: { name: 'USD₮0', version: '1' },
       },
     ],
     error: 'Payment required',
