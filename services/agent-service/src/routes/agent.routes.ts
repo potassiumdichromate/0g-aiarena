@@ -1,10 +1,29 @@
 import { FastifyInstance } from 'fastify';
+import { prisma } from '@ai-arena/db-client';
 import { AgentService } from '../services/agent.service';
 import { AchievementService } from '../services/achievement.service';
 import { jwtMiddleware } from '../middleware/jwt.middleware';
 
 const agentService = new AgentService();
 const achievementService = new AchievementService();
+
+/**
+ * One agent per wallet (User.walletAddress is unique per User row, so this
+ * is effectively 1-agent-per-wallet). Counts ALL agents including retired
+ * ones -- otherwise retiring and re-minting would let a wallet farm the 100
+ * ARENA agent-mint reward repeatedly. Not enforced inside
+ * AgentService.createAgent itself because the OKX Agent Marketplace bridge
+ * creates every one of its agents under one shared system wallet by design
+ * (see okx-bridge.service.ts) and must stay unaffected by this cap.
+ */
+async function assertWalletCanMint(userId: string, reply: any): Promise<boolean> {
+  const existingCount = await prisma.agent.count({ where: { userId } });
+  if (existingCount > 0) {
+    reply.status(409).send({ error: 'This wallet has already minted an agent — only one agent is allowed per wallet.' });
+    return false;
+  }
+  return true;
+}
 
 // ── Optional JWT: reads req.user if token present, doesn't reject if absent ──
 function optionalJwt(app: FastifyInstance) {
@@ -142,6 +161,9 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
   app.post('/', { onRequest: [jwtMiddleware(app)] as any }, async (req, reply) => {
     const { userId } = req.user as { userId: string };
     const body = req.body as { name: string; clan: string; archetype?: string; backstory?: string };
+
+    if (!(await assertWalletCanMint(userId, reply))) return;
+
     const agent = await agentService.createAgent(userId, body);
     return reply.status(201).send({ agent });
   });
@@ -171,6 +193,9 @@ export async function agentRoutes(app: FastifyInstance): Promise<void> {
   app.post('/:id/clone', { onRequest: [jwtMiddleware(app)] as any }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const { userId } = req.user as { userId: string };
+
+    if (!(await assertWalletCanMint(userId, reply))) return;
+
     const clone = await agentService.cloneAgent(id, userId);
     return reply.status(201).send({ agent: clone });
   });
