@@ -9,12 +9,21 @@
  *
  * Handlers:
  *   GET  /create-agent  → 402 v2 challenge (for marketplace x402-validate probe)
- *   POST /create-agent  → verify X-PAYMENT sig → forward to agent-service
+ *   POST /create-agent  → verify X-PAYMENT sig → forward to agent-service → submit deliverable
  *   OPTIONS /create-agent → 200 (liveness probe)
  *   GET  /health        → 200
+ *
+ * OKX review issues addressed:
+ *   #3 task-402-pay listener — this proxy IS the HTTP listener; it receives the
+ *      x402 payment (X-PAYMENT header) from OKX's buyer agent (task-402-pay CLI)
+ *      and forwards to agent-service. No separate XMTP daemon needed for A2MCP.
+ *   #4 save deliverable — after agent-service returns 200, we call OKX's task
+ *      deliver API so the marketplace can advance the task to "completed" and
+ *      release funds. jobId is taken from X-OKX-Job-ID header or body.idempotencyKey.
  */
 
-import * as http from 'node:http';
+import * as http   from 'node:http';
+import * as crypto from 'node:crypto';
 import { verifyTypedData } from 'viem';
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -30,6 +39,18 @@ const AMOUNT   =   process.env.X402_AMOUNT       ?? '100000'; // 0.10 USDT (6 de
 const TIMEOUT  = parseInt(process.env.X402_MAX_TIMEOUT_SECONDS ?? '300', 10);
 // Resource URL shown in 402 body — must match the registered ASP endpoint
 const RESOURCE = process.env.X402_RESOURCE_URL ?? 'https://aiarena-gateway.onrender.com/v1/okx/create-agent';
+
+// ── OKX Task Deliver API (issue #4 — save deliverable) ───────────────────────
+// After a successful create-agent response, submit the result to OKX's task
+// system so the task can advance to "completed" and release funds.
+// Credentials: same OKX Developer Portal key/secret/passphrase used for the proxy.
+const OKX_API_KEY          = process.env.OKX_API_KEY          ?? '';
+const OKX_API_SECRET       = process.env.OKX_API_SECRET_KEY   ?? '';
+const OKX_API_PASSPHRASE   = process.env.OKX_API_PASSPHRASE   ?? '';
+const OKX_PROVIDER_AGENT_ID = process.env.OKX_PROVIDER_AGENT_ID ?? '2170';
+// Deliver endpoint — OKX's marketplace task API. Confirm exact path from OKX
+// dev-docs if the default doesn't match (onchainos agent deliver uses this).
+const OKX_DELIVER_PATH     = process.env.OKX_DELIVER_PATH ?? '/api/v5/mktplace/task/deliver';
 
 // ── EIP-712 domain for signature verification ─────────────────────────────────
 // name from contract name() on X Layer (0x779ded…): "USD₮0"
@@ -51,6 +72,47 @@ const EIP3009_TYPES = {
     { name: 'nonce',       type: 'bytes32' },
   ],
 } as const;
+
+// ── OKX task deliverable submission ──────────────────────────────────────────
+
+async function submitDeliverable(jobId: string, content: string): Promise<void> {
+  if (!OKX_API_KEY || !OKX_API_SECRET || !OKX_API_PASSPHRASE) {
+    console.warn('[okx-payment-proxy] OKX API creds missing — deliverable not submitted for task', jobId);
+    return;
+  }
+
+  const ts      = new Date().toISOString();
+  const reqBody = JSON.stringify({
+    jobId,
+    agentId:         OKX_PROVIDER_AGENT_ID,
+    deliverable:     content,
+    deliverableType: 'text',
+  });
+  const preHash = ts + 'POST' + OKX_DELIVER_PATH + reqBody;
+  const sign    = crypto.createHmac('sha256', OKX_API_SECRET).update(preHash).digest('base64');
+
+  try {
+    const r = await fetch(`https://www.okx.com${OKX_DELIVER_PATH}`, {
+      method:  'POST',
+      headers: {
+        'Content-Type':         'application/json',
+        'OK-ACCESS-KEY':        OKX_API_KEY,
+        'OK-ACCESS-SIGN':       sign,
+        'OK-ACCESS-TIMESTAMP':  ts,
+        'OK-ACCESS-PASSPHRASE': OKX_API_PASSPHRASE,
+      },
+      body: reqBody,
+    });
+    if (r.ok) {
+      console.log(`[okx-payment-proxy] Deliverable submitted for task ${jobId}`);
+    } else {
+      const errText = await r.text();
+      console.error(`[okx-payment-proxy] Deliverable submit failed (${r.status}) for task ${jobId}:`, errText);
+    }
+  } catch (err: unknown) {
+    console.error('[okx-payment-proxy] Deliverable submit error for task', jobId, ':', err instanceof Error ? err.message : err);
+  }
+}
 
 // ── x402 v2 challenge payload ─────────────────────────────────────────────────
 
@@ -183,6 +245,10 @@ http.createServer(async (req, res) => {
   // POST — payment gate
   const body     = await readBody(req);
   const xPayment = req.headers['x-payment'] as string | undefined;
+  // jobId for deliverable submission: OKX passes it as X-OKX-Job-ID header, or
+  // the buyer sets body.idempotencyKey = jobId via task-402-pay --body.
+  const jobIdFromHeader = (req.headers['x-okx-job-id'] as string | undefined) ?? '';
+  let jobId = jobIdFromHeader;
 
   if (!xPayment) {
     send402(res);
@@ -198,6 +264,16 @@ http.createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ error: msg }));
     return;
+  }
+
+  // Parse body once to extract jobId (fall back to body.idempotencyKey if no header)
+  if (!jobId) {
+    try {
+      const parsed = JSON.parse(body.toString('utf8')) as Record<string, unknown>;
+      jobId = (parsed.jobId ?? parsed.idempotencyKey ?? '') as string;
+    } catch {
+      // non-JSON body — jobId stays empty, deliverable skip is safe
+    }
   }
 
   // Payment verified — forward to agent-service
@@ -232,6 +308,15 @@ http.createServer(async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('X-PAYMENT-RESPONSE', receipt);
   res.end(upstreamBody);
+
+  // Fire-and-forget: submit deliverable to OKX task system so the task can
+  // advance to "completed" (OKX review issue #4 — save deliverable).
+  // Runs after res.end() so the buyer's HTTP round-trip is not blocked.
+  if (upstream.ok && jobId) {
+    submitDeliverable(jobId, upstreamBody).catch(() => {/* already logged inside */});
+  } else if (!jobId) {
+    console.warn('[okx-payment-proxy] No jobId in request — skipping deliverable submission');
+  }
 
 }).listen(PORT, () => {
   console.log(`[okx-payment-proxy] :${PORT} → x402 v2 (eip155:196)`);

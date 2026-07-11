@@ -156,6 +156,18 @@ services:
         value: "0xaa1860e22184852ae8b1890169b732da23459990"
       - key: X402_AMOUNT
         value: "100000"
+      # OKX Developer Portal credentials — used to submit task deliverables after
+      # a successful create-agent call (OKX review issue #4, save deliverable).
+      # Set in Render dashboard; rotate when compromised.
+      - key: OKX_API_KEY
+        sync: false
+      - key: OKX_API_SECRET_KEY
+        sync: false
+      - key: OKX_API_PASSPHRASE
+        sync: false
+      # Our ASP agent ID on OKX marketplace (ASP #2170).
+      - key: OKX_PROVIDER_AGENT_ID
+        value: "2170"
 
   # ── Battle Service ────────────────────────────────────────────────────────────
   - type: web
