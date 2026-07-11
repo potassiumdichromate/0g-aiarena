@@ -2,23 +2,20 @@
  * okx-payment-proxy — x402 v2 payment gate in front of POST /okx/create-agent.
  *
  * Protocol: x402 v2, "exact" scheme, eip155:196 (X Layer)
- * Settlement model: OKX facilitator (gasless — OKX executes transferWithAuthorization
- * on-chain; our server only reads authorizationState to confirm it happened).
+ * Settlement model: client-side — OKX's marketplace submits the ERC-4337
+ * sponsored tx; our server verifies the EIP-3009 signature is valid and the
+ * payment terms match, then forwards to agent-service immediately.
+ * No on-chain read needed — the marketplace handles settlement lifecycle.
  *
- * Flow:
- *   1. No X-PAYMENT → return HTTP 402 with x402 v2 challenge JSON
- *   2. X-PAYMENT present → verify EIP-3009 sig is valid, check on-chain that OKX's
- *      facilitator already executed the transfer (authorizationState = true),
- *      then forward to agent-service. No gas wallet needed.
+ * Handlers:
+ *   GET  /create-agent  → 402 v2 challenge (for marketplace x402-validate probe)
+ *   POST /create-agent  → verify X-PAYMENT sig → forward to agent-service
+ *   OPTIONS /create-agent → 200 (liveness probe)
+ *   GET  /health        → 200
  */
 
 import * as http from 'node:http';
-import {
-  createPublicClient,
-  http as viemHttp,
-  parseAbi,
-  verifyTypedData,
-} from 'viem';
+import { verifyTypedData } from 'viem';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -26,36 +23,17 @@ const PORT         = parseInt(process.env.PORT ?? '8090', 10);
 const UPSTREAM_URL = process.env.OKX_PROXY_UPSTREAM_URL ?? 'http://localhost:8002/okx/create-agent';
 const SERVICE_KEY  = process.env.OKX_SERVICE_KEY ?? '';
 
-// x402 v2 payment terms — values per OKX's specification for ASP #2170
-const ASSET   = (process.env.X402_ASSET   ?? '0x779ded0c9e1022225f8e0630b35a9b54be713736') as `0x${string}`;
-const PAY_TO  = (process.env.X402_PAY_TO  ?? '0xaa1860e22184852ae8b1890169b732da23459990') as `0x${string}`;
-const AMOUNT  =   process.env.X402_AMOUNT  ?? '100000'; // 0.10 USDT (6 decimals)
-const TIMEOUT = parseInt(process.env.X402_MAX_TIMEOUT_SECONDS ?? '300', 10);
+// x402 v2 payment terms — per OKX's specification for ASP #2170
+const ASSET    = (process.env.X402_ASSET        ?? '0x779ded0c9e1022225f8e0630b35a9b54be713736') as `0x${string}`;
+const PAY_TO   = (process.env.X402_PAY_TO       ?? '0xaa1860e22184852ae8b1890169b732da23459990') as `0x${string}`;
+const AMOUNT   =   process.env.X402_AMOUNT       ?? '100000'; // 0.10 USDT (6 decimals)
+const TIMEOUT  = parseInt(process.env.X402_MAX_TIMEOUT_SECONDS ?? '300', 10);
+// Resource URL shown in 402 body — must match the registered ASP endpoint
+const RESOURCE = process.env.X402_RESOURCE_URL ?? 'https://aiarena-gateway.onrender.com/v1/okx/create-agent';
 
-// ── X Layer public client (read-only, no gas wallet needed) ───────────────────
+// ── EIP-712 domain for signature verification ─────────────────────────────────
+// name from contract name() on X Layer (0x779ded…): "USD₮0"
 
-const xlayer = {
-  id: 196,
-  name: 'X Layer Mainnet',
-  nativeCurrency: { name: 'OKB', symbol: 'OKB', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://rpc.xlayer.tech'] },
-    public:  { http: ['https://rpc.xlayer.tech'] },
-  },
-} as const;
-
-const publicClient = createPublicClient({
-  chain: xlayer,
-  transport: viemHttp('https://rpc.xlayer.tech', { timeout: 10_000 }),
-});
-
-// EIP-3009: authorizationState(authorizer, nonce) → bool (true = already used/settled)
-const EIP3009_STATE_ABI = parseAbi([
-  'function authorizationState(address authorizer, bytes32 nonce) external view returns (bool)',
-]);
-
-// EIP-712 types for TransferWithAuthorization (EIP-3009)
-// name sourced from contract name() on X Layer: 0x779ded... → "USD₮0"
 const EIP3009_DOMAIN = {
   name: 'USD₮0',
   version: '1',
@@ -74,9 +52,9 @@ const EIP3009_TYPES = {
   ],
 } as const;
 
-// ── x402 v2 helpers ───────────────────────────────────────────────────────────
+// ── x402 v2 challenge payload ─────────────────────────────────────────────────
 
-function make402Body(host: string): object {
+function make402Body(): object {
   return {
     x402Version: 2,
     accepts: [
@@ -87,7 +65,7 @@ function make402Body(host: string): object {
         amount: AMOUNT,
         payTo: PAY_TO,
         maxTimeoutSeconds: TIMEOUT,
-        resource: `https://${host}/create-agent`,
+        resource: RESOURCE,
         description: 'KULT Agent Creator — create-agent (0.10 USDT on X Layer)',
         mimeType: 'application/json',
         extra: { name: 'USD₮0', version: '1' },
@@ -96,6 +74,17 @@ function make402Body(host: string): object {
     error: 'Payment required',
   };
 }
+
+function send402(res: http.ServerResponse): void {
+  const payload = make402Body();
+  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64');
+  res.statusCode = 402;
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('X-PAYMENT-REQUIRED', encoded);
+  res.end(JSON.stringify(payload));
+}
+
+// ── EIP-3009 signature verification (off-chain, no RPC needed) ───────────────
 
 interface Authorization {
   from: string;
@@ -107,13 +96,7 @@ interface Authorization {
 }
 
 interface X402Payment {
-  x402Version?: number;
-  scheme?: string;
-  network?: string;
-  payload: {
-    signature: string;
-    authorization: Authorization;
-  };
+  payload: { signature: string; authorization: Authorization };
 }
 
 async function verifyPayment(xPaymentHeader: string): Promise<void> {
@@ -121,49 +104,40 @@ async function verifyPayment(xPaymentHeader: string): Promise<void> {
   try {
     payment = JSON.parse(Buffer.from(xPaymentHeader, 'base64').toString('utf8'));
   } catch {
-    throw new Error('X-PAYMENT header is not valid base64-encoded JSON');
+    throw new Error('X-PAYMENT is not valid base64-encoded JSON');
   }
 
   const { authorization: auth, signature } = payment.payload ?? {};
   if (!auth || !signature) throw new Error('X-PAYMENT payload missing authorization or signature');
 
-  // Validate payment terms match what we advertised
-  if (auth.to.toLowerCase() !== PAY_TO.toLowerCase()) {
+  if (auth.to.toLowerCase() !== PAY_TO.toLowerCase())
     throw new Error(`X-PAYMENT payTo mismatch: expected ${PAY_TO}`);
-  }
-  if (BigInt(auth.value) < BigInt(AMOUNT)) {
-    throw new Error(`X-PAYMENT amount too low: got ${auth.value}, need ${AMOUNT}`);
-  }
-  if (BigInt(auth.validBefore) * 1000n < BigInt(Date.now())) {
-    throw new Error('X-PAYMENT authorization has expired');
-  }
 
-  // Verify the EIP-3009 signature (proves the buyer authorised this payment)
+  if (BigInt(auth.value) < BigInt(AMOUNT))
+    throw new Error(`X-PAYMENT amount too low: got ${auth.value}, need ${AMOUNT}`);
+
+  if (BigInt(auth.validBefore) * 1000n < BigInt(Date.now()))
+    throw new Error('X-PAYMENT authorization has expired');
+
+  // Verify EIP-712 signature — proves buyer authorised this exact payment
   const valid = await verifyTypedData({
-    address: auth.from as `0x${string}`,
-    domain: EIP3009_DOMAIN,
-    types: EIP3009_TYPES,
+    address:     auth.from as `0x${string}`,
+    domain:      EIP3009_DOMAIN,
+    types:       EIP3009_TYPES,
     primaryType: 'TransferWithAuthorization',
     message: {
-      from:        auth.from          as `0x${string}`,
-      to:          auth.to            as `0x${string}`,
+      from:        auth.from         as `0x${string}`,
+      to:          auth.to           as `0x${string}`,
       value:       BigInt(auth.value),
       validAfter:  BigInt(auth.validAfter ?? 0),
       validBefore: BigInt(auth.validBefore),
-      nonce:       auth.nonce         as `0x${string}`,
+      nonce:       auth.nonce        as `0x${string}`,
     },
     signature: signature as `0x${string}`,
   });
   if (!valid) throw new Error('X-PAYMENT signature invalid');
-
-  // Confirm OKX facilitator already executed the transfer on-chain (free read call)
-  const settled = await publicClient.readContract({
-    address: ASSET,
-    abi: EIP3009_STATE_ABI,
-    functionName: 'authorizationState',
-    args: [auth.from as `0x${string}`, auth.nonce as `0x${string}`],
-  });
-  if (!settled) throw new Error('Payment not yet settled on-chain — facilitator has not executed the transfer');
+  // On-chain settlement is handled by OKX marketplace's ERC-4337 sponsored tx.
+  // We trust a valid signature; marketplace manages payment lifecycle.
 }
 
 // ── Node http server ──────────────────────────────────────────────────────────
@@ -175,30 +149,43 @@ async function readBody(req: http.IncomingMessage): Promise<Buffer> {
 }
 
 http.createServer(async (req, res) => {
-  if (req.method === 'GET' && req.url === '/health') {
+  const url = req.url ?? '/';
+
+  // Liveness / health
+  if (req.method === 'GET' && url === '/health') {
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ status: 'ok', service: 'okx-payment-proxy', protocol: 'x402-v2' }));
     return;
   }
 
-  if (req.method !== 'POST' || req.url !== '/create-agent') {
+  // OPTIONS — liveness probe (marketplace monitoring)
+  if (req.method === 'OPTIONS' && url === '/create-agent') {
+    res.statusCode = 200;
+    res.setHeader('Allow', 'GET, POST, OPTIONS');
+    res.end();
+    return;
+  }
+
+  // GET — x402-validate probe (marketplace CLI uses GET to check the endpoint)
+  if (req.method === 'GET' && url === '/create-agent') {
+    send402(res);
+    return;
+  }
+
+  if (req.method !== 'POST' || url !== '/create-agent') {
     res.statusCode = 404;
+    res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ error: 'Not found' }));
     return;
   }
 
+  // POST — payment gate
   const body     = await readBody(req);
   const xPayment = req.headers['x-payment'] as string | undefined;
-  const host     = req.headers.host ?? 'aiarena-okx-payment-proxy.onrender.com';
 
   if (!xPayment) {
-    const payload = make402Body(host);
-    const encoded = Buffer.from(JSON.stringify(payload)).toString('base64');
-    res.statusCode = 402;
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('X-PAYMENT-REQUIRED', encoded);
-    res.end(JSON.stringify(payload));
+    send402(res);
     return;
   }
 
@@ -213,7 +200,7 @@ http.createServer(async (req, res) => {
     return;
   }
 
-  // Payment confirmed — forward to agent-service
+  // Payment verified — forward to agent-service
   let upstream: Response;
   try {
     upstream = await fetch(UPSTREAM_URL, {
@@ -237,16 +224,17 @@ http.createServer(async (req, res) => {
   const receipt      = Buffer.from(JSON.stringify({
     settled: true,
     network: 'eip155:196',
-    asset: ASSET,
-    amount: AMOUNT,
+    asset:   ASSET,
+    amount:  AMOUNT,
   })).toString('base64');
 
   res.statusCode = upstream.status;
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('X-PAYMENT-RESPONSE', receipt);
   res.end(upstreamBody);
+
 }).listen(PORT, () => {
-  console.log(`[okx-payment-proxy] :${PORT} → x402 v2 gasless (eip155:196)`);
+  console.log(`[okx-payment-proxy] :${PORT} → x402 v2 (eip155:196)`);
+  console.log(`[okx-payment-proxy] resource=${RESOURCE}`);
   console.log(`[okx-payment-proxy] upstream=${UPSTREAM_URL}`);
-  console.log(`[okx-payment-proxy] payTo=${PAY_TO} asset=${ASSET} amount=${AMOUNT}`);
 });
