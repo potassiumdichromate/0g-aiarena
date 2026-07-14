@@ -4,6 +4,8 @@ import { polymarketSignalService } from '../services/polymarket-signal.service';
 import { findInvalidUuidParam } from '../lib/validation';
 import { BadRequestError } from '../lib/errors';
 
+const POLYMARKET_RELAYER_URL = 'https://relayer-v2.polymarket.com/submit';
+
 const generateBodySchema = {
   type: 'object',
   required: ['question'],
@@ -40,6 +42,47 @@ export async function polymarketRoutes(app: FastifyInstance): Promise<void> {
       const { userId } = req.user as { userId: string };
       const { question, category } = req.body as { question: string; category?: string };
       return polymarketSignalService.generateSignal(userId, marketId, agentId, question, category);
+    },
+  );
+
+  // POST /v1/polymarket/relayer/submit — thin, secret-holding proxy to
+  // Polymarket's deposit-wallet relayer (docs.polymarket.com/trading/deposit-wallets).
+  //
+  // The browser builds the ENTIRE request itself (WALLET-CREATE is unsigned/
+  // idempotent; a WALLET batch-execute is signed client-side by the player's
+  // own wallet via EIP-712 -- see polymarketDepositWallet.ts in the frontend)
+  // and just needs this hop to attach our platform's Relayer API Key, which
+  // must never reach the browser: it authorizes Polymarket to sponsor gas
+  // under Kult Games' account for every relayed call. This route never
+  // inspects or trusts the payload's contents beyond forwarding it -- fund
+  // safety comes entirely from the payload's own signature (a forged
+  // WALLET batch fails Polymarket's own EIP-712 check), not from anything
+  // checked here. The target URL is hardcoded (not client-supplied) so this
+  // can't be turned into an open relay/SSRF proxy.
+  app.post(
+    '/relayer/submit',
+    { onRequest: [jwtMiddleware(app)], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const apiKey = process.env.POLYMARKET_RELAYER_API_KEY;
+      const apiKeyAddress = process.env.POLYMARKET_RELAYER_API_KEY_ADDRESS;
+      if (!apiKey || !apiKeyAddress) {
+        return reply.status(503).send({ error: 'Polymarket relayer not configured' });
+      }
+
+      const res = await fetch(POLYMARKET_RELAYER_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          RELAYER_API_KEY: apiKey,
+          RELAYER_API_KEY_ADDRESS: apiKeyAddress,
+        },
+        body: JSON.stringify(req.body),
+      });
+
+      const text = await res.text();
+      reply.status(res.status);
+      reply.header('Content-Type', res.headers.get('content-type') ?? 'application/json');
+      return reply.send(text);
     },
   );
 }
