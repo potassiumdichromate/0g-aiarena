@@ -3,7 +3,6 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import httpProxy from '@fastify/http-proxy';
-import { registerX402Middleware } from './middleware/x402';
 
 // ── Optional Redis for distributed rate limiting ──────────────────────────────
 // Falls back to in-memory rate limiting when Redis is unavailable (local dev).
@@ -58,8 +57,17 @@ async function main() {
       : false,
   });
 
-  // ── x402 Payment Middleware ─────────────────────────────────────────────────
-  registerX402Middleware(app);
+  // NOTE: the old x402 payment middleware (middleware/x402.ts) that gated
+  // /train, /clone, and wager matchmaking behind a payment proof is disabled.
+  // It verified against financial-service's /escrow/x402/verify, which
+  // checks/debits the pre-ARENA-migration Postgres AgentWallet.balanceArena
+  // -- a balance system nobody has funds in anymore, since real ARENA now
+  // lives on-chain (arena-chain-service). Training/clone are free for now;
+  // wager staking already goes through the real on-chain ArenaEscrow permit
+  // flow independently (see useArenaStaking.ts) and was never dependent on
+  // this middleware succeeding. A real on-chain training/clone fee (signed
+  // permit + relayer-submitted transferFrom to Treasury, same pattern as
+  // staking) can replace this later if wanted.
 
   // ── Rate limiting (Redis-backed if available, in-memory otherwise) ──────────
   await app.register(rateLimit, {
