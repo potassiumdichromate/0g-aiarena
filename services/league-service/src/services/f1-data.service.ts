@@ -47,9 +47,29 @@ interface ProviderRace {
   fastest_lap: { driver: { id: number | null }; time: string | null };
 }
 
-async function f1Fetch<T>(path: string): Promise<T[]> {
+// Free-plan F1 API rate limit is 10 requests/minute (hit this live during the
+// first sync: syncDriversFromRankings makes ~1 call per driver in a season,
+// ~24+ calls, with no spacing between them). Every call goes through this
+// throttle so the whole service self-paces under the limit, plus a backoff
+// retry for the rare case a burst still gets rate-limited.
+const MIN_CALL_INTERVAL_MS = 6_500; // ~9.2 req/min, safely under the 10/min cap
+let lastCallAt = 0;
+
+async function throttle(): Promise<void> {
+  const wait = lastCallAt + MIN_CALL_INTERVAL_MS - Date.now();
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  lastCallAt = Date.now();
+}
+
+function isRateLimitError(errors: unknown): boolean {
+  return !Array.isArray(errors) && !!errors && typeof errors === 'object' && 'rateLimit' in errors;
+}
+
+async function f1Fetch<T>(path: string, attempt = 1): Promise<T[]> {
   const apiKey = process.env.F1_API_KEY;
   if (!apiKey) throw new Error('F1_API_KEY not configured');
+
+  await throttle();
 
   const res = await fetch(`${F1_API_BASE}${path}`, { headers: { 'x-apisports-key': apiKey } });
   if (!res.ok) throw new Error(`F1 API ${path} returned ${res.status}`);
@@ -57,7 +77,14 @@ async function f1Fetch<T>(path: string): Promise<T[]> {
   const data = (await res.json()) as { errors?: unknown; response: T[] };
   const errors = data.errors;
   const hasErrors = Array.isArray(errors) ? errors.length > 0 : errors && Object.keys(errors).length > 0;
-  if (hasErrors) throw new Error(`F1 API ${path} error: ${JSON.stringify(errors)}`);
+  if (hasErrors) {
+    if (isRateLimitError(errors) && attempt < 3) {
+      console.warn(`[F1DataService] Rate limited on ${path}, waiting 65s before retry ${attempt + 1}/3`);
+      await new Promise((r) => setTimeout(r, 65_000));
+      return f1Fetch<T>(path, attempt + 1);
+    }
+    throw new Error(`F1 API ${path} error: ${JSON.stringify(errors)}`);
+  }
 
   return data.response;
 }

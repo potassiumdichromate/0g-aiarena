@@ -91,12 +91,21 @@ export async function f1Routes(app: FastifyInstance): Promise<void> {
   // POST /v1/f1/sync — admin/ops trigger to (re)pull teams/drivers/races from API-SPORTS.
   // Gated by the same internal-service secret used elsewhere (X-Service-Key), since it
   // burns external API quota and shouldn't be publicly callable.
+  //
+  // Fire-and-forget: f1DataService throttles every provider call to stay under
+  // the free plan's 10 req/min limit, so a full sync (~25+ calls: teams,
+  // ~24 drivers, races) takes a few minutes -- too long to hold one HTTP
+  // request open. Check progress via Render logs or GET /v1/f1/drivers once
+  // it's had time to run.
   app.post('/sync', async (req, reply) => {
     const serviceKey = req.headers['x-service-key'];
     if (serviceKey !== process.env.INTERNAL_SERVICE_SECRET) {
       return reply.status(401).send({ error: 'Unauthorized' });
     }
-    const result = await f1DataService.syncAll();
-    return result;
+    f1DataService.syncAll().then(
+      (result) => console.info('[F1 sync] completed:', result),
+      (err) => console.error('[F1 sync] failed:', err),
+    );
+    return reply.status(202).send({ status: 'sync started — throttled to the API rate limit, expect a few minutes; check logs or GET /v1/f1/drivers for progress' });
   });
 }
