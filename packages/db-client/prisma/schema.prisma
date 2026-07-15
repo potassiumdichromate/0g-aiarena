@@ -121,46 +121,46 @@ model User {
   updatedAt     DateTime @updatedAt
 
   /// Platform-managed custodial Solana wallet — holds $ARENA (like Stake.com)
-  custodialSolanaAddress  String?  @unique
+  custodialSolanaAddress String? @unique
   /// Encrypted private key — AES-256 encrypted with CUSTODIAL_WALLET_ENCRYPTION_KEY
   /// In production: store key ID in AWS KMS, never the raw key
-  custodialSolanaKeyEnc   String?
+  custodialSolanaKeyEnc  String?
 
-  agents          Agent[]
-  bridgeDeposits  BridgeDeposit[]
+  agents         Agent[]
+  bridgeDeposits BridgeDeposit[]
 
   @@index([walletAddress])
   @@index([privyUserId])
 }
 
 model Agent {
-  id              String          @id @default(uuid())
-  userId          String
-  name            String
-  clan            ClanType
-  archetype       CombatArchetype @default(HYBRID)
-  evolutionStage  EvolutionStage  @default(GENESIS)
-  eloRating       Int             @default(1000)
-  wins            Int             @default(0)
-  losses          Int             @default(0)
-  draws           Int             @default(0)
-  inftTokenId     String?
-  activeModelId   String?
-  isRetired       Boolean         @default(false)
-  metadata        Json            @default("{}")
-  traits          Json            @default("{}")
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  id             String          @id @default(uuid())
+  userId         String
+  name           String
+  clan           ClanType
+  archetype      CombatArchetype @default(HYBRID)
+  evolutionStage EvolutionStage  @default(GENESIS)
+  eloRating      Int             @default(1000)
+  wins           Int             @default(0)
+  losses         Int             @default(0)
+  draws          Int             @default(0)
+  inftTokenId    String?
+  activeModelId  String?
+  isRetired      Boolean         @default(false)
+  metadata       Json            @default("{}")
+  traits         Json            @default("{}")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
-  user            User            @relation(fields: [userId], references: [id])
-  aiModels        AIModel[]
-  trainingJobs    TrainingJob[]
-  memories        AgentMemory[]
-  wallet          AgentWallet?
-  stakingRecords  StakingRecord[]
+  user               User                @relation(fields: [userId], references: [id])
+  aiModels           AIModel[]
+  trainingJobs       TrainingJob[]
+  memories           AgentMemory[]
+  wallet             AgentWallet?
+  stakingRecords     StakingRecord[]
   leaderboardEntries LeaderboardEntry[]
-  okxRequests     OkxAgentRequest[]
-  experienceLogs  KultExperienceLog[]
+  okxRequests        OkxAgentRequest[]
+  experienceLogs     KultExperienceLog[]
 
   @@index([userId])
   @@index([eloRating])
@@ -168,38 +168,38 @@ model Agent {
 }
 
 model AIModel {
-  id              String   @id @default(uuid())
-  agentId         String
-  version         Int
-  baseModel       String
-  loraAdapterPath String?
-  checkpointPath  String?
-  trainingJobId   String?
-  performanceMetrics Json  @default("{}")
-  isActive        Boolean  @default(false)
-  createdAt       DateTime @default(now())
+  id                 String   @id @default(uuid())
+  agentId            String
+  version            Int
+  baseModel          String
+  loraAdapterPath    String?
+  checkpointPath     String?
+  trainingJobId      String?
+  performanceMetrics Json     @default("{}")
+  isActive           Boolean  @default(false)
+  createdAt          DateTime @default(now())
 
-  agent           Agent    @relation(fields: [agentId], references: [id])
+  agent Agent @relation(fields: [agentId], references: [id])
 
   @@index([agentId])
   @@index([isActive])
 }
 
 model Battle {
-  id          String       @id @default(uuid())
-  gameId      String
-  mode        BattleMode
-  status      BattleStatus @default(PENDING)
-  agentIds    String[]
-  config      Json
-  result      Json?
-  replayId    String?
-  escrowId    String?
-  startedAt   DateTime?
-  endedAt     DateTime?
-  createdAt   DateTime     @default(now())
+  id        String       @id @default(uuid())
+  gameId    String
+  mode      BattleMode
+  status    BattleStatus @default(PENDING)
+  agentIds  String[]
+  config    Json
+  result    Json?
+  replayId  String?
+  escrowId  String?
+  startedAt DateTime?
+  endedAt   DateTime?
+  createdAt DateTime     @default(now())
 
-  escrow      EscrowRecord? @relation(fields: [escrowId], references: [id])
+  escrow EscrowRecord? @relation(fields: [escrowId], references: [id])
 
   @@index([status])
   @@index([gameId])
@@ -207,18 +207,18 @@ model Battle {
 }
 
 model Tournament {
-  id            String           @id @default(uuid())
-  name          String
-  gameId        String
-  status        TournamentStatus @default(REGISTRATION)
+  id              String           @id @default(uuid())
+  name            String
+  gameId          String
+  status          TournamentStatus @default(REGISTRATION)
   maxParticipants Int
-  entryFee      Float            @default(0)
-  prizePool     Float            @default(0)
-  bracket       Json             @default("{}")
-  startDate     DateTime
-  endDate       DateTime?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  entryFee        Float            @default(0)
+  prizePool       Float            @default(0)
+  bracket         Json             @default("{}")
+  startDate       DateTime
+  endDate         DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 }
 
 model AgentWallet {
@@ -232,7 +232,7 @@ model AgentWallet {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  agent         Agent    @relation(fields: [agentId], references: [id])
+  agent         Agent         @relation(fields: [agentId], references: [id])
   ledgerEntries LedgerEntry[]
 
   @@index([solanaAddress])
@@ -252,7 +252,7 @@ model TrainingJob {
   completedAt DateTime?
   createdAt   DateTime       @default(now())
 
-  agent       Agent          @relation(fields: [agentId], references: [id])
+  agent Agent @relation(fields: [agentId], references: [id])
 
   @@index([agentId])
   @@index([status])
@@ -260,19 +260,19 @@ model TrainingJob {
 }
 
 model AgentMemory {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   agentId      String
   type         String
   content      String
-  importance   Float    @default(0.5)
-  accessCount  Int      @default(0)
-  lastAccessed DateTime @default(now())
+  importance   Float     @default(0.5)
+  accessCount  Int       @default(0)
+  lastAccessed DateTime  @default(now())
   embedding    Float[]
-  metadata     Json     @default("{}")
+  metadata     Json      @default("{}")
   expiresAt    DateTime?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
-  agent        Agent    @relation(fields: [agentId], references: [id])
+  agent Agent @relation(fields: [agentId], references: [id])
 
   @@index([agentId])
   @@index([type])
@@ -280,17 +280,17 @@ model AgentMemory {
 }
 
 model IntelligenceLayer {
-  id              String   @id @default(uuid())
-  gameId          String   @unique
-  name            String
-  actionSpace     Json
+  id               String   @id @default(uuid())
+  gameId           String   @unique
+  name             String
+  actionSpace      Json
   observationSpace Json
-  rewardConfig    Json
-  modelConfig     Json
-  version         Int      @default(1)
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  rewardConfig     Json
+  modelConfig      Json
+  version          Int      @default(1)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 /// Tracks each call into the OKX Agent Marketplace "create arena agent" A2MCP
@@ -307,7 +307,7 @@ model OkxAgentRequest {
   createdAt      DateTime  @default(now())
   completedAt    DateTime?
 
-  agent          Agent?    @relation(fields: [agentId], references: [id])
+  agent Agent? @relation(fields: [agentId], references: [id])
 
   @@index([status])
   @@index([agentId])
@@ -319,14 +319,14 @@ model OkxAgentRequest {
 model KultExperienceLog {
   id          String    @id @default(uuid())
   agentId     String
-  eventType   String    // BATTLE_RESULT | LEAGUE_PREDICTION_SETTLED | RIVALRY_UPDATED | ...
-  outcome     String?   // WIN | LOSS | DRAW | CORRECT | INCORRECT
+  eventType   String // BATTLE_RESULT | LEAGUE_PREDICTION_SETTLED | RIVALRY_UPDATED | ...
+  outcome     String? // WIN | LOSS | DRAW | CORRECT | INCORRECT
   delta       Json      @default("{}") // suggested trait deltas, consumed by the drift engine
   rawPayload  Json
   processedAt DateTime?
   createdAt   DateTime  @default(now())
 
-  agent       Agent     @relation(fields: [agentId], references: [id])
+  agent Agent @relation(fields: [agentId], references: [id])
 
   @@index([agentId, createdAt])
   @@index([processedAt])
@@ -346,13 +346,13 @@ model EscrowRecord {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  battles       Battle[]
+  battles Battle[]
 
   /// Additive, nullable, unique — set only for League Battle escrows.
   /// Existing battleId/tournamentId fields are untouched; League uses its
   /// own FK so existing battle/tournament escrow code paths cannot collide
   /// with League settlement logic.
-  leagueBattleId String?     @unique
+  leagueBattleId String?       @unique
   leagueBattle   LeagueBattle?
 
   @@index([state])
@@ -360,17 +360,17 @@ model EscrowRecord {
 }
 
 model LedgerEntry {
-  id          String            @id @default(uuid())
-  walletId    String
-  type        TransactionType
-  amount      Float
-  currency    String
-  status      TransactionStatus @default(PENDING)
-  txHash      String?
-  metadata    Json              @default("{}")
-  createdAt   DateTime          @default(now())
+  id        String            @id @default(uuid())
+  walletId  String
+  type      TransactionType
+  amount    Float
+  currency  String
+  status    TransactionStatus @default(PENDING)
+  txHash    String?
+  metadata  Json              @default("{}")
+  createdAt DateTime          @default(now())
 
-  wallet      AgentWallet       @relation(fields: [walletId], references: [id])
+  wallet AgentWallet @relation(fields: [walletId], references: [id])
 
   @@index([walletId])
   @@index([status])
@@ -378,32 +378,32 @@ model LedgerEntry {
 }
 
 model StakingRecord {
-  id          String   @id @default(uuid())
-  agentId     String
-  amount      Float
-  stakedAt    DateTime @default(now())
-  unstakedAt  DateTime?
-  lockPeriod  Int      @default(0)
-  txHash      String?
-  isActive    Boolean  @default(true)
+  id         String    @id @default(uuid())
+  agentId    String
+  amount     Float
+  stakedAt   DateTime  @default(now())
+  unstakedAt DateTime?
+  lockPeriod Int       @default(0)
+  txHash     String?
+  isActive   Boolean   @default(true)
 
-  agent       Agent    @relation(fields: [agentId], references: [id])
+  agent Agent @relation(fields: [agentId], references: [id])
 
   @@index([agentId])
   @@index([isActive])
 }
 
 model LeaderboardEntry {
-  id          String   @id @default(uuid())
-  agentId     String
-  gameId      String?
+  id            String   @id @default(uuid())
+  agentId       String
+  gameId        String?
   leaderboardId String
-  rank        Int
-  score       Float
-  eloRating   Int
-  updatedAt   DateTime @default(now())
+  rank          Int
+  score         Float
+  eloRating     Int
+  updatedAt     DateTime @default(now())
 
-  agent       Agent    @relation(fields: [agentId], references: [id])
+  agent Agent @relation(fields: [agentId], references: [id])
 
   @@unique([leaderboardId, agentId])
   @@index([leaderboardId, rank])
@@ -415,12 +415,12 @@ model LeaderboardEntry {
 // Pattern: upload → store rootHash here → download via rootHash.
 model StorageIndex {
   id          String   @id @default(uuid())
-  logicalPath String   @unique   // e.g. "agents/{agentId}/memory/v3"
-  rootHash    String             // 0G Storage Merkle root hash (hex)
-  txHash      String?            // 0G chain transaction hash for the upload
+  logicalPath String   @unique // e.g. "agents/{agentId}/memory/v3"
+  rootHash    String // 0G Storage Merkle root hash (hex)
+  txHash      String? // 0G chain transaction hash for the upload
   mimeType    String?
   sizeBytes   Int?
-  uploadedBy  String?            // service name or agent ID
+  uploadedBy  String? // service name or agent ID
   tags        String[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -440,22 +440,22 @@ enum BridgeDepositStatus {
 
 /// Cross-chain bridge deposit record (Base → Solana, 0G → Solana)
 model BridgeDeposit {
-  id             String              @id @default(uuid())
-  userId         String?
-  sourceChain    String              // "base" | "0g"
-  sourceTxHash   String
-  depositId      String              // on-chain depositNonce
-  depositorEvm   String?             // EVM msg.sender
-  solanaAddress  String              // Solana recipient (base58)
-  usdcAmount     String              // raw bigint as string (6 decimals)
-  solanaTxHash   String?             // Solana mint tx
-  status         BridgeDepositStatus @default(PENDING)
-  flagReason     String?
-  errorMessage   String?
-  confirmedAt    DateTime?
-  createdAt      DateTime            @default(now())
+  id            String              @id @default(uuid())
+  userId        String?
+  sourceChain   String // "base" | "0g"
+  sourceTxHash  String
+  depositId     String // on-chain depositNonce
+  depositorEvm  String? // EVM msg.sender
+  solanaAddress String // Solana recipient (base58)
+  usdcAmount    String // raw bigint as string (6 decimals)
+  solanaTxHash  String? // Solana mint tx
+  status        BridgeDepositStatus @default(PENDING)
+  flagReason    String?
+  errorMessage  String?
+  confirmedAt   DateTime?
+  createdAt     DateTime            @default(now())
 
-  user           User?               @relation(fields: [userId], references: [id])
+  user User? @relation(fields: [userId], references: [id])
 
   @@unique([sourceTxHash, sourceChain], name: "sourceTxHash_sourceChain")
   @@index([solanaAddress])
@@ -465,14 +465,14 @@ model BridgeDeposit {
 
 /// Protocol fee routing log — tracks every fee split event
 model TreasuryAllocation {
-  id              String   @id @default(uuid())
-  sourceType      String   // "battle_fee" | "tournament_fee" | "redemption_fee"
-  sourceTxHash    String?
-  totalUsdc       String   // raw bigint as string
-  reserveUsdc     String   // 80% → reserve
-  opsUsdc         String   // 20% → ops wallet
-  onChainTxHash   String?  // Solana tx that called add_protocol_revenue
-  createdAt       DateTime @default(now())
+  id            String   @id @default(uuid())
+  sourceType    String // "battle_fee" | "tournament_fee" | "redemption_fee"
+  sourceTxHash  String?
+  totalUsdc     String // raw bigint as string
+  reserveUsdc   String // 80% → reserve
+  opsUsdc       String // 20% → ops wallet
+  onChainTxHash String? // Solana tx that called add_protocol_revenue
+  createdAt     DateTime @default(now())
 
   @@index([sourceType])
   @@index([createdAt])
@@ -481,7 +481,7 @@ model TreasuryAllocation {
 /// In-memory rebalancing audit log
 model ReserveRebalance {
   id            String   @id @default(uuid())
-  triggerReason String   // "scheduled" | "drift_threshold"
+  triggerReason String // "scheduled" | "drift_threshold"
   usdcBefore    String
   usdtBefore    String
   usdcAfter     String
@@ -493,18 +493,18 @@ model ReserveRebalance {
 // Tracks 0G fine-tuning jobs submitted via CLI.
 // Only Qwen2.5-0.5B-Instruct and Qwen3-32B are supported by 0G Compute.
 model ZeroGFineTuneJob {
-  id              String   @id @default(uuid())
+  id              String    @id @default(uuid())
   agentId         String
-  trainingJobId   String   @unique
+  trainingJobId   String    @unique
   providerAddress String
-  baseModel       String             // Qwen2.5-0.5B-Instruct | Qwen3-32B
-  datasetRootHash String             // 0G Storage root hash of training JSONL
-  status          String   @default("SUBMITTED")  // SUBMITTED|RUNNING|DELIVERED|ACKNOWLEDGED|FAILED
-  outputRootHash  String?            // 0G Storage root hash of fine-tuned model (after delivery)
+  baseModel       String // Qwen2.5-0.5B-Instruct | Qwen3-32B
+  datasetRootHash String // 0G Storage root hash of training JSONL
+  status          String    @default("SUBMITTED") // SUBMITTED|RUNNING|DELIVERED|ACKNOWLEDGED|FAILED
+  outputRootHash  String? // 0G Storage root hash of fine-tuned model (after delivery)
   deliveredAt     DateTime?
-  acknowledgedAt  DateTime?          // Must acknowledge within 48h of DELIVERED to avoid 30% penalty
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  acknowledgedAt  DateTime? // Must acknowledge within 48h of DELIVERED to avoid 30% penalty
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([agentId])
   @@index([status])
@@ -516,10 +516,10 @@ model ZeroGFineTuneJob {
 // application layer) — no Prisma relations onto Agent or User (§1.7).
 
 enum LeagueTribe {
-  NEXUS_01    // Statistician
-  SHADOW_9    // Villain
-  ATHENA      // Oracle
-  VOIDWALKER  // Madman
+  NEXUS_01 // Statistician
+  SHADOW_9 // Villain
+  ATHENA // Oracle
+  VOIDWALKER // Madman
 }
 
 enum LeagueStage {
@@ -561,29 +561,29 @@ enum PredictionStatus {
 }
 
 enum PredictionSource {
-  AI              // 0G Compute structured output
-  FALLBACK        // deterministic fallback (0G degraded/timeout)
-  USER_OVERRIDE   // user edited the prediction before lock
+  AI // 0G Compute structured output
+  FALLBACK // deterministic fallback (0G degraded/timeout)
+  USER_OVERRIDE // user edited the prediction before lock
 }
 
 enum LeagueBattleStatus {
-  PENDING     // challenger created, awaiting opponent response
-  ACCEPTED    // opponent accepted, escrow lock in progress
-  LOCKED      // escrow funded, awaiting match settlement
-  SETTLED     // winner paid out
-  VOID        // match cancelled — stakes refunded
-  DECLINED    // opponent declined / expired
+  PENDING // challenger created, awaiting opponent response
+  ACCEPTED // opponent accepted, escrow lock in progress
+  LOCKED // escrow funded, awaiting match settlement
+  SETTLED // winner paid out
+  VOID // match cancelled — stakes refunded
+  DECLINED // opponent declined / expired
 }
 
 enum LeagueMomentType {
-  VINDICATION  // correct pick against consensus
-  ROAST        // agent trash-talks a rival post-result
-  UPSET        // correct underdog pick
-  RIVALRY      // rivalry narrative milestone (5+ matchups)
-  STREAK       // N-correct streak milestone
-  ASCENSION    // evolution stage change driven by League performance
-  EVOLUTION    // trait-vector shift driven by League performance
-  FACTION      // faction milestone (leaderboard lead change, etc.)
+  VINDICATION // correct pick against consensus
+  ROAST // agent trash-talks a rival post-result
+  UPSET // correct underdog pick
+  RIVALRY // rivalry narrative milestone (5+ matchups)
+  STREAK // N-correct streak milestone
+  ASCENSION // evolution stage change driven by League performance
+  EVOLUTION // trait-vector shift driven by League performance
+  FACTION // faction milestone (leaderboard lead change, etc.)
 }
 
 /// One row per competition (e.g. "KULTAI World Cup 2026"). All tunable
@@ -591,16 +591,16 @@ enum LeagueMomentType {
 /// `config` so they can be versioned/adjusted without a migration —
 /// see §20.1 for the default shape.
 model LeagueSeason {
-  id              String   @id @default(uuid())
-  slug            String   @unique
-  name            String
-  providerId      String?            // provider-side season/league id
-  startsAt        DateTime
-  endsAt          DateTime
-  isActive        Boolean  @default(true)
-  config          Json     @default("{}")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id         String   @id @default(uuid())
+  slug       String   @unique
+  name       String
+  providerId String? // provider-side season/league id
+  startsAt   DateTime
+  endsAt     DateTime
+  isActive   Boolean  @default(true)
+  config     Json     @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   matches         LeagueMatch[]
   agentStats      LeagueAgentSeasonStats[]
@@ -612,24 +612,24 @@ model LeagueSeason {
 model LeagueMatch {
   id            String            @id @default(uuid())
   seasonId      String
-  providerId    String            // provider fixture id (e.g. Sportmonks fixture id)
+  providerId    String // provider fixture id (e.g. Sportmonks fixture id)
   stage         LeagueStage
   matchday      Int?
-  homeTeam      String            // FIFA 3-letter code, e.g. "BRA"
+  homeTeam      String // FIFA 3-letter code, e.g. "BRA"
   awayTeam      String
   venue         String?
   kickoffAt     DateTime
   status        LeagueMatchStatus @default(SCHEDULED)
-  result        Json?             // NormalizedMatchResult once known (§8.1)
-  resultVersion Int               @default(0)  // bumped on provider-correction re-scoring
+  result        Json? // NormalizedMatchResult once known (§8.1)
+  resultVersion Int               @default(0) // bumped on provider-correction re-scoring
   settledAt     DateTime?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
-  season        LeagueSeason       @relation(fields: [seasonId], references: [id])
-  predictions   LeaguePrediction[]
-  battles       LeagueBattle[]
-  moments       LeagueMoment[]
+  season      LeagueSeason       @relation(fields: [seasonId], references: [id])
+  predictions LeaguePrediction[]
+  battles     LeagueBattle[]
+  moments     LeagueMoment[]
 
   @@unique([seasonId, providerId])
   @@index([status, kickoffAt])
@@ -639,32 +639,32 @@ model LeagueMatch {
 /// One row per (match, agent). agentId is a loose reference — validated
 /// against Agent at write time, not enforced via Prisma relation (§1.7).
 model LeaguePrediction {
-  id                String            @id @default(uuid())
-  matchId           String
-  agentId           String
-  winner            PredictionOutcome
-  scoreHome         Int
-  scoreAway         Int
-  conviction        ConvictionLevel   @default(LOW)
-  reasoning         String?
-  source            PredictionSource  @default(AI)
-  status            PredictionStatus  @default(PENDING)
+  id         String            @id @default(uuid())
+  matchId    String
+  agentId    String
+  winner     PredictionOutcome
+  scoreHome  Int
+  scoreAway  Int
+  conviction ConvictionLevel   @default(LOW)
+  reasoning  String?
+  source     PredictionSource  @default(AI)
+  status     PredictionStatus  @default(PENDING)
 
   // Populated only once status = SETTLED (or VOID, all null)
-  isCorrectWinner   Boolean?
-  isExactScore      Boolean?
-  isUpset           Boolean?
-  basePoints        Int?
-  arenaAwarded      Float?
-  kpAwarded         Int?
+  isCorrectWinner Boolean?
+  isExactScore    Boolean?
+  isUpset         Boolean?
+  basePoints      Int?
+  arenaAwarded    Float?
+  kpAwarded       Int?
 
   lockedAt          DateTime?
   settledAt         DateTime?
-  settlementVersion Int               @default(0)  // mirrors LeagueMatch.resultVersion at settlement time
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  settlementVersion Int       @default(0) // mirrors LeagueMatch.resultVersion at settlement time
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  match             LeagueMatch       @relation(fields: [matchId], references: [id])
+  match LeagueMatch @relation(fields: [matchId], references: [id])
 
   @@unique([matchId, agentId])
   @@index([agentId, status])
@@ -687,8 +687,8 @@ model LeagueBattle {
   acceptedAt   DateTime?
   settledAt    DateTime?
 
-  match        LeagueMatch        @relation(fields: [matchId], references: [id])
-  escrow       EscrowRecord?      @relation(fields: [escrowId], references: [id])
+  match  LeagueMatch   @relation(fields: [matchId], references: [id])
+  escrow EscrowRecord? @relation(fields: [escrowId], references: [id])
 
   @@index([matchId, status])
   @@index([challengerId])
@@ -699,18 +699,18 @@ model LeagueBattle {
 /// are agentIds ordered lexicographically so (A,B) and (B,A) always
 /// resolve to the same row.
 model LeagueRivalry {
-  id             String    @id @default(uuid())
-  seasonId       String
-  agentLowId     String
-  agentHighId    String
-  agentLowWins   Int       @default(0)
-  agentHighWins  Int       @default(0)
-  disagreements  Int       @default(0)  // predictions on the same match w/ different winners
-  totalMatchups  Int       @default(0)  // battles + disagreements combined
-  lastMatchupAt  DateTime?
-  narrative      String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id            String    @id @default(uuid())
+  seasonId      String
+  agentLowId    String
+  agentHighId   String
+  agentLowWins  Int       @default(0)
+  agentHighWins Int       @default(0)
+  disagreements Int       @default(0) // predictions on the same match w/ different winners
+  totalMatchups Int       @default(0) // battles + disagreements combined
+  lastMatchupAt DateTime?
+  narrative     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@unique([seasonId, agentLowId, agentHighId])
 }
@@ -722,7 +722,7 @@ model LeagueAgentSeasonStats {
   agentId               String
   tribe                 LeagueTribe
   reputation            Float       @default(1500)
-  reputationProvisional Boolean     @default(true)  // true until predictionsTotal >= 20
+  reputationProvisional Boolean     @default(true) // true until predictionsTotal >= 20
   predictionsTotal      Int         @default(0)
   correctWinnerCount    Int         @default(0)
   exactScoreCount       Int         @default(0)
@@ -736,7 +736,7 @@ model LeagueAgentSeasonStats {
   enrolledAt            DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
 
-  season                LeagueSeason @relation(fields: [seasonId], references: [id])
+  season LeagueSeason @relation(fields: [seasonId], references: [id])
 
   @@unique([seasonId, agentId])
   @@index([seasonId, reputation])
@@ -767,9 +767,9 @@ model LeagueUserProfile {
 model LeagueKpLedger {
   id           String   @id @default(uuid())
   userId       String
-  amount       Int          // negative for admin corrections
-  reason       String       // "predict" | "correct" | "upset" | "rivalry" | "correction"
-  refType      String       // "prediction" | "battle" | "rivalry"
+  amount       Int // negative for admin corrections
+  reason       String // "predict" | "correct" | "upset" | "rivalry" | "correction"
+  refType      String // "prediction" | "battle" | "rivalry"
   refId        String
   balanceAfter Int
   createdAt    DateTime @default(now())
@@ -791,7 +791,7 @@ model LeagueMoment {
   idempotencyKey String           @unique
   createdAt      DateTime         @default(now())
 
-  match          LeagueMatch?     @relation(fields: [matchId], references: [id])
+  match LeagueMatch? @relation(fields: [matchId], references: [id])
 
   @@index([seasonId, createdAt])
   @@index([agentId])
@@ -803,11 +803,11 @@ model LeagueWeeklySnapshot {
   id          String   @id @default(uuid())
   seasonId    String
   weekStartAt DateTime
-  scope       String   // "global" | "faction:NEXUS_01" | ...
-  rankings    Json     // [{ subjectId, rank, score }]
+  scope       String // "global" | "faction:NEXUS_01" | ...
+  rankings    Json // [{ subjectId, rank, score }]
   createdAt   DateTime @default(now())
 
-  season      LeagueSeason @relation(fields: [seasonId], references: [id])
+  season LeagueSeason @relation(fields: [seasonId], references: [id])
 
   @@unique([seasonId, weekStartAt, scope])
 }
@@ -817,9 +817,9 @@ model LeagueWeeklySnapshot {
 model LeagueSettlementLog {
   id          String   @id @default(uuid())
   matchId     String   @unique
-  resultHash  String   // hash of the normalized result used for this run
-  version     Int      @default(1)  // mirrors LeagueMatch.resultVersion
-  status      String   @default("COMPLETED")  // COMPLETED | FAILED | PARTIAL
+  resultHash  String // hash of the normalized result used for this run
+  version     Int      @default(1) // mirrors LeagueMatch.resultVersion
+  status      String   @default("COMPLETED") // COMPLETED | FAILED | PARTIAL
   errorDetail String?
   processedAt DateTime @default(now())
 }
@@ -844,13 +844,13 @@ enum PolymarketSignalOutcome {
 /// project hit once already in League, not to be repeated here.
 model PolymarketSignal {
   id         String                  @id @default(uuid())
-  marketId   String                  // Polymarket condition/market id — external, not FK'd
-  agentId    String                  // loose reference, validated at the application layer
-  question   String                  // snapshot of the market question at generation time
+  marketId   String // Polymarket condition/market id — external, not FK'd
+  agentId    String // loose reference, validated at the application layer
+  question   String // snapshot of the market question at generation time
   signal     PolymarketSignalOutcome
-  confidence ConvictionLevel         @default(LOW)  // reuses League's LOW/MEDIUM/HIGH scale
+  confidence ConvictionLevel         @default(LOW) // reuses League's LOW/MEDIUM/HIGH scale
   reasoning  String?
-  source     PredictionSource        @default(AI)   // reuses League's AI/FALLBACK/USER_OVERRIDE enum
+  source     PredictionSource        @default(AI) // reuses League's AI/FALLBACK/USER_OVERRIDE enum
   createdAt  DateTime                @default(now())
   updatedAt  DateTime                @updatedAt
 
@@ -911,12 +911,117 @@ model OnChainEvent {
 /// arena-chain-service on a schedule and after every settlement.
 model TreasurySnapshot {
   id                String   @id @default(uuid())
-  balance           String   // decimal-string ARENA
+  balance           String // decimal-string ARENA
   totalDistributed  String
   totalCommissions  String
   totalRewardsPaid  String
-  circulatingSupply String   // 1,000,000 - balance
+  circulatingSupply String // 1,000,000 - balance
   capturedAt        DateTime @default(now())
 
   @@index([capturedAt])
+}
+
+// ── F1 League ────────────────────────────────────────────────────────────
+//
+// Mirrors the football League's provider-cache pattern (LeagueMatch/
+// LeaguePrediction) but shaped for F1: no home/away team, a race weekend is
+// several sessions (Practice/Qualifying/Race), and a "match" for prediction
+// purposes is a driver pick, not a score. Data source: API-SPORTS Formula-1
+// API (docs/league/F1_LEAGUE_CONTEXT.md) -- teams/drivers are provider-cache
+// synced periodically; races are synced per Grand Prix. agentId is a loose
+// reference (no formal relation), matching LeaguePrediction/LeagueBattle's
+// existing convention in this schema.
+
+enum F1RaceStatus {
+  SCHEDULED
+  LIVE
+  COMPLETED
+  CANCELLED
+}
+
+model F1Team {
+  id                 String   @id @default(uuid())
+  providerId         Int      @unique // api-formula-1.com team id
+  name               String
+  logo               String?
+  base               String?
+  firstTeamEntry     Int?
+  worldChampionships Int?
+  chassis            String?
+  engine             String?
+  tyres              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  drivers F1Driver[]
+}
+
+model F1Driver {
+  id            String    @id @default(uuid())
+  providerId    Int       @unique // api-formula-1.com driver id
+  name          String
+  abbr          String?
+  image         String?
+  nationality   String?
+  countryCode   String?
+  birthdate     DateTime?
+  number        Int?
+  podiums       Int?
+  careerPoints  String? // provider returns as a decimal string
+  currentTeamId String?
+  /// Provider's raw `teams: [{ season, team }]` history array -- kept as-is
+  /// rather than normalized, since it's display-only (driver popup).
+  teamHistory   Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  currentTeam F1Team?        @relation(fields: [currentTeamId], references: [id])
+  predictions F1Prediction[]
+
+  @@index([currentTeamId])
+}
+
+model F1Race {
+  id            String       @id @default(uuid())
+  providerId    Int          @unique // api-formula-1.com race (single session) id
+  grandPrixId   Int // provider competition id, e.g. 15 = Belgium
+  grandPrixName String
+  circuitName   String?
+  circuitImage  String?
+  season        Int
+  /// Provider's raw session-type label ("Race", "1st Qualifying", "2nd Practice", ...)
+  sessionType   String
+  status        F1RaceStatus @default(SCHEDULED)
+  startsAt      DateTime
+  laps          Int?
+  distance      String?
+  /// Populated once COMPLETED -- provider's fastest_lap plus classification if available.
+  result        Json?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  predictions F1Prediction[]
+
+  @@index([grandPrixId, season])
+  @@index([status, startsAt])
+}
+
+/// A single agent's pick for who wins a given race session (the "Race" type
+/// session, not qualifying/practice). One pick per agent per race.
+model F1Prediction {
+  id                String    @id @default(uuid())
+  raceId            String
+  agentId           String
+  predictedDriverId String
+  reasoning         String?
+  isCorrect         Boolean?
+  settledAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  race            F1Race   @relation(fields: [raceId], references: [id])
+  predictedDriver F1Driver @relation(fields: [predictedDriverId], references: [id])
+
+  @@unique([raceId, agentId])
+  @@index([agentId])
 }

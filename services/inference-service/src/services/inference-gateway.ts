@@ -493,6 +493,68 @@ Write the commentary paragraph now:`;
   }
 
   /**
+   * F1 League — "AI Prediction" button on a driver's popup. Summarizes the
+   * driver's real career/team stats via 0G Compute and predicts their
+   * outlook for the upcoming Grand Prix. Not agent-specific (no personality
+   * injected) -- this is a general analyst take on the driver, not one of
+   * the player's own agents' opinion, so it needs no agentId.
+   */
+  async generateF1DriverPrediction(params: {
+    driverName: string;
+    abbr?: string | null;
+    nationality?: string | null;
+    number?: number | null;
+    podiums?: number | null;
+    careerPoints?: string | null;
+    currentTeamName?: string | null;
+    teamHistory?: Array<{ season: number; teamName: string }>;
+    grandPrixName: string;
+    circuitName?: string | null;
+    latestSeasonStanding?: { position: number; points: number; wins: number; season: number } | null;
+  }): Promise<{ prediction: string }> {
+    const model = process.env.ZEROG_COMMENTARY_MODEL ?? 'zai-org/GLM-4-9B';
+
+    const teamHistoryLine = (params.teamHistory ?? [])
+      .slice(0, 6)
+      .map((t) => `${t.season}: ${t.teamName}`)
+      .join(' · ') || 'no recorded team history';
+
+    const standingLine = params.latestSeasonStanding
+      ? `P${params.latestSeasonStanding.position} in the ${params.latestSeasonStanding.season} standings, ${params.latestSeasonStanding.points} points, ${params.latestSeasonStanding.wins} wins`
+      : 'no recent standings data available';
+
+    const prompt = `You are a sharp, data-driven Formula 1 analyst. Write a short prediction (2-3 sentences) of how ${params.driverName} is likely to perform at the upcoming ${params.grandPrixName}${params.circuitName ? ` (${params.circuitName})` : ''}, based ONLY on the real stats below. Be specific and grounded in the numbers -- no generic hype.
+
+DRIVER
+Name          : ${params.driverName}${params.abbr ? ` (${params.abbr})` : ''}
+Nationality   : ${params.nationality ?? 'unknown'}
+Car number    : ${params.number ?? 'unknown'}
+Career podiums: ${params.podiums ?? 'unknown'}
+Career points : ${params.careerPoints ?? 'unknown'}
+Current team  : ${params.currentTeamName ?? 'unknown'}
+Team history  : ${teamHistoryLine}
+Recent form   : ${standingLine}
+
+Write the prediction now:`;
+
+    try {
+      const response = await (this.compute as any).openai.chat.completions.create({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 180,
+        temperature: 0.7,
+      });
+      const prediction = (response.choices?.[0]?.message?.content ?? '').trim();
+      return { prediction: prediction || `${params.driverName} heads into the ${params.grandPrixName} with ${params.podiums ?? 0} career podiums to their name.` };
+    } catch (err) {
+      console.error('[InferenceGateway] F1 driver prediction generation failed:', err);
+      return {
+        prediction: `${params.driverName}${params.currentTeamName ? ` (${params.currentTeamName})` : ''} enters the ${params.grandPrixName} with ${params.podiums ?? 0} career podiums and ${params.careerPoints ?? 'an unknown number of'} career points.`,
+      };
+    }
+  }
+
+  /**
    * Check 0G Compute account balance (neuron units).
    * 1e18 neuron = 1 0G token. Alert if below threshold.
    */

@@ -74,6 +74,21 @@ export async function inferenceRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * POST /v1/inference/f1-driver-prediction
+   *
+   * F1 League "AI Prediction" button -- generates a stats-grounded outlook
+   * for a driver ahead of a Grand Prix. Called by league-service.
+   */
+  app.post('/f1-driver-prediction', async (req, reply) => {
+    const body = req.body as Parameters<InferenceGateway['generateF1DriverPrediction']>[0];
+    if (!body?.driverName || !body?.grandPrixName) {
+      return reply.status(400).send({ error: 'driverName and grandPrixName are required' });
+    }
+    const result = await gateway.generateF1DriverPrediction(body);
+    return result;
+  });
+
+  /**
    * POST /v1/inference/battle-commentary
    *
    * Generate a dramatic battle commentary paragraph via 0G Compute.

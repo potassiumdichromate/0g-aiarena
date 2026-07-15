@@ -188,6 +188,8 @@ async function main() {
     { prefix: '/v1/league',       envKey: 'LEAGUE_SERVICE_URL',      fallback: 'http://localhost:8060', rewritePrefix: '/v1/league'    },
     // Polymarket signals live in league-service too (docs/polymarket) — same rationale, own prefix
     { prefix: '/v1/polymarket',   envKey: 'LEAGUE_SERVICE_URL',      fallback: 'http://localhost:8060', rewritePrefix: '/v1/polymarket'},
+    // F1 League also lives in league-service (docs/league/F1_LEAGUE_CONTEXT.md) — same rationale, own prefix
+    { prefix: '/v1/f1',           envKey: 'LEAGUE_SERVICE_URL',      fallback: 'http://localhost:8060', rewritePrefix: '/v1/f1'        },
     // OKX Agent Marketplace — routed through payment proxy (x402 v2 gate), which
     // verifies payment then forwards to agent-service. Strip /v1/okx so the proxy
     // receives /create-agent (its own route). Fallback hits agent-service directly in dev.
