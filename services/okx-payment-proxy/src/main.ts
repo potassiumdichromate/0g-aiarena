@@ -3,17 +3,21 @@
  *
  * Protocol: x402 v2, "exact" scheme, eip155:196 (X Layer)
  *
- * 402 challenge flow (x402 v2):
+ * 402 challenge flow:
  *   1. Any request without payment → 402 with PAYMENT-REQUIRED header (base64 JSON)
- *   2. Buyer (OKX task-402-pay CLI) reads PAYMENT-REQUIRED, signs EIP-3009, replays
- *      with PAYMENT-SIGNATURE header (v2) or X-PAYMENT header (v1)
- *   3. We verify via OKX x402 broker API (web3.okx.com/api/v6/pay/x402/verify)
+ *      x402Version: 2 in challenge; extra.version: "1" is the EIP-712 domain version
+ *      for USD₮0 (separate concept — not the x402 protocol version)
+ *   2. Buyer signs EIP-3009 TransferWithAuthorization, replays with:
+ *      PAYMENT-SIGNATURE header (x402 v2) or X-PAYMENT header (x402 v1)
+ *   3. We detect which header arrived and verify accordingly:
+ *      - Primary: OKX x402 broker API (version matched to detected header)
+ *      - Fallback: local EIP-712 (USD₮0 domain, chainId 196)
  *   4. Forward to agent-service, return 200 + result body
- *   5. OKX settle API called async (web3.okx.com/api/v6/pay/x402/settle)
- *   6. Buyer CLI auto-saves our 200 response body as the task deliverable (A2MCP flow)
+ *   5. Buyer CLI auto-saves 200 response body as task deliverable (A2MCP flow)
+ *   6. OKX settle API called async to move USDT to PAY_TO on X Layer
  *
  * Handlers:
- *   GET  /create-agent  → 402 v2 challenge (x402-validate probe)
+ *   GET  /create-agent  → 402 challenge (x402-validate probe)
  *   POST /create-agent  → verify → forward to agent-service → 200
  *   OPTIONS /create-agent → 200 (liveness)
  *   GET  /health        → 200
@@ -35,21 +39,29 @@ const AMOUNT   = process.env.X402_AMOUNT             ?? '100000'; // 0.10 USDT (
 const TIMEOUT  = parseInt(process.env.X402_MAX_TIMEOUT_SECONDS ?? '300', 10);
 const RESOURCE = process.env.X402_RESOURCE_URL       ?? 'https://aiarena-gateway.onrender.com/v1/okx/create-agent';
 
-// OKX Developer Portal credentials (used for x402 verify + settle API)
+// OKX Developer Portal credentials (x402 verify + settle API)
 const OKX_API_KEY        = process.env.OKX_API_KEY         ?? '';
 const OKX_API_SECRET     = process.env.OKX_API_SECRET_KEY  ?? '';
 const OKX_API_PASSPHRASE = process.env.OKX_API_PASSPHRASE  ?? '';
 
-// OKX x402 broker API — verified from onchainos dev docs
+// OKX x402 broker API (verified from onchainos dev docs)
 const OKX_X402_BASE   = 'https://web3.okx.com';
 const OKX_VERIFY_PATH = '/api/v6/pay/x402/verify';
 const OKX_SETTLE_PATH = '/api/v6/pay/x402/settle';
 
-// ── EIP-712 fallback domain (used when OKX API creds not set) ────────────────
+// ── Nonce idempotency cache ───────────────────────────────────────────────────
+// Prevents re-payment rejection if buyer replays a valid, already-processed proof.
+// Keys: EIP-3009 nonce (bytes32 hex). Values: upstream response body.
+// In-memory is fine for Render (single process, ~300s TIMEOUT covers the window).
+const processedNonces = new Map<string, string>();
+
+// ── EIP-712 domain for USD₮0 on X Layer (chainId 196) ────────────────────────
+// extra.version "1" is the EIP-712 domain version of the USD₮0 token contract —
+// a separate concept from x402Version (the HTTP payment protocol version).
 
 const EIP3009_DOMAIN = {
-  name: 'USD₮0',
-  version: '1',
+  name: 'USD₮0',  // USD₮0 — U+20AE is Mongolian Tugrik, exact on-chain name
+  version: '1',        // EIP-712 domain version of the token, not x402 protocol version
   chainId: 196,
   verifyingContract: ASSET as `0x${string}`,
 } as const;
@@ -69,20 +81,22 @@ const EIP3009_TYPES = {
 
 function paymentRequirements() {
   return {
-    scheme: 'exact',
-    network: 'eip155:196',
-    asset: ASSET,
-    amount: AMOUNT,
-    payTo: PAY_TO,
+    scheme:            'exact',
+    network:           'eip155:196',
+    asset:             ASSET,
+    amount:            AMOUNT,
+    payTo:             PAY_TO,
     maxTimeoutSeconds: TIMEOUT,
-    resource: RESOURCE,
-    description: 'KULT Agent Creator — create-agent (0.10 USDT on X Layer)',
-    mimeType: 'application/json',
+    resource:          RESOURCE,
+    description:       'KULT Agent Creator — create-agent (0.10 USDT on X Layer)',
+    mimeType:          'application/json',
+    // extra carries EIP-712 domain metadata for USD₮0; version "1" is the
+    // token contract's domain version, required for signature reconstruction.
     extra: { name: 'USD₮0', version: '1' },
   };
 }
 
-// ── x402 v2 challenge ─────────────────────────────────────────────────────────
+// ── 402 challenge ─────────────────────────────────────────────────────────────
 
 function make402Body(): object {
   return {
@@ -94,8 +108,6 @@ function make402Body(): object {
 
 function send402(res: http.ServerResponse): void {
   const payload = make402Body();
-  // v2: challenge goes in PAYMENT-REQUIRED response header (base64-encoded JSON)
-  // The OKX buyer CLI (task-402-pay) reads this header to get pricing terms.
   const encoded = Buffer.from(JSON.stringify(payload)).toString('base64');
   res.statusCode = 402;
   res.setHeader('Content-Type', 'application/json');
@@ -117,9 +129,13 @@ function okxAuthHeaders(method: string, path: string, body: string): Record<stri
   };
 }
 
-// ── Payment verification — OKX broker API (primary) ──────────────────────────
+// ── OKX broker API verify ─────────────────────────────────────────────────────
+// x402Version passed to API must match the header the buyer actually used:
+//   PAYMENT-SIGNATURE header → x402 v2
+//   X-PAYMENT header         → x402 v1
+// Mismatch here is the "version mismatch" OKX reported.
 
-async function verifyViaOkxApi(rawHeader: string): Promise<void> {
+async function verifyViaOkxApi(rawHeader: string, x402Version: 1 | 2): Promise<void> {
   let paymentPayload: unknown;
   try {
     paymentPayload = JSON.parse(Buffer.from(rawHeader, 'base64').toString('utf8'));
@@ -128,22 +144,17 @@ async function verifyViaOkxApi(rawHeader: string): Promise<void> {
   }
 
   const reqBody = JSON.stringify({
-    x402Version: 2,
+    x402Version,          // matched to detected header, not hardcoded
     paymentPayload,
     paymentRequirements: paymentRequirements(),
   });
   const headers = okxAuthHeaders('POST', OKX_VERIFY_PATH, reqBody);
 
-  let verifyRes: Response;
-  try {
-    verifyRes = await fetch(`${OKX_X402_BASE}${OKX_VERIFY_PATH}`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json', ...headers },
-      body:    reqBody,
-    });
-  } catch (err: unknown) {
-    throw new Error(`OKX verify API unreachable: ${err instanceof Error ? err.message : err}`);
-  }
+  const verifyRes = await fetch(`${OKX_X402_BASE}${OKX_VERIFY_PATH}`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body:    reqBody,
+  });
 
   if (!verifyRes.ok) {
     const txt = await verifyRes.text();
@@ -161,45 +172,10 @@ async function verifyViaOkxApi(rawHeader: string): Promise<void> {
   }
 }
 
-// ── Settlement — async fire-and-forget after 200 returned to buyer ────────────
-// OKX settle API broadcasts the ERC-4337 sponsored transfer on X Layer.
-// asyncSettle: false means we don't wait for on-chain confirmation.
-
-function settleAsync(rawHeader: string): void {
-  if (!OKX_API_KEY || !OKX_API_SECRET) return;
-
-  let paymentPayload: unknown;
-  try {
-    paymentPayload = JSON.parse(Buffer.from(rawHeader, 'base64').toString('utf8'));
-  } catch {
-    return;
-  }
-
-  const reqBody = JSON.stringify({
-    x402Version:         2,
-    paymentPayload,
-    paymentRequirements: paymentRequirements(),
-    syncSettle:          false,
-  });
-  const headers = okxAuthHeaders('POST', OKX_SETTLE_PATH, reqBody);
-
-  fetch(`${OKX_X402_BASE}${OKX_SETTLE_PATH}`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body:    reqBody,
-  }).then(async (r) => {
-    const d = await r.json() as { transaction?: string; status?: string; errorReason?: string };
-    if (r.ok && d.status !== 'failed') {
-      console.log(`[okx-payment-proxy] Settle ${d.status ?? 'broadcast'} tx=${d.transaction ?? 'n/a'}`);
-    } else {
-      console.error('[okx-payment-proxy] Settle failed:', d.errorReason ?? 'unknown');
-    }
-  }).catch((err: unknown) => {
-    console.error('[okx-payment-proxy] Settle error:', err instanceof Error ? err.message : err);
-  });
-}
-
-// ── EIP-712 verification — local fallback (no OKX API creds needed) ──────────
+// ── Local EIP-712 verification ────────────────────────────────────────────────
+// Used when OKX API creds absent OR as fallback if OKX API call fails.
+// Verifies EIP-3009 TransferWithAuthorization signature directly against USD₮0
+// domain (name: USD₮0, version: "1", chainId: 196, contract: 0x779ded...).
 
 interface Authorization {
   from: string;
@@ -213,7 +189,7 @@ interface X402Payment {
   payload: { signature: string; authorization: Authorization };
 }
 
-async function verifyLocal(rawHeader: string): Promise<void> {
+async function verifyLocal(rawHeader: string): Promise<string> {
   let payment: X402Payment;
   try {
     payment = JSON.parse(Buffer.from(rawHeader, 'base64').toString('utf8')) as X402Payment;
@@ -225,7 +201,7 @@ async function verifyLocal(rawHeader: string): Promise<void> {
   if (!auth || !signature) throw new Error('Payment payload missing authorization or signature');
 
   if (auth.to.toLowerCase() !== PAY_TO.toLowerCase())
-    throw new Error(`Payment payTo mismatch: expected ${PAY_TO}`);
+    throw new Error(`Payment payTo mismatch: expected ${PAY_TO}, got ${auth.to}`);
 
   if (BigInt(auth.value) < BigInt(AMOUNT))
     throw new Error(`Payment amount too low: got ${auth.value}, need ${AMOUNT}`);
@@ -239,19 +215,58 @@ async function verifyLocal(rawHeader: string): Promise<void> {
     types:       EIP3009_TYPES,
     primaryType: 'TransferWithAuthorization',
     message: {
-      from:        auth.from         as `0x${string}`,
-      to:          auth.to           as `0x${string}`,
+      from:        auth.from          as `0x${string}`,
+      to:          auth.to            as `0x${string}`,
       value:       BigInt(auth.value),
       validAfter:  BigInt(auth.validAfter ?? 0),
       validBefore: BigInt(auth.validBefore),
-      nonce:       auth.nonce        as `0x${string}`,
+      nonce:       auth.nonce         as `0x${string}`,
     },
     signature: signature as `0x${string}`,
   });
-  if (!valid) throw new Error('Payment signature invalid');
+  if (!valid) throw new Error('Payment EIP-712 signature invalid (domain: USD₮0, chainId: 196)');
+
+  // Return nonce so caller can cache it for idempotency
+  return auth.nonce;
 }
 
-// ── Node http server ──────────────────────────────────────────────────────────
+// ── Settle (async, fire-and-forget) ──────────────────────────────────────────
+
+function settleAsync(rawHeader: string, x402Version: 1 | 2): void {
+  if (!OKX_API_KEY || !OKX_API_SECRET) return;
+
+  let paymentPayload: unknown;
+  try {
+    paymentPayload = JSON.parse(Buffer.from(rawHeader, 'base64').toString('utf8'));
+  } catch {
+    return;
+  }
+
+  const reqBody = JSON.stringify({
+    x402Version,
+    paymentPayload,
+    paymentRequirements: paymentRequirements(),
+    syncSettle:          false,
+  });
+  const headers = okxAuthHeaders('POST', OKX_SETTLE_PATH, reqBody);
+
+  fetch(`${OKX_X402_BASE}${OKX_SETTLE_PATH}`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body:    reqBody,
+  }).then(async (r) => {
+    const d = await r.json() as { transaction?: string; status?: string; errorReason?: string };
+    if (r.ok && d.status !== 'failed') {
+      console.log(`[proxy] settle ok tx=${d.transaction ?? 'n/a'} status=${d.status ?? 'broadcast'}`);
+    } else {
+      console.error('[proxy] settle failed:', d.errorReason ?? JSON.stringify(d));
+    }
+  }).catch((err: unknown) => {
+    console.error('[proxy] settle error:', err instanceof Error ? err.message : err);
+  });
+}
+
+// ── HTTP server ───────────────────────────────────────────────────────────────
 
 async function readBody(req: http.IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -276,7 +291,6 @@ http.createServer(async (req, res) => {
     return;
   }
 
-  // GET — x402-validate probe: return 402 challenge so buyer can read payment terms
   if (req.method === 'GET' && url === '/create-agent') {
     send402(res);
     return;
@@ -289,37 +303,76 @@ http.createServer(async (req, res) => {
     return;
   }
 
-  // POST — payment gate
+  // ── POST /create-agent — payment gate ──────────────────────────────────────
+
   const body = await readBody(req);
 
-  // x402 v2 uses PAYMENT-SIGNATURE; v1 uses X-PAYMENT. Accept both.
-  const paymentHeader =
-    (req.headers['payment-signature'] ?? req.headers['x-payment']) as string | undefined;
+  // Detect which x402 version the buyer used from the header name.
+  // PAYMENT-SIGNATURE = v2 (header-based challenge flow).
+  // X-PAYMENT         = v1 (body-based challenge flow).
+  // The x402Version we pass to OKX verify API MUST match this, or it rejects.
+  const hdrV2 = req.headers['payment-signature'] as string | undefined;
+  const hdrV1 = req.headers['x-payment']         as string | undefined;
+  const paymentHeader  = hdrV2 ?? hdrV1;
+  const detectedVersion: 1 | 2 = hdrV2 ? 2 : 1;
 
   if (!paymentHeader) {
+    console.log('[proxy] POST /create-agent — no payment header, sending 402 challenge');
     send402(res);
     return;
   }
 
+  console.log(`[proxy] POST /create-agent — payment header detected (x402 v${detectedVersion})`);
+
+  // ── Idempotency: extract nonce before verify ──────────────────────────────
+  // If this nonce was already processed, return the cached response immediately.
+  let incomingNonce: string | undefined;
+  try {
+    const decoded = JSON.parse(Buffer.from(paymentHeader, 'base64').toString('utf8')) as X402Payment;
+    incomingNonce = decoded?.payload?.authorization?.nonce;
+  } catch { /* ignore — verify will catch malformed headers */ }
+
+  if (incomingNonce && processedNonces.has(incomingNonce)) {
+    console.log(`[proxy] nonce ${incomingNonce} already processed — returning cached response`);
+    const cached = processedNonces.get(incomingNonce)!;
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('X-PAYMENT-RESPONSE', Buffer.from(JSON.stringify({ settled: true, network: 'eip155:196' })).toString('base64'));
+    res.end(cached);
+    return;
+  }
+
+  // ── Verify payment ────────────────────────────────────────────────────────
+  let nonce: string | undefined = incomingNonce;
+
   try {
     if (OKX_API_KEY && OKX_API_SECRET) {
-      // Primary: OKX x402 broker API (web3.okx.com/api/v6/pay/x402/verify)
-      await verifyViaOkxApi(paymentHeader);
+      try {
+        // Primary: OKX broker API — version MUST match detected header
+        await verifyViaOkxApi(paymentHeader, detectedVersion);
+        console.log('[proxy] OKX API verify: ok');
+      } catch (okxErr: unknown) {
+        // Fallback: local EIP-712 — OKX API unavailable or returned error
+        const okxMsg = okxErr instanceof Error ? okxErr.message : String(okxErr);
+        console.warn('[proxy] OKX API verify failed, falling back to local EIP-712:', okxMsg);
+        nonce = await verifyLocal(paymentHeader);
+        console.log('[proxy] local EIP-712 verify: ok');
+      }
     } else {
-      // Fallback: local EIP-712 (no OKX creds — local dev)
-      console.warn('[okx-payment-proxy] OKX API creds missing — using local EIP-712 verify');
-      await verifyLocal(paymentHeader);
+      console.warn('[proxy] OKX API creds not set — using local EIP-712 verify');
+      nonce = await verifyLocal(paymentHeader);
+      console.log('[proxy] local EIP-712 verify: ok');
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Payment verification failed';
-    console.error('[okx-payment-proxy] Payment rejected:', msg);
+    console.error('[proxy] Payment rejected:', msg);
     res.statusCode = 402;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ error: msg }));
     return;
   }
 
-  // Payment verified — forward to agent-service
+  // ── Forward to agent-service ──────────────────────────────────────────────
   let upstream: Response;
   try {
     upstream = await fetch(UPSTREAM_URL, {
@@ -332,7 +385,7 @@ http.createServer(async (req, res) => {
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Upstream unreachable';
-    console.error('[okx-payment-proxy] Upstream error:', msg);
+    console.error('[proxy] Upstream error:', msg);
     res.statusCode = 502;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ error: 'Upstream service error', details: msg }));
@@ -340,7 +393,9 @@ http.createServer(async (req, res) => {
   }
 
   const upstreamBody = await upstream.text();
-  const receipt      = Buffer.from(JSON.stringify({
+  console.log(`[proxy] upstream responded ${upstream.status}`);
+
+  const receipt = Buffer.from(JSON.stringify({
     settled: true,
     network: 'eip155:196',
     asset:   ASSET,
@@ -352,16 +407,20 @@ http.createServer(async (req, res) => {
   res.setHeader('X-PAYMENT-RESPONSE', receipt);
   res.end(upstreamBody);
 
-  // After returning 200 to the buyer:
-  // - Buyer's task-402-pay CLI auto-saves the response body as the task deliverable (A2MCP x402 flow)
-  // - We settle the payment async so funds move to PAY_TO on X Layer
   if (upstream.ok) {
-    settleAsync(paymentHeader);
+    // Cache nonce so the same payment proof can be replayed without re-payment
+    if (nonce) {
+      processedNonces.set(nonce, upstreamBody);
+      // Evict after 2× timeout window so memory doesn't grow unbounded
+      setTimeout(() => processedNonces.delete(nonce!), TIMEOUT * 2 * 1000);
+    }
+    // Settle async — moves USDT to PAY_TO on X Layer
+    settleAsync(paymentHeader, detectedVersion);
   }
 
 }).listen(PORT, () => {
-  console.log(`[okx-payment-proxy] :${PORT} → x402 v2 (eip155:196)`);
-  console.log(`[okx-payment-proxy] resource=${RESOURCE}`);
-  console.log(`[okx-payment-proxy] upstream=${UPSTREAM_URL}`);
-  console.log(`[okx-payment-proxy] okx-api=${OKX_API_KEY ? 'configured' : 'MISSING — falling back to local EIP-712'}`);
+  console.log(`[proxy] :${PORT} ready — x402 v2, eip155:196`);
+  console.log(`[proxy] resource=${RESOURCE}`);
+  console.log(`[proxy] upstream=${UPSTREAM_URL}`);
+  console.log(`[proxy] okx-api=${OKX_API_KEY ? 'configured' : 'NOT SET — local EIP-712 only'}`);
 });
