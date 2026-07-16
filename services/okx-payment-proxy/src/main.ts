@@ -4,18 +4,17 @@
  * Correct flow (buyer-safe):
  *   1. Unpaid request  → 402 + PAYMENT-REQUIRED header (base64 challenge JSON)
  *   2. Buyer replays with PAYMENT-SIGNATURE (v2) or X-PAYMENT (v1) header
- *   3. Verify signature — OKX API primary, local EIP-712 fallback
+ *   3. Verify via OKX broker API — NO local fallback (local sig ≠ OKX settlement)
  *   4. Forward to agent-service — get response BEFORE settling
  *   5. If upstream returns 2xx → settle on-chain → return 200 to buyer
  *   6. If upstream fails → NO settle → buyer keeps their money, we return 503
  *
  * This order guarantees: buyer only loses USDT if we successfully deliver.
- * Never capture payment for a 502/503.
+ * Never capture payment for a 502/503. Never mint an agent without OKX verification.
  */
 
 import * as http   from 'node:http';
 import * as crypto from 'node:crypto';
-import { verifyTypedData } from 'viem';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -39,26 +38,6 @@ const OKX_SETTLE_PATH = '/api/v6/pay/x402/settle';
 
 // Upstream health URL — used for keep-warm pings and pre-flight check
 const UPSTREAM_HEALTH = UPSTREAM_URL.replace('/okx/create-agent', '/health');
-
-// ── EIP-712 domain for USD₮0 on X Layer ──────────────────────────────────────
-
-const EIP3009_DOMAIN = {
-  name:              'USD₮0',
-  version:           '1',
-  chainId:           196,
-  verifyingContract: ASSET as `0x${string}`,
-} as const;
-
-const EIP3009_TYPES = {
-  TransferWithAuthorization: [
-    { name: 'from',        type: 'address' },
-    { name: 'to',          type: 'address' },
-    { name: 'value',       type: 'uint256' },
-    { name: 'validAfter',  type: 'uint256' },
-    { name: 'validBefore', type: 'uint256' },
-    { name: 'nonce',       type: 'bytes32' },
-  ],
-} as const;
 
 // ── Nonce cache — idempotency ─────────────────────────────────────────────────
 
@@ -142,36 +121,6 @@ async function verifyViaOkx(raw: string, ver: 1 | 2): Promise<void> {
   if (!d.isValid) throw new Error(`Payment invalid: ${d.invalidReason ?? d.invalidMessage ?? 'rejected'}`);
 }
 
-async function verifyLocal(raw: string): Promise<string> {
-  const p = decodeHeader(raw);
-  const { authorization: a, signature: sig } = p.payload ?? {};
-  if (!a || !sig) throw new Error('Payment payload missing authorization or signature');
-
-  if (a.to.toLowerCase() !== PAY_TO.toLowerCase())
-    throw new Error(`payTo mismatch: expected ${PAY_TO}, got ${a.to}`);
-  if (BigInt(a.value) < BigInt(AMOUNT))
-    throw new Error(`Amount too low: got ${a.value}, need ${AMOUNT}`);
-  if (BigInt(a.validBefore) * 1000n < BigInt(Date.now()))
-    throw new Error('Payment authorization expired');
-
-  const ok = await verifyTypedData({
-    address:     a.from as `0x${string}`,
-    domain:      EIP3009_DOMAIN,
-    types:       EIP3009_TYPES,
-    primaryType: 'TransferWithAuthorization',
-    message: {
-      from:        a.from         as `0x${string}`,
-      to:          a.to           as `0x${string}`,
-      value:       BigInt(a.value),
-      validAfter:  BigInt(a.validAfter ?? 0),
-      validBefore: BigInt(a.validBefore),
-      nonce:       a.nonce        as `0x${string}`,
-    },
-    signature: sig as `0x${string}`,
-  });
-  if (!ok) throw new Error('EIP-712 signature invalid');
-  return a.nonce;
-}
 
 // ── Settle ────────────────────────────────────────────────────────────────────
 // Called ONLY after upstream returns 2xx — never before delivery is confirmed.
@@ -299,29 +248,31 @@ http.createServer(async (req, res) => {
     return;
   }
 
-  // ── Step 1: Verify signature ──────────────────────────────────────────────
-  try {
-    if (OKX_API_KEY && OKX_API_SECRET) {
-      try {
-        await verifyViaOkx(payHdr, ver);
-        console.log('[proxy] OKX verify ok');
-      } catch (e: unknown) {
-        console.warn('[proxy] OKX verify failed, trying local EIP-712:', (e as Error).message);
-        nonce = await verifyLocal(payHdr);
-        console.log('[proxy] local verify ok');
-      }
-    } else {
-      nonce = await verifyLocal(payHdr);
-      console.log('[proxy] local verify ok (no OKX creds)');
-    }
-  } catch (e: unknown) {
-    const msg = (e as Error).message ?? 'Payment verification failed';
-    console.error('[proxy] verify rejected:', msg);
-    res.statusCode = 402;
+  // ── Step 1: Verify via OKX API — required, no fallback ──────────────────
+  // Local EIP-712 is intentionally removed: a valid local signature does NOT
+  // mean OKX will settle on-chain. Bypassing OKX verify = free agents.
+  if (!OKX_API_KEY || !OKX_API_SECRET) {
+    console.error('[proxy] OKX API credentials not configured — cannot verify payment');
+    res.statusCode = 503;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ error: msg }));
+    res.end(JSON.stringify({ error: 'Payment service misconfigured' }));
     return;
   }
+  try {
+    await verifyViaOkx(payHdr, ver);
+    console.log('[proxy] OKX verify ok');
+  } catch (e: unknown) {
+    const msg = (e as Error).message ?? 'Payment verification failed';
+    // Distinguish OKX API being down vs payment actively rejected
+    const isNetworkError = msg.includes('fetch failed') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT');
+    console.error(`[proxy] OKX verify ${isNetworkError ? 'unreachable' : 'rejected'}:`, msg);
+    res.statusCode = isNetworkError ? 503 : 402;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: isNetworkError ? 'Payment verification service unavailable — please retry' : msg }));
+    return;
+  }
+  // Extract nonce for idempotency cache after verify passes
+  try { nonce = decodeHeader(payHdr).payload?.authorization?.nonce; } catch { /* ok */ }
 
   // ── Step 2: Forward to upstream FIRST — before any settlement ────────────
   // If upstream is down, we return 503 and buyer keeps their money.
