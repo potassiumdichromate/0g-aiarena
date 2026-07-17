@@ -30,9 +30,10 @@ export interface ZeroGConfig {
   computeBaseUrl: string;
   computeApiKey: string;         // Format: sk-xxxx (from pc.0g.ai Dashboard)
 
-  // 0G Compute — default models (source: pc.0g.ai/api-reference)
-  // Chat:   deepseek/deepseek-chat-v3-0324 | qwen/qwen3-vl-30b-a3b-instruct |
-  //         qwen3.6-plus | zai-org/GLM-5-FP8 | zai-org/GLM-5.1-FP8
+  // 0G Compute — default models (source: pc.0g.ai/models — model IDs are the
+  // bare slug shown on each model's detail page, e.g. pc.0g.ai/models/glm-5.1,
+  // NOT the old OpenRouter-style "provider/model" form some past defaults used)
+  // Chat:   glm-5.1 | deepseek-v4-pro | deepseek-v4-flash | qwen3.7-max
   // Image:  z-image
   // Audio:  openai/whisper-large-v3
   modelChat: string;
@@ -90,7 +91,7 @@ export function getZeroGConfig(): ZeroGConfig {
     computeBaseUrl:     process.env.ZEROG_COMPUTE_BASE_URL ?? 'https://router-api.0g.ai/v1',
     computeApiKey:      process.env.ZEROG_COMPUTE_API_KEY  ?? '',
 
-    modelChat:          process.env.ZEROG_MODEL_CHAT  ?? 'deepseek/deepseek-chat-v3-0324',
+    modelChat:          process.env.ZEROG_MODEL_CHAT  ?? 'glm-5.1',
     modelImage:         process.env.ZEROG_MODEL_IMAGE ?? 'z-image',
     modelAudio:         process.env.ZEROG_MODEL_AUDIO ?? 'openai/whisper-large-v3',
     verifyTee:          process.env.ZEROG_VERIFY_TEE === 'true',

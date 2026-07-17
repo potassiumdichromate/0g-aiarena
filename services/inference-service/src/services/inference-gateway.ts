@@ -424,7 +424,7 @@ export class InferenceGateway {
       distanceCovered: number;
     }>;
   }): Promise<{ commentary: string; teeVerified?: boolean | null }> {
-    const model    = process.env.ZEROG_COMMENTARY_MODEL ?? 'zai-org/GLM-4-9B';
+    const model    = process.env.ZEROG_COMMENTARY_MODEL ?? 'glm-5.1';
     const gameName = params.gameName ?? 'AI Arena';
 
     const winnerStats = params.playerStats?.[params.winnerName]
@@ -512,7 +512,7 @@ Write the commentary paragraph now:`;
     circuitName?: string | null;
     latestSeasonStanding?: { position: number; points: number; wins: number; season: number } | null;
   }): Promise<{ prediction: string }> {
-    const model = process.env.ZEROG_COMMENTARY_MODEL ?? 'zai-org/GLM-4-9B';
+    const model = process.env.ZEROG_COMMENTARY_MODEL ?? 'glm-5.1';
 
     const teamHistoryLine = (params.teamHistory ?? [])
       .slice(0, 6)
