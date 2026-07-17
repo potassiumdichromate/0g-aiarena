@@ -71,24 +71,29 @@ export async function f1Routes(app: FastifyInstance): Promise<void> {
   );
 
   // POST /v1/f1/races/:raceId/pick — "Make a pick". agentId must belong to the caller.
+  // market: "WINNER" | "PODIUM" | "FASTEST_LAP" (defaults to WINNER) -- one
+  // pick per market per race per agent, so a player can pick different
+  // drivers for different markets on the same race.
   app.post(
     '/races/:raceId/pick',
     { onRequest: [jwtMiddleware(app)] },
     async (req, reply) => {
       const { raceId } = req.params as { raceId: string };
-      const { agentId, driverId, reasoning } = req.body as { agentId: string; driverId: string; reasoning?: string };
+      const { agentId, driverId, market, reasoning } = req.body as {
+        agentId: string; driverId: string; market?: 'WINNER' | 'PODIUM' | 'FASTEST_LAP'; reasoning?: string;
+      };
       if (!agentId || !driverId) return reply.status(400).send({ error: 'agentId and driverId are required' });
 
-      const pick = await f1DataService.makePick(raceId, agentId, driverId, reasoning);
+      const pick = await f1DataService.makePick(raceId, agentId, driverId, market ?? 'WINNER', reasoning);
       return { pick };
     },
   );
 
-  // GET /v1/f1/races/:raceId/pick/:agentId — read back an agent's current pick.
+  // GET /v1/f1/races/:raceId/pick/:agentId — read back all of an agent's picks for a race (one per market).
   app.get('/races/:raceId/pick/:agentId', async (req) => {
     const { raceId, agentId } = req.params as { raceId: string; agentId: string };
-    const pick = await f1DataService.getPick(raceId, agentId);
-    return { pick };
+    const picks = await f1DataService.getPicks(raceId, agentId);
+    return { picks };
   });
 
   // POST /v1/f1/sync — admin/ops trigger to (re)pull teams/drivers/races from API-SPORTS.

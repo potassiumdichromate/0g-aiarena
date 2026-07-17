@@ -1,4 +1,4 @@
-import { prisma, F1RaceStatus, Prisma } from '@ai-arena/db-client';
+import { prisma, F1RaceStatus, F1PredictionMarket, Prisma } from '@ai-arena/db-client';
 import { NotFoundError, ConflictError } from '../lib/errors';
 
 /**
@@ -257,7 +257,7 @@ class F1DataService {
     return { position: row.position, points: row.points, wins: row.wins, season: row.season };
   }
 
-  async makePick(raceId: string, agentId: string, predictedDriverId: string, reasoning?: string) {
+  async makePick(raceId: string, agentId: string, predictedDriverId: string, market: F1PredictionMarket = 'WINNER', reasoning?: string) {
     const [race, driver] = await Promise.all([
       prisma.f1Race.findUnique({ where: { id: raceId } }),
       prisma.f1Driver.findUnique({ where: { id: predictedDriverId } }),
@@ -267,15 +267,16 @@ class F1DataService {
     if (race.status !== 'SCHEDULED') throw new ConflictError('picks are only open while the race is scheduled');
 
     return prisma.f1Prediction.upsert({
-      where: { raceId_agentId: { raceId, agentId } },
-      create: { raceId, agentId, predictedDriverId, reasoning },
+      where: { raceId_agentId_market: { raceId, agentId, market } },
+      create: { raceId, agentId, market, predictedDriverId, reasoning },
       update: { predictedDriverId, reasoning },
     });
   }
 
-  async getPick(raceId: string, agentId: string) {
-    return prisma.f1Prediction.findUnique({
-      where: { raceId_agentId: { raceId, agentId } },
+  /** All of an agent's picks for a race, one per market (Winner/Podium/Fastest Lap). */
+  async getPicks(raceId: string, agentId: string) {
+    return prisma.f1Prediction.findMany({
+      where: { raceId, agentId },
       include: { predictedDriver: true },
     });
   }

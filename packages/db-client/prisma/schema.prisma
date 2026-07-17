@@ -1008,21 +1008,28 @@ model F1Race {
 
 /// A single agent's pick for who wins a given race session (the "Race" type
 /// session, not qualifying/practice). One pick per agent per race.
+enum F1PredictionMarket {
+  WINNER
+  PODIUM
+  FASTEST_LAP
+}
+
 model F1Prediction {
-  id                String    @id @default(uuid())
+  id                String             @id @default(uuid())
   raceId            String
   agentId           String
+  market            F1PredictionMarket @default(WINNER)
   predictedDriverId String
   reasoning         String?
   isCorrect         Boolean?
   settledAt         DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   race            F1Race   @relation(fields: [raceId], references: [id])
   predictedDriver F1Driver @relation(fields: [predictedDriverId], references: [id])
 
-  @@unique([raceId, agentId])
+  @@unique([raceId, agentId, market])
   @@index([agentId])
 }
 
