@@ -1025,3 +1025,62 @@ model F1Prediction {
   @@unique([raceId, agentId])
   @@index([agentId])
 }
+
+// ── F1 historical data (Jolpica) ────────────────────────────────────────
+//
+// Real-world historical results/standings -- the "driver historical form"
+// backbone described in docs/league/F1_PREDICTION_ENGINE_PLAN.md. Distinct
+// from F1Race/F1Driver above (which track the live/current-season race
+// weekend from API-SPORTS): this is REAL past-season data (2018-2025) used
+// to compute recency-weighted form features, independent of whatever the
+// "current" simulated date is. driverCode/code are Jolpica's own identifiers
+// (slug + 3-letter), stored alongside rather than joined to F1Driver.id,
+// since the two providers don't share a key and matching by name/code is a
+// feature-computation-time concern, not a storage-time one.
+
+model F1RaceResult {
+  id              String   @id @default(uuid())
+  season          Int
+  round           Int
+  raceName        String
+  circuitId       String // Jolpica circuit slug, e.g. "spa"
+  raceDate        DateTime
+  driverCode      String // Jolpica driverId slug, e.g. "norris"
+  driverAbbr      String? // 3-letter code, e.g. "NOR" -- for joining to F1Driver.abbr
+  driverName      String
+  constructorId   String
+  constructorName String
+  grid            Int?
+  finishPosition  Int?
+  points          Float
+  status          String // "Finished", "+1 Lap", "Retired", "Accident", ...
+  laps            Int?
+  fastestLapRank  Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([season, round, driverCode])
+  @@index([driverCode, season])
+  @@index([season, round])
+}
+
+/// Standings AS OF a given round -- the point-in-time snapshot needed for a
+/// correct "driver_championship_position_before_race" feature (standings
+/// after round N are what's known before round N+1 starts).
+model F1SeasonStanding {
+  id            String   @id @default(uuid())
+  season        Int
+  round         Int
+  driverCode    String
+  driverAbbr    String?
+  driverName    String
+  constructorId String
+  position      Int
+  points        Float
+  wins          Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([season, round, driverCode])
+  @@index([driverCode, season])
+}

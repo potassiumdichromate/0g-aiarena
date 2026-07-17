@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { jwtMiddleware } from '../middleware/jwt.middleware';
 import { f1DataService, BELGIUM_GRAND_PRIX_ID, DEFAULT_SEASON } from '../services/f1-data.service';
+import { jolpicaDataService } from '../services/jolpica-data.service';
 
 const INFERENCE_SERVICE_URL = process.env.INFERENCE_SERVICE_URL ?? 'http://localhost:8013';
 
@@ -109,5 +110,35 @@ export async function f1Routes(app: FastifyInstance): Promise<void> {
       (err) => console.error('[F1 sync] failed:', err),
     );
     return reply.status(202).send({ status: 'sync started — throttled to the API rate limit, expect a few minutes; check logs or GET /v1/f1/drivers for progress' });
+  });
+
+  // POST /v1/f1/sync-historical — pulls one real season's results + point-in-time
+  // standings from Jolpica (docs/league/F1_PREDICTION_ENGINE_PLAN.md §9 Step 1).
+  // Real historical data (2018-2025), independent of the API-SPORTS current-season
+  // sync above. Same auth/fire-and-forget pattern -- ~2 calls per round, still
+  // takes a minute or two for a full season.
+  app.post('/sync-historical', async (req, reply) => {
+    const serviceKey = req.headers['x-service-key'];
+    if (serviceKey !== process.env.INTERNAL_SERVICE_SECRET) {
+      return reply.status(401).send({ error: 'Unauthorized' });
+    }
+    const { season } = (req.body ?? {}) as { season?: number };
+    if (!season) return reply.status(400).send({ error: 'season is required, e.g. { "season": 2025 }' });
+
+    jolpicaDataService.syncSeason(season).then(
+      (result) => console.info(`[Jolpica sync ${season}] completed:`, result),
+      (err) => console.error(`[Jolpica sync ${season}] failed:`, err),
+    );
+    return reply.status(202).send({ status: `historical sync started for season ${season} — check logs for progress` });
+  });
+
+  // GET /v1/f1/drivers/jolpica/:driverCode/form — recency-weighted recent-form
+  // features for one driver (Jolpica's driverId slug, e.g. "norris"), computed
+  // from stored F1RaceResult rows.
+  app.get('/drivers/jolpica/:driverCode/form', async (req, reply) => {
+    const { driverCode } = req.params as { driverCode: string };
+    const form = await jolpicaDataService.getDriverForm(driverCode);
+    if (!form) return reply.status(404).send({ error: 'no historical results found for this driver — run POST /v1/f1/sync-historical first' });
+    return { form };
   });
 }
