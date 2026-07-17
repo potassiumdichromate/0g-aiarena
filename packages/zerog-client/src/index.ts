@@ -10,6 +10,7 @@ export type {
   LeaguePredictionToolArgs,
   PolymarketSignalToolArgs,
   F1RacePickToolArgs,
+  F1FantasyDraftToolArgs,
   ImageGenerationResult,
   AudioTranscriptionResult,
   ZeroGTrace,

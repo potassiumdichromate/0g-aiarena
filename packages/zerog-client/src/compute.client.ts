@@ -98,6 +98,12 @@ export interface F1RacePickToolArgs {
   reasoning: string;
 }
 
+export interface F1FantasyDraftToolArgs {
+  driverId: string;
+  teamName: string;
+  reasoning: string;
+}
+
 export interface ImageGenerationResult {
   base64: string;          // b64_json (only format 0G currently supports)
   mimeType: 'image/png';
@@ -416,6 +422,74 @@ Analyse the battle context and opponent profile, then produce a structured strat
     }
 
     throw new Error('No parseable F1 race pick in 0G Compute response');
+  }
+
+  // ── Inference: F1 Fantasy Draft ──────────────────────────────────────────────
+
+  /**
+   * Force the model to draft a fantasy team by naming one driver from the
+   * grid and inventing a team name -- the driver's own real constructor is
+   * used as the fantasy team's constructor (kept consistent server-side,
+   * not left to the model to pair up).
+   */
+  async inferF1FantasyDraft(
+    systemPrompt: string,
+    userPrompt: string,
+    driverIds: string[],
+    opts: { maxTokens?: number; temperature?: number } = {},
+  ): Promise<F1FantasyDraftToolArgs> {
+    const tool: OpenAI.Chat.ChatCompletionTool = {
+      type: 'function',
+      function: {
+        name: 'submit_f1_fantasy_draft',
+        description: 'Draft a fantasy F1 team by naming exactly one driver from the current grid and a team name.',
+        parameters: {
+          type: 'object',
+          properties: {
+            driverId: {
+              type: 'string',
+              enum: driverIds,
+              description: 'The internal id of the driver you are drafting onto the fantasy team.',
+            },
+            teamName: { type: 'string', description: 'A short, punchy fantasy team name.' },
+            reasoning: { type: 'string', description: 'One or two sentences grounded in the real stats provided.' },
+          },
+          required: ['driverId', 'teamName', 'reasoning'],
+          additionalProperties: false,
+        },
+      },
+    };
+
+    const response = await (this.openai.chat.completions.create as Function)({
+      model: this.config.modelChat,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: opts.maxTokens ?? 400,
+      temperature: opts.temperature ?? 0.8,
+      tools: [tool],
+      tool_choice: { type: 'function', function: { name: 'submit_f1_fantasy_draft' } },
+      ...(this.config.verifyTee && { verify_tee: true }),
+      ...(this.buildProviderField() && { provider: this.buildProviderField() }),
+    }) as ZeroGChatCompletion;
+
+    const toolCall = response.choices[0]?.message?.tool_calls?.[0];
+    const content = response.choices[0]?.message?.content ?? '';
+
+    if (toolCall?.function?.arguments) {
+      try {
+        return parseToolArguments<F1FantasyDraftToolArgs>(toolCall.function.arguments);
+      } catch {
+        // fall through to content extraction
+      }
+    }
+
+    if (content) {
+      return parseToolArguments<F1FantasyDraftToolArgs>(content);
+    }
+
+    throw new Error('No parseable F1 fantasy draft in 0G Compute response');
   }
 
   // ── Agent Personality Generation ──────────────────────────────────────────

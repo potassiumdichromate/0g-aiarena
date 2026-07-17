@@ -622,6 +622,35 @@ Pick the single most likely driver and explain why in 1-2 sentences.`;
   }
 
   /**
+   * F1 League — "AI drafts my fantasy team" flow. Names one driver from the
+   * grid via tool_choice; the fantasy team's constructor is set server-side
+   * to that driver's real current team (league-service), not chosen
+   * independently by the model, so driver/constructor can never mismatch.
+   */
+  async generateF1FantasyDraft(params: {
+    season: number;
+    driverIds: string[];
+    driverLines: string;
+  }): Promise<{ driverId: string; teamName: string; reasoning: string; source: 'AI' | 'FALLBACK' }> {
+    const systemPrompt = `You are a sharp, data-driven Formula 1 fantasy analyst. Given the real ${params.season} season grid below, draft the single driver you'd build a fantasy team around, and give the team a short punchy name. Ground your pick in the real standings data -- no generic hype.`;
+    const userPrompt = `DRIVERS\n${params.driverLines}\n\nDraft your fantasy pick.`;
+
+    try {
+      const result = await this.compute.inferF1FantasyDraft(systemPrompt, userPrompt, params.driverIds);
+      return { ...result, source: 'AI' };
+    } catch (err) {
+      console.error('[InferenceGateway] F1 fantasy draft inference failed, using fallback:', err);
+      const pick = params.driverIds[0];
+      return {
+        driverId: pick,
+        teamName: 'Fallback Racing',
+        reasoning: 'AI draft was unavailable -- defaulted to the first driver on the current grid.',
+        source: 'FALLBACK',
+      };
+    }
+  }
+
+  /**
    * Check 0G Compute account balance (neuron units).
    * 1e18 neuron = 1 0G token. Alert if below threshold.
    */

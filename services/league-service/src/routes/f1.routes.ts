@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { jwtMiddleware } from '../middleware/jwt.middleware';
 import { f1DataService, BELGIUM_GRAND_PRIX_ID, DEFAULT_SEASON } from '../services/f1-data.service';
 import { jolpicaDataService } from '../services/jolpica-data.service';
+import { f1FantasyService } from '../services/f1-fantasy.service';
 
 const INFERENCE_SERVICE_URL = process.env.INFERENCE_SERVICE_URL ?? 'http://localhost:8013';
 
@@ -161,5 +162,61 @@ export async function f1Routes(app: FastifyInstance): Promise<void> {
     const form = await jolpicaDataService.getDriverForm(driverCode);
     if (!form) return reply.status(404).send({ error: 'no historical results found for this driver — run POST /v1/f1/sync-historical first' });
     return { form };
+  });
+
+  // ── Fantasy League ─────────────────────────────────────────────────────────
+  // AI drafts one driver + their real constructor per agent per season; once
+  // races complete, real classification data (below) accumulates points onto
+  // each team; GET /fantasy/leaderboard ranks them.
+
+  // POST /v1/f1/fantasy/draft — "AI drafts my team". One team per agent per
+  // season; re-drafting overwrites the previous pick.
+  app.post(
+    '/fantasy/draft',
+    { onRequest: [jwtMiddleware(app)], config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const { agentId, season } = req.body as { agentId: string; season?: number };
+      if (!agentId) return reply.status(400).send({ error: 'agentId is required' });
+      const team = await f1FantasyService.draftTeam(agentId, season ?? DEFAULT_SEASON);
+      return { team };
+    },
+  );
+
+  // GET /v1/f1/fantasy/team/:agentId — read back an agent's fantasy team for a season.
+  app.get('/fantasy/team/:agentId', async (req) => {
+    const { agentId } = req.params as { agentId: string };
+    const { season } = req.query as { season?: string };
+    const team = await f1FantasyService.getTeam(agentId, season ? parseInt(season, 10) : DEFAULT_SEASON);
+    return { team };
+  });
+
+  // GET /v1/f1/fantasy/leaderboard — real-points-only ranking for a season.
+  app.get('/fantasy/leaderboard', async (req) => {
+    const { season } = req.query as { season?: string };
+    const teams = await f1FantasyService.getLeaderboard(season ? parseInt(season, 10) : DEFAULT_SEASON);
+    return { teams };
+  });
+
+  // POST /v1/f1/fantasy/races/:raceId/sync-classification — pulls real
+  // per-driver results for one COMPLETED race from the provider. Ops/admin,
+  // same X-Service-Key gate as /sync.
+  app.post('/fantasy/races/:raceId/sync-classification', async (req, reply) => {
+    const serviceKey = req.headers['x-service-key'];
+    if (serviceKey !== process.env.INTERNAL_SERVICE_SECRET) return reply.status(401).send({ error: 'Unauthorized' });
+
+    const { raceId } = req.params as { raceId: string };
+    const result = await f1FantasyService.syncRaceClassification(raceId);
+    return result;
+  });
+
+  // POST /v1/f1/fantasy/races/:raceId/score — applies a COMPLETED race's
+  // synced classification to every fantasy team for that season. Idempotent.
+  app.post('/fantasy/races/:raceId/score', async (req, reply) => {
+    const serviceKey = req.headers['x-service-key'];
+    if (serviceKey !== process.env.INTERNAL_SERVICE_SECRET) return reply.status(401).send({ error: 'Unauthorized' });
+
+    const { raceId } = req.params as { raceId: string };
+    const result = await f1FantasyService.scoreRace(raceId);
+    return result;
   });
 }

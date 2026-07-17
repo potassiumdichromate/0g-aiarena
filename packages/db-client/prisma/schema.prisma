@@ -953,7 +953,8 @@ model F1Team {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  drivers F1Driver[]
+  drivers      F1Driver[]
+  fantasyTeams F1FantasyTeam[]
 }
 
 model F1Driver {
@@ -975,8 +976,10 @@ model F1Driver {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  currentTeam F1Team?        @relation(fields: [currentTeamId], references: [id])
-  predictions F1Prediction[]
+  currentTeam     F1Team?                 @relation(fields: [currentTeamId], references: [id])
+  predictions     F1Prediction[]
+  fantasyTeams    F1FantasyTeam[]
+  classifications F1RaceClassification[]
 
   @@index([currentTeamId])
 }
@@ -1000,7 +1003,8 @@ model F1Race {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  predictions F1Prediction[]
+  predictions     F1Prediction[]
+  classifications F1RaceClassification[]
 
   @@index([grandPrixId, season])
   @@index([status, startsAt])
@@ -1031,6 +1035,65 @@ model F1Prediction {
 
   @@unique([raceId, agentId, market])
   @@index([agentId])
+}
+
+/// One AI-drafted fantasy roster per agent per season: a driver + their
+/// constructor. Accumulates points from real F1RaceClassification rows as
+/// races complete -- no fabricated or simulated scoring, only real results.
+model F1FantasyTeam {
+  id            String   @id @default(uuid())
+  agentId       String
+  season        Int
+  name          String // AI-generated team name
+  driverId      String
+  constructorId String
+  reasoning     String?
+  totalPoints   Float    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  driver      F1Driver          @relation(fields: [driverId], references: [id])
+  constructor F1Team            @relation(fields: [constructorId], references: [id])
+  scores      F1FantasyScore[]
+
+  @@unique([agentId, season])
+  @@index([season, totalPoints])
+}
+
+/// Real per-driver result for one completed race session, pulled from the
+/// provider's per-race classification endpoint (GET /rankings/races?race=).
+/// This is the ground truth F1FantasyScore is computed from.
+model F1RaceClassification {
+  id         String   @id @default(uuid())
+  raceId     String
+  driverId   String
+  position   Int?
+  points     Float    @default(0)
+  fastestLap Boolean  @default(false)
+  status     String // "Finished", "DNF", "DSQ", etc. (provider label)
+  createdAt  DateTime @default(now())
+
+  race   F1Race   @relation(fields: [raceId], references: [id])
+  driver F1Driver @relation(fields: [driverId], references: [id])
+
+  @@unique([raceId, driverId])
+  @@index([raceId])
+}
+
+/// One fantasy team's points earned from one specific completed race --
+/// keeps a per-race audit trail behind F1FantasyTeam.totalPoints.
+model F1FantasyScore {
+  id           String   @id @default(uuid())
+  teamId       String
+  raceId       String
+  pointsEarned Float
+  /// { driverFinishPosition, driverPoints, fastestLapBonus } -- how the total was derived.
+  breakdown    Json?
+  createdAt    DateTime @default(now())
+
+  team F1FantasyTeam @relation(fields: [teamId], references: [id])
+
+  @@unique([teamId, raceId])
 }
 
 // ── F1 historical data (Jolpica) ────────────────────────────────────────

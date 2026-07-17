@@ -106,6 +106,22 @@ export async function inferenceRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * POST /v1/inference/f1-fantasy-draft
+   *
+   * F1 League "AI drafts my fantasy team" flow -- names one driver from the
+   * current grid via tool_choice, plus a team name. Called by
+   * league-service's fantasy draft endpoint.
+   */
+  app.post('/f1-fantasy-draft', async (req, reply) => {
+    const body = req.body as { season: number; driverIds: string[]; driverLines: string };
+    if (!body?.season || !Array.isArray(body?.driverIds) || body.driverIds.length === 0 || !body?.driverLines) {
+      return reply.status(400).send({ error: 'season, a non-empty driverIds array, and driverLines are required' });
+    }
+    const result = await gateway.generateF1FantasyDraft(body);
+    return result;
+  });
+
+  /**
    * POST /v1/inference/battle-commentary
    *
    * Generate a dramatic battle commentary paragraph via 0G Compute.
