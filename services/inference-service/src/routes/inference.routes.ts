@@ -89,6 +89,23 @@ export async function inferenceRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
+   * POST /v1/inference/f1-race-pick
+   *
+   * F1 League "Let AI Predict" pick flow -- forces the model to name one
+   * driver from the current grid for a market (Winner/Podium/Fastest Lap)
+   * via tool_choice, rather than free-texting analysis. Called by
+   * league-service's predict-pick endpoint.
+   */
+  app.post('/f1-race-pick', async (req, reply) => {
+    const body = req.body as Parameters<InferenceGateway['generateF1RacePick']>[0];
+    if (!body?.market || !body?.grandPrixName || !Array.isArray(body?.drivers) || body.drivers.length === 0) {
+      return reply.status(400).send({ error: 'market, grandPrixName, and a non-empty drivers array are required' });
+    }
+    const result = await gateway.generateF1RacePick(body);
+    return result;
+  });
+
+  /**
    * POST /v1/inference/battle-commentary
    *
    * Generate a dramatic battle commentary paragraph via 0G Compute.

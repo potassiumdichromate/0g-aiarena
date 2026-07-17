@@ -558,6 +558,70 @@ Write it now:`;
   }
 
   /**
+   * F1 League — "Let AI Predict" pick flow. Unlike generateF1DriverPrediction
+   * (free-text analysis for one driver's popup), this forces the model to
+   * actually NAME a driver for a market (Winner / Podium / Fastest Lap) via
+   * tool_choice, so the enum can only ever resolve to a driver really in the
+   * race. Mirrors decidePolymarketSignal's structured-output pattern.
+   */
+  async generateF1RacePick(params: {
+    market: 'WINNER' | 'PODIUM' | 'FASTEST_LAP';
+    grandPrixName: string;
+    circuitName?: string | null;
+    drivers: Array<{
+      id: string;
+      name: string;
+      abbr?: string | null;
+      teamName?: string | null;
+      standing?: { position: number; points: number; wins: number; season: number } | null;
+    }>;
+  }): Promise<{ predictedDriverId: string; reasoning: string; source: 'AI' | 'FALLBACK' }> {
+    const marketQuestion: Record<typeof params.market, string> = {
+      WINNER: 'Which driver wins the race?',
+      PODIUM: 'Which driver finishes on the podium (top 3)?',
+      FASTEST_LAP: 'Which driver sets the fastest lap of the race?',
+    };
+
+    const driverLines = params.drivers
+      .map((d) => {
+        const standing = d.standing
+          ? `P${d.standing.position}, ${d.standing.points}pts, ${d.standing.wins}win(s) in ${d.standing.season}`
+          : 'no current-season standing data';
+        return `- id=${d.id} | ${d.name}${d.abbr ? ` (${d.abbr})` : ''} | ${d.teamName ?? 'unknown team'} | ${standing}`;
+      })
+      .join('\n');
+
+    const systemPrompt = `You are a sharp, data-driven Formula 1 analyst. Given the real current-season grid below, answer the question by naming exactly one driver from the list -- ground your pick in the standings data provided, no generic hype.`;
+    const userPrompt = `Grand Prix: ${params.grandPrixName}${params.circuitName ? ` (${params.circuitName})` : ''}
+Question: ${marketQuestion[params.market]}
+
+DRIVERS
+${driverLines}
+
+Pick the single most likely driver and explain why in 1-2 sentences.`;
+
+    try {
+      const result = await this.compute.inferF1RacePick(
+        systemPrompt,
+        userPrompt,
+        params.drivers.map((d) => d.id),
+      );
+      return { ...result, source: 'AI' };
+    } catch (err) {
+      console.error('[InferenceGateway] F1 race pick inference failed, using fallback:', err);
+      const ranked = [...params.drivers].sort((a, b) => (a.standing?.position ?? 99) - (b.standing?.position ?? 99));
+      const pick = ranked[0] ?? params.drivers[0];
+      return {
+        predictedDriverId: pick.id,
+        reasoning: pick.standing
+          ? `${pick.name} currently sits P${pick.standing.position} in the standings, the strongest current form on the grid.`
+          : `${pick.name} is the default pick -- no current-season standing data was available to compare drivers.`,
+        source: 'FALLBACK',
+      };
+    }
+  }
+
+  /**
    * Check 0G Compute account balance (neuron units).
    * 1e18 neuron = 1 0G token. Alert if below threshold.
    */

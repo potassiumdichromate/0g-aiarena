@@ -96,6 +96,22 @@ export async function f1Routes(app: FastifyInstance): Promise<void> {
     return { picks };
   });
 
+  // POST /v1/f1/races/:raceId/predict-pick — "Let AI Predict". The AI names the
+  // driver itself (via inference-service's tool-forced pick) and the pick is
+  // saved immediately -- no manual driver selection.
+  app.post(
+    '/races/:raceId/predict-pick',
+    { onRequest: [jwtMiddleware(app)], config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const { raceId } = req.params as { raceId: string };
+      const { agentId, market } = req.body as { agentId: string; market?: 'WINNER' | 'PODIUM' | 'FASTEST_LAP' };
+      if (!agentId) return reply.status(400).send({ error: 'agentId is required' });
+
+      const result = await f1DataService.predictPick(raceId, agentId, market ?? 'WINNER');
+      return result;
+    },
+  );
+
   // POST /v1/f1/sync — admin/ops trigger to (re)pull teams/drivers/races from API-SPORTS.
   // Gated by the same internal-service secret used elsewhere (X-Service-Key), since it
   // burns external API quota and shouldn't be publicly callable.

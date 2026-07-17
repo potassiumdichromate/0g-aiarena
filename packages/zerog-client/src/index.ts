@@ -9,6 +9,7 @@ export type {
   StrategicPlan,
   LeaguePredictionToolArgs,
   PolymarketSignalToolArgs,
+  F1RacePickToolArgs,
   ImageGenerationResult,
   AudioTranscriptionResult,
   ZeroGTrace,

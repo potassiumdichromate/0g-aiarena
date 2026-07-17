@@ -280,6 +280,48 @@ class F1DataService {
       include: { predictedDriver: true },
     });
   }
+
+  /**
+   * "Let AI Predict" -- asks the model to name a driver for a market, then
+   * saves that as the agent's pick. Grounds the model in the real current
+   * grid + live standings so it can only ever pick a driver actually racing.
+   */
+  async predictPick(raceId: string, agentId: string, market: F1PredictionMarket, season: number = DEFAULT_SEASON) {
+    const race = await prisma.f1Race.findUnique({ where: { id: raceId } });
+    if (!race) throw new NotFoundError('race not found');
+    if (race.status !== 'SCHEDULED') throw new ConflictError('picks are only open while the race is scheduled');
+
+    const drivers = await this.listDrivers(season);
+    if (drivers.length === 0) throw new ConflictError('no drivers synced yet -- run POST /v1/f1/sync first');
+
+    const inferenceServiceUrl = process.env.INFERENCE_SERVICE_URL ?? 'http://localhost:8013';
+    const res = await fetch(`${inferenceServiceUrl}/f1-race-pick`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Service-Key': process.env.INTERNAL_SERVICE_SECRET ?? '' },
+      body: JSON.stringify({
+        market,
+        grandPrixName: race.grandPrixName,
+        circuitName: race.circuitName,
+        drivers: drivers.map((d) => ({
+          id: d.id,
+          name: d.name,
+          abbr: d.abbr,
+          teamName: d.currentTeam?.name ?? null,
+          standing: d.standing,
+        })),
+      }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`inference-service f1-race-pick failed: ${text}`);
+    }
+    const { predictedDriverId, reasoning, source } = (await res.json()) as {
+      predictedDriverId: string; reasoning: string; source: 'AI' | 'FALLBACK';
+    };
+
+    const pick = await this.makePick(raceId, agentId, predictedDriverId, market, reasoning);
+    return { pick, source };
+  }
 }
 
 export const f1DataService = new F1DataService();

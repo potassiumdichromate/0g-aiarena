@@ -93,6 +93,11 @@ export interface PolymarketSignalToolArgs {
   reasoning: string;
 }
 
+export interface F1RacePickToolArgs {
+  predictedDriverId: string;
+  reasoning: string;
+}
+
 export interface ImageGenerationResult {
   base64: string;          // b64_json (only format 0G currently supports)
   mimeType: 'image/png';
@@ -344,6 +349,73 @@ Analyse the battle context and opponent profile, then produce a structured strat
     }
 
     throw new Error('No parseable Polymarket signal in 0G Compute response');
+  }
+
+  // ── Inference: F1 Race Pick ─────────────────────────────────────────────────
+
+  /**
+   * Force the model to name one driver from the current grid for a market
+   * (Winner / Podium / Fastest Lap), rather than free-texting analysis that
+   * never commits to a name. `driverIds` becomes the tool's enum, so the
+   * response can only ever be a driver actually in the race.
+   */
+  async inferF1RacePick(
+    systemPrompt: string,
+    userPrompt: string,
+    driverIds: string[],
+    opts: { maxTokens?: number; temperature?: number } = {},
+  ): Promise<F1RacePickToolArgs> {
+    const tool: OpenAI.Chat.ChatCompletionTool = {
+      type: 'function',
+      function: {
+        name: 'submit_f1_race_pick',
+        description: 'Submit a structured F1 race prediction naming exactly one driver from the current grid.',
+        parameters: {
+          type: 'object',
+          properties: {
+            predictedDriverId: {
+              type: 'string',
+              enum: driverIds,
+              description: 'The internal id of the driver you predict for this market.',
+            },
+            reasoning: { type: 'string', description: 'One or two sentences grounded in the real stats provided.' },
+          },
+          required: ['predictedDriverId', 'reasoning'],
+          additionalProperties: false,
+        },
+      },
+    };
+
+    const response = await (this.openai.chat.completions.create as Function)({
+      model: this.config.modelChat,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: opts.maxTokens ?? 400,
+      temperature: opts.temperature ?? 0.6,
+      tools: [tool],
+      tool_choice: { type: 'function', function: { name: 'submit_f1_race_pick' } },
+      ...(this.config.verifyTee && { verify_tee: true }),
+      ...(this.buildProviderField() && { provider: this.buildProviderField() }),
+    }) as ZeroGChatCompletion;
+
+    const toolCall = response.choices[0]?.message?.tool_calls?.[0];
+    const content = response.choices[0]?.message?.content ?? '';
+
+    if (toolCall?.function?.arguments) {
+      try {
+        return parseToolArguments<F1RacePickToolArgs>(toolCall.function.arguments);
+      } catch {
+        // fall through to content extraction
+      }
+    }
+
+    if (content) {
+      return parseToolArguments<F1RacePickToolArgs>(content);
+    }
+
+    throw new Error('No parseable F1 race pick in 0G Compute response');
   }
 
   // ── Agent Personality Generation ──────────────────────────────────────────
