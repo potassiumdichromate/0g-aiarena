@@ -35,6 +35,15 @@ import {
 
 const agentRepo = new AgentRepository(prisma);
 
+const COMBAT_ARCHETYPES = ['BERSERKER', 'TACTICIAN', 'SUPPORT', 'ASSASSIN', 'DEFENDER', 'HYBRID'] as const;
+type CombatArchetype = (typeof COMBAT_ARCHETYPES)[number];
+
+/** Case-insensitive match against the CombatArchetype enum; unrecognized input falls back to HYBRID. */
+function normalizeArchetype(input?: string): CombatArchetype {
+  const upper = (input ?? '').toUpperCase();
+  return (COMBAT_ARCHETYPES as readonly string[]).includes(upper) ? (upper as CombatArchetype) : 'HYBRID';
+}
+
 /** Run a promise with a timeout — rejects with TimeoutError if it takes too long. */
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
@@ -55,7 +64,8 @@ export class AgentService {
     archetype?: string;
     backstory?: string;
   }) {
-    const archetype = (params.archetype ?? 'hybrid').toLowerCase();
+    const normalizedArchetype = normalizeArchetype(params.archetype);
+    const archetype = normalizedArchetype.toLowerCase();
 
     // ── Step 1: Generate personality traits via 0G Compute ───────────────────
     let traits: Record<string, unknown> = {
@@ -150,7 +160,7 @@ export class AgentService {
       user:      { connect: { id: userId } },
       name:      params.name,
       clan:      params.clan as any,
-      archetype: (params.archetype as any) ?? 'HYBRID',
+      archetype: normalizedArchetype as any,
       traits:    traits as any,
       metadata: {
         backstory:        params.backstory ?? '',
@@ -209,7 +219,7 @@ export class AgentService {
             body: JSON.stringify({
               agentId:          agent.id,
               clan:             params.clan,
-              archetype:        params.archetype ?? 'berserker',
+              archetype,
               traits,
               metadataRootHash,
             }),
