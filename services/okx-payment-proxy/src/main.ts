@@ -117,8 +117,9 @@ async function verifyViaOkx(raw: string, ver: 1 | 2): Promise<void> {
     body:    reqBody,
   });
   if (!r.ok) throw new Error(`OKX verify ${r.status}: ${await r.text()}`);
-  const d = await r.json() as { isValid?: boolean; invalidReason?: string; invalidMessage?: string };
-  if (!d.isValid) throw new Error(`Payment invalid: ${d.invalidReason ?? d.invalidMessage ?? 'rejected'}`);
+  const resp = await r.json() as { code?: string; msg?: string; data?: { isValid?: boolean; invalidReason?: string; invalidMessage?: string } };
+  const d = resp.data ?? {};
+  if (!d.isValid) throw new Error(`Payment invalid: ${d.invalidReason ?? d.invalidMessage ?? resp.msg ?? 'rejected'}`);
 }
 
 
@@ -141,11 +142,12 @@ async function settle(raw: string, ver: 1 | 2): Promise<string> {
     headers: { 'Content-Type': 'application/json', ...okxHeaders('POST', OKX_SETTLE_PATH, reqBody) },
     body:    reqBody,
   });
-  const d = await r.json() as { status?: string; transaction?: string; errorReason?: string };
+  const resp = await r.json() as { code?: string; msg?: string; data?: { status?: string; transaction?: string; errorReason?: string } };
+  const d = resp.data ?? {};
   if (!r.ok || d.status === 'failed') {
     // Settle failed after we already delivered — log but do NOT fail the response,
     // the buyer got their agent. This is our revenue loss, not their problem.
-    console.error('[proxy] settle failed after delivery (buyer was not charged twice):', d.errorReason ?? JSON.stringify(d));
+    console.error('[proxy] settle failed after delivery (buyer was not charged twice):', d.errorReason ?? resp.msg ?? JSON.stringify(resp));
     return '';
   }
   console.log(`[proxy] settle ok tx=${d.transaction ?? 'n/a'} status=${d.status}`);
