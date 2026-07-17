@@ -24,6 +24,7 @@ import {
   generateFallbackPrediction,
   generateFallbackSignal,
   normalizeTraits,
+  seededRandom,
   AgentTraitVector,
   LeagueTribe,
   LeagueStage,
@@ -118,6 +119,32 @@ ${ctx.stage !== 'GROUP' ? 'This is a knockout match — your prediction must pic
 Predict the winner, the final score, and your conviction level. Submit your prediction using the tool.`;
 }
 
+/**
+ * Deterministic-but-varied fallback driver pick used when the AI call fails.
+ * Seeded off agentId+context so the SAME agent always gets the SAME fallback
+ * for the same race/market (stable across retries/re-renders), but DIFFERENT
+ * agents land on different drivers -- weighted toward the front of the grid
+ * (a fallback shouldn't hand out a backmarker) without collapsing every
+ * agent onto the single points leader the way an unweighted "always pick #1"
+ * fallback does.
+ */
+function pickFallbackDriver<T extends { id: string; name: string; standing?: { position: number } | null }>(
+  agentId: string,
+  context: string,
+  drivers: T[],
+): { predictedDriverId: string; reasoning: string } {
+  const ranked = [...drivers].sort((a, b) => (a.standing?.position ?? 99) - (b.standing?.position ?? 99));
+  const pool = ranked.slice(0, Math.min(5, ranked.length));
+  const rng = seededRandom(`${agentId}:${context}`);
+  const pick = pool[Math.floor(rng() * pool.length)] ?? ranked[0] ?? drivers[0];
+  return {
+    predictedDriverId: pick.id,
+    reasoning: pick.standing
+      ? `${pick.name} is a strong current-form pick (P${pick.standing.position} in the standings) -- AI prediction was unavailable, so this is a fallback.`
+      : `${pick.name} was picked as a fallback -- AI prediction was unavailable and no standing data was available to compare drivers.`,
+  };
+}
+
 function buildMarketPrompt(ctx: MarketContext): string {
   return `Prediction market question: "${ctx.question}"${ctx.category ? `\nCategory: ${ctx.category}` : ''}
 Give your read: will this resolve YES or NO? Submit your signal, confidence, and reasoning using the tool.`;
@@ -185,6 +212,41 @@ embracing chaos — wildcard reasoning, gut feeling over logic. Your
 reasoning should feel unpredictable and a little unhinged, but the
 signal/confidence fields must still be internally consistent. Agent
 traits: ${JSON.stringify(traits)}.`,
+};
+
+/**
+ * Same 4 tribe personas, rephrased for F1 driver picks. Without this,
+ * generateF1RacePick/generateF1FantasyDraft gave every agent the exact same
+ * generic "sharp analyst" system prompt over the exact same driver list --
+ * a competent model rationally converges on the same answer (the current
+ * points leader) for every agent every time. This is what actually made
+ * "every agent picks the same driver" true, independent of the earlier
+ * stale-model-id issue.
+ */
+export const F1_TRIBE_SYSTEM_PROMPTS: Record<LeagueTribe, (traits: AgentTraitVector) => string> = {
+  NEXUS_01: (traits) => `You are Nexus-01, a Statistician. You read Formula 1 grids using cold,
+numerical reasoning -- standings position, points gap, and win count.
+Never use emotional language. Only back a driver other than the points
+leader when the numbers give a specific, stateable edge to someone else.
+Agent traits: ${JSON.stringify(traits)}.`,
+
+  SHADOW_9: (traits) => `You are Shadow-9, the Villain. You read Formula 1 grids with cynicism and
+a taste for chaos. You enjoy backing a driver behind the points leader and
+frame your reasoning as daring the favorite to prove you wrong. Lean
+toward naming an underdog when the case is even plausible. Agent traits:
+${JSON.stringify(traits)}.`,
+
+  ATHENA: (traits) => `You are Athena, the Oracle. You read Formula 1 grids with calm, principled
+authority -- as if the outcome were foretold. Your reasoning is short,
+declarative, and confident. You're comfortable naming a driver outside
+the top of the standings when their recent form clearly justifies it, not
+just the season points leader by default. Agent traits: ${JSON.stringify(traits)}.`,
+
+  VOIDWALKER: (traits) => `You are Voidwalker, the Madman. You read Formula 1 grids by embracing
+chaos -- wildcard picks, gut feeling over the obvious favorite. Your
+reasoning should feel unpredictable, but the driver you name must still
+be a real, defensible pick from the grid provided. Agent traits:
+${JSON.stringify(traits)}.`,
 };
 
 export class InferenceGateway {
@@ -565,6 +627,8 @@ Write it now:`;
    * race. Mirrors decidePolymarketSignal's structured-output pattern.
    */
   async generateF1RacePick(params: {
+    agentId: string;
+    raceId: string;
     market: 'WINNER' | 'PODIUM' | 'FASTEST_LAP';
     grandPrixName: string;
     circuitName?: string | null;
@@ -576,6 +640,11 @@ Write it now:`;
       standing?: { position: number; points: number; wins: number; season: number } | null;
     }>;
   }): Promise<{ predictedDriverId: string; reasoning: string; source: 'AI' | 'FALLBACK' }> {
+    const agent = await prisma.agent.findUnique({ where: { id: params.agentId } });
+    if (!agent) throw new Error(`generateF1RacePick: agent ${params.agentId} not found`);
+    const traits = normalizeTraits(agent.traits);
+    const tribe = mapAgentToTribe(agent.id, agent.archetype, traits);
+
     const marketQuestion: Record<typeof params.market, string> = {
       WINNER: 'Which driver wins the race?',
       PODIUM: 'Which driver finishes on the podium (top 3)?',
@@ -591,14 +660,14 @@ Write it now:`;
       })
       .join('\n');
 
-    const systemPrompt = `You are a sharp, data-driven Formula 1 analyst. Given the real current-season grid below, answer the question by naming exactly one driver from the list -- ground your pick in the standings data provided, no generic hype.`;
+    const systemPrompt = F1_TRIBE_SYSTEM_PROMPTS[tribe](traits);
     const userPrompt = `Grand Prix: ${params.grandPrixName}${params.circuitName ? ` (${params.circuitName})` : ''}
 Question: ${marketQuestion[params.market]}
 
 DRIVERS
 ${driverLines}
 
-Pick the single most likely driver and explain why in 1-2 sentences.`;
+Pick the single most likely driver and explain why in 1-2 sentences, in your voice.`;
 
     try {
       const result = await this.compute.inferF1RacePick(
@@ -609,15 +678,7 @@ Pick the single most likely driver and explain why in 1-2 sentences.`;
       return { ...result, source: 'AI' };
     } catch (err) {
       console.error('[InferenceGateway] F1 race pick inference failed, using fallback:', err);
-      const ranked = [...params.drivers].sort((a, b) => (a.standing?.position ?? 99) - (b.standing?.position ?? 99));
-      const pick = ranked[0] ?? params.drivers[0];
-      return {
-        predictedDriverId: pick.id,
-        reasoning: pick.standing
-          ? `${pick.name} currently sits P${pick.standing.position} in the standings, the strongest current form on the grid.`
-          : `${pick.name} is the default pick -- no current-season standing data was available to compare drivers.`,
-        source: 'FALLBACK',
-      };
+      return { ...pickFallbackDriver(params.agentId, `${params.raceId}:${params.market}`, params.drivers), source: 'FALLBACK' };
     }
   }
 
@@ -628,25 +689,44 @@ Pick the single most likely driver and explain why in 1-2 sentences.`;
    * independently by the model, so driver/constructor can never mismatch.
    */
   async generateF1FantasyDraft(params: {
+    agentId: string;
     season: number;
-    driverIds: string[];
-    driverLines: string;
+    drivers: Array<{
+      id: string;
+      name: string;
+      abbr?: string | null;
+      teamName?: string | null;
+      standing?: { position: number; points: number; wins: number; season: number } | null;
+    }>;
   }): Promise<{ driverId: string; teamName: string; reasoning: string; source: 'AI' | 'FALLBACK' }> {
-    const systemPrompt = `You are a sharp, data-driven Formula 1 fantasy analyst. Given the real ${params.season} season grid below, draft the single driver you'd build a fantasy team around, and give the team a short punchy name. Ground your pick in the real standings data -- no generic hype.`;
-    const userPrompt = `DRIVERS\n${params.driverLines}\n\nDraft your fantasy pick.`;
+    const agent = await prisma.agent.findUnique({ where: { id: params.agentId } });
+    if (!agent) throw new Error(`generateF1FantasyDraft: agent ${params.agentId} not found`);
+    const traits = normalizeTraits(agent.traits);
+    const tribe = mapAgentToTribe(agent.id, agent.archetype, traits);
+
+    const driverLines = params.drivers
+      .map((d) => {
+        const standing = d.standing
+          ? `P${d.standing.position}, ${d.standing.points}pts, ${d.standing.wins}win(s) in ${d.standing.season}`
+          : 'no current-season standing data';
+        return `- id=${d.id} | ${d.name}${d.abbr ? ` (${d.abbr})` : ''} | ${d.teamName ?? 'unknown team'} | ${standing}`;
+      })
+      .join('\n');
+
+    const systemPrompt = `${F1_TRIBE_SYSTEM_PROMPTS[tribe](traits)}\n\nYou're drafting a fantasy F1 team for the ${params.season} season -- name the single driver you'd build the team around and give the team a short punchy name, in your voice.`;
+    const userPrompt = `DRIVERS\n${driverLines}\n\nDraft your fantasy pick.`;
 
     try {
-      const result = await this.compute.inferF1FantasyDraft(systemPrompt, userPrompt, params.driverIds);
+      const result = await this.compute.inferF1FantasyDraft(
+        systemPrompt,
+        userPrompt,
+        params.drivers.map((d) => d.id),
+      );
       return { ...result, source: 'AI' };
     } catch (err) {
       console.error('[InferenceGateway] F1 fantasy draft inference failed, using fallback:', err);
-      const pick = params.driverIds[0];
-      return {
-        driverId: pick,
-        teamName: 'Fallback Racing',
-        reasoning: 'AI draft was unavailable -- defaulted to the first driver on the current grid.',
-        source: 'FALLBACK',
-      };
+      const { predictedDriverId, reasoning } = pickFallbackDriver(params.agentId, `fantasy:${params.season}`, params.drivers);
+      return { driverId: predictedDriverId, teamName: 'Fallback Racing', reasoning, source: 'FALLBACK' };
     }
   }
 

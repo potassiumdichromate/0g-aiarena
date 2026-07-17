@@ -31,19 +31,20 @@ class F1FantasyService {
     const drivers = await f1DataService.listDrivers(season);
     if (drivers.length === 0) throw new ConflictError('no drivers synced yet -- run POST /v1/f1/sync first');
 
-    const driverLines = drivers
-      .map((d) => {
-        const standing = d.standing
-          ? `P${d.standing.position}, ${d.standing.points}pts, ${d.standing.wins}win(s)`
-          : 'no current-season standing data';
-        return `- id=${d.id} | ${d.name}${d.abbr ? ` (${d.abbr})` : ''} | team=${d.currentTeam?.name ?? 'unknown'} (teamId=${d.currentTeamId ?? 'unknown'}) | ${standing}`;
-      })
-      .join('\n');
-
     const res = await fetch(`${INFERENCE_SERVICE_URL}/f1-fantasy-draft`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Service-Key': process.env.INTERNAL_SERVICE_SECRET ?? '' },
-      body: JSON.stringify({ season, driverIds: drivers.map((d) => d.id), driverLines }),
+      body: JSON.stringify({
+        agentId,
+        season,
+        drivers: drivers.map((d) => ({
+          id: d.id,
+          name: d.name,
+          abbr: d.abbr,
+          teamName: d.currentTeam?.name ?? null,
+          standing: d.standing,
+        })),
+      }),
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');

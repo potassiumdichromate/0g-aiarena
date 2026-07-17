@@ -299,6 +299,8 @@ class F1DataService {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Service-Key': process.env.INTERNAL_SERVICE_SECRET ?? '' },
       body: JSON.stringify({
+        agentId,
+        raceId,
         market,
         grandPrixName: race.grandPrixName,
         circuitName: race.circuitName,

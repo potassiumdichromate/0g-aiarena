@@ -98,8 +98,8 @@ export async function inferenceRoutes(app: FastifyInstance): Promise<void> {
    */
   app.post('/f1-race-pick', async (req, reply) => {
     const body = req.body as Parameters<InferenceGateway['generateF1RacePick']>[0];
-    if (!body?.market || !body?.grandPrixName || !Array.isArray(body?.drivers) || body.drivers.length === 0) {
-      return reply.status(400).send({ error: 'market, grandPrixName, and a non-empty drivers array are required' });
+    if (!body?.agentId || !body?.raceId || !body?.market || !body?.grandPrixName || !Array.isArray(body?.drivers) || body.drivers.length === 0) {
+      return reply.status(400).send({ error: 'agentId, raceId, market, grandPrixName, and a non-empty drivers array are required' });
     }
     const result = await gateway.generateF1RacePick(body);
     return result;
@@ -113,9 +113,9 @@ export async function inferenceRoutes(app: FastifyInstance): Promise<void> {
    * league-service's fantasy draft endpoint.
    */
   app.post('/f1-fantasy-draft', async (req, reply) => {
-    const body = req.body as { season: number; driverIds: string[]; driverLines: string };
-    if (!body?.season || !Array.isArray(body?.driverIds) || body.driverIds.length === 0 || !body?.driverLines) {
-      return reply.status(400).send({ error: 'season, a non-empty driverIds array, and driverLines are required' });
+    const body = req.body as Parameters<InferenceGateway['generateF1FantasyDraft']>[0];
+    if (!body?.agentId || !body?.season || !Array.isArray(body?.drivers) || body.drivers.length === 0) {
+      return reply.status(400).send({ error: 'agentId, season, and a non-empty drivers array are required' });
     }
     const result = await gateway.generateF1FantasyDraft(body);
     return result;
