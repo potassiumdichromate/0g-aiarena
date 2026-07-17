@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { FastifyInstance } from 'fastify';
 import { OkxBridgeService } from '../services/okx-bridge.service';
 import { okxServiceMiddleware } from '../middleware/okx.middleware';
@@ -28,19 +29,20 @@ export async function okxRoutes(app: FastifyInstance): Promise<void> {
       idempotencyKey?: string;
     };
 
-    if (!body?.name) {
-      return reply.status(400).send({ error: 'name is required' });
-    }
-    if (!body?.idempotencyKey) {
-      return reply.status(400).send({ error: 'idempotencyKey is required' });
-    }
+    // A generic x402 buyer has no declared schema for this body (the 402
+    // challenge doesn't advertise required fields), so backfill instead of
+    // rejecting a paid request as a 400 — the payment proxy already does
+    // this using the payment's own nonce; these are just a defensive
+    // fallback for any caller that reaches this route directly.
+    const name           = body?.name           ?? `KULT-${randomUUID().slice(0, 8)}`;
+    const idempotencyKey = body?.idempotencyKey ?? randomUUID();
 
     try {
       const { agent, replay } = await okxBridge.createAgentForOkx({
-        name:           body.name,
+        name,
         archetype:      body.archetype,
         backstory:      body.backstory,
-        idempotencyKey: body.idempotencyKey,
+        idempotencyKey,
       });
 
       return reply.status(replay ? 200 : 201).send({

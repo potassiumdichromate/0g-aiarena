@@ -44,6 +44,11 @@ const UPSTREAM_HEALTH = UPSTREAM_URL.replace('/okx/create-agent', '/health');
 const settledNonces = new Map<string, { body: string; txHash: string }>();
 
 // ── Payment requirements ──────────────────────────────────────────────────────
+// Shape must match docs/okx/okx_context_full.md:144-152 exactly — OKX's
+// verify/settle API rejects (or silently mis-validates) extra fields here.
+// `resource`/`description`/`mimeType` do NOT belong in paymentRequirements —
+// they belong in the separate top-level `resource` object (see resourceInfo
+// below), per the documented request body at :109-153.
 
 function paymentRequirements() {
   return {
@@ -53,17 +58,22 @@ function paymentRequirements() {
     amount:            AMOUNT,
     payTo:             PAY_TO,
     maxTimeoutSeconds: TIMEOUT,
-    resource:          RESOURCE,
-    description:       'KULT Agent Creator — create-agent (0.10 USDT on X Layer)',
-    mimeType:          'application/json',
     extra:             { name: 'USD₮0', version: '1' },
+  };
+}
+
+function resourceInfo() {
+  return {
+    url:         RESOURCE,
+    description: 'KULT Agent Creator — create-agent (0.10 USDT on X Layer)',
+    mimeType:    'application/json',
   };
 }
 
 // ── 402 challenge ─────────────────────────────────────────────────────────────
 
 function send402(res: http.ServerResponse, reason?: string): void {
-  const body = { x402Version: 2, accepts: [paymentRequirements()], error: reason ?? 'Payment required' };
+  const body = { x402Version: 2, resource: resourceInfo(), accepts: [paymentRequirements()], error: reason ?? 'Payment required' };
   const encoded = Buffer.from(JSON.stringify(body)).toString('base64');
   res.statusCode = 402;
   res.setHeader('Content-Type', 'application/json');
@@ -276,6 +286,25 @@ http.createServer(async (req, res) => {
   // Extract nonce for idempotency cache after verify passes
   try { nonce = decodeHeader(payHdr).payload?.authorization?.nonce; } catch { /* ok */ }
 
+  // ── Step 1.5: Backfill required fields ────────────────────────────────────
+  // A generic x402 buyer has no way to know agent-service requires `name` /
+  // `idempotencyKey` in the body — the 402 challenge doesn't declare an
+  // input schema. Backfill idempotencyKey from the payment's own nonce
+  // (ties dedup to the actual payment, stronger than a caller-supplied one)
+  // and a generated name, rather than rejecting a paid request as a 400.
+  let forwardBody = body;
+  try {
+    const parsed = JSON.parse(body.toString('utf8') || '{}') as Record<string, unknown>;
+    if (!parsed.idempotencyKey && nonce) parsed.idempotencyKey = nonce;
+    if (!parsed.name) parsed.name = `KULT-${(nonce ?? crypto.randomUUID()).slice(2, 10)}`;
+    forwardBody = Buffer.from(JSON.stringify(parsed));
+  } catch {
+    forwardBody = Buffer.from(JSON.stringify({
+      name:           `KULT-${(nonce ?? crypto.randomUUID()).slice(2, 10)}`,
+      idempotencyKey: nonce ?? crypto.randomUUID(),
+    }));
+  }
+
   // ── Step 2: Forward to upstream FIRST — before any settlement ────────────
   // If upstream is down, we return 503 and buyer keeps their money.
   let upstream: Response;
@@ -284,7 +313,7 @@ http.createServer(async (req, res) => {
     upstream = await fetch(UPSTREAM_URL, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'X-OKX-Service-Key': SERVICE_KEY },
-      body,
+      body: forwardBody,
     });
     upstreamBody = await upstream.text();
   } catch (e: unknown) {
