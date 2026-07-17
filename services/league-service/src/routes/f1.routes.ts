@@ -37,6 +37,7 @@ export async function f1Routes(app: FastifyInstance): Promise<void> {
       const { id } = req.params as { id: string };
       const driver = await f1DataService.getDriver(id);
       const weekend = await f1DataService.getGrandPrixWeekend(BELGIUM_GRAND_PRIX_ID, DEFAULT_SEASON);
+      const standing = await f1DataService.getCurrentStanding(driver.providerId, DEFAULT_SEASON).catch(() => null);
 
       const res = await fetch(`${INFERENCE_SERVICE_URL}/f1-driver-prediction`, {
         method: 'POST',
@@ -55,6 +56,7 @@ export async function f1Routes(app: FastifyInstance): Promise<void> {
           })),
           grandPrixName: weekend?.race.grandPrixName ?? 'Belgian Grand Prix',
           circuitName: weekend?.race.circuitName,
+          latestSeasonStanding: standing,
         }),
       });
 

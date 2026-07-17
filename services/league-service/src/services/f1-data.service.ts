@@ -3,14 +3,14 @@ import { NotFoundError, ConflictError } from '../lib/errors';
 
 /**
  * F1 League data source: API-SPORTS Formula-1 API (docs/league/F1_LEAGUE_CONTEXT.md).
- * `teams`/`drivers` are unrestricted by season on the free plan; `races` is
- * capped to seasons 2022-2024 until the API-SPORTS plan is upgraded -- see
- * that doc for the live-verified endpoint shapes this mirrors.
+ * Now on the Pro plan (verified live via GET /status: plan "Pro", 7500 req/day)
+ * -- full 2026 season data confirmed reachable, including the real Belgium GP
+ * (competition id 15) weekend: 1st Practice 2026-07-17T11:30Z = 17:00 IST,
+ * Race 2026-07-19T13:00Z.
  */
 const F1_API_BASE = 'https://v1.formula-1.api-sports.io';
 const BELGIUM_GRAND_PRIX_ID = 15;
-/** Free-plan season ceiling -- swap to the current season once the plan is upgraded. */
-const DEFAULT_SEASON = parseInt(process.env.F1_DEFAULT_SEASON ?? '2024', 10);
+const DEFAULT_SEASON = parseInt(process.env.F1_DEFAULT_SEASON ?? '2026', 10);
 
 interface ProviderTeam {
   id: number; name: string; logo: string | null; base: string | null;
@@ -47,12 +47,13 @@ interface ProviderRace {
   fastest_lap: { driver: { id: number | null }; time: string | null };
 }
 
-// Free-plan F1 API rate limit is 10 requests/minute (hit this live during the
-// first sync: syncDriversFromRankings makes ~1 call per driver in a season,
-// ~24+ calls, with no spacing between them). Every call goes through this
-// throttle so the whole service self-paces under the limit, plus a backoff
-// retry for the rare case a burst still gets rate-limited.
-const MIN_CALL_INTERVAL_MS = 6_500; // ~9.2 req/min, safely under the 10/min cap
+// The free plan's 10 req/min limit (hit live during the first sync attempt)
+// no longer applies on Pro (7500 req/day, no documented per-minute cap seen
+// in testing) -- kept a light throttle anyway since api-sports doesn't
+// publish a per-minute number for Pro and a sync still fires ~26+ calls in a
+// row (teams, ~22 drivers, races). The backoff-retry below still protects
+// against hitting whatever the real limit turns out to be.
+const MIN_CALL_INTERVAL_MS = 350; // ~170 req/min
 let lastCallAt = 0;
 
 async function throttle(): Promise<void> {
@@ -210,14 +211,50 @@ class F1DataService {
     return prisma.f1Team.findMany({ orderBy: { name: 'asc' } });
   }
 
-  async listDrivers() {
-    return prisma.f1Driver.findMany({ include: { currentTeam: true }, orderBy: { name: 'asc' } });
+  /**
+   * Driver grid, enriched with each driver's live current-season standing
+   * (position/points/wins) -- the frontend shows real current form on every
+   * card without a separate call per driver.
+   */
+  async listDrivers(season: number = DEFAULT_SEASON) {
+    const [drivers, rankings] = await Promise.all([
+      prisma.f1Driver.findMany({ include: { currentTeam: true }, orderBy: { name: 'asc' } }),
+      this.getRankings(season).catch(() => new Map<number, ProviderRanking>()),
+    ]);
+    return drivers.map((d) => {
+      const r = rankings.get(d.providerId);
+      return { ...d, standing: r ? { position: r.position, points: r.points, wins: r.wins, season: r.season } : null };
+    });
   }
 
   async getDriver(id: string) {
     const driver = await prisma.f1Driver.findUnique({ where: { id }, include: { currentTeam: true } });
     if (!driver) throw new NotFoundError('driver not found');
     return driver;
+  }
+
+  private rankingsCache: { season: number; fetchedAt: number; rows: ProviderRanking[] } | null = null;
+
+  /** Cached (5 min) current-season rankings, keyed by provider driver id. */
+  private async getRankings(season: number): Promise<Map<number, ProviderRanking>> {
+    const cacheAgeMs = this.rankingsCache ? Date.now() - this.rankingsCache.fetchedAt : Infinity;
+    if (!this.rankingsCache || this.rankingsCache.season !== season || cacheAgeMs > 5 * 60_000) {
+      const rows = await f1Fetch<ProviderRanking>(`/rankings/drivers?season=${season}`);
+      this.rankingsCache = { season, fetchedAt: Date.now(), rows };
+    }
+    return new Map(this.rankingsCache.rows.map((r) => [r.driver.id, r]));
+  }
+
+  /**
+   * Current-season standing for one driver (position/points/wins) --
+   * grounds the AI Prediction button in real, current form, not just career
+   * totals.
+   */
+  async getCurrentStanding(providerId: number, season: number = DEFAULT_SEASON): Promise<{ position: number; points: number; wins: number; season: number } | null> {
+    const rankings = await this.getRankings(season);
+    const row = rankings.get(providerId);
+    if (!row) return null;
+    return { position: row.position, points: row.points, wins: row.wins, season: row.season };
   }
 
   async makePick(raceId: string, agentId: string, predictedDriverId: string, reasoning?: string) {

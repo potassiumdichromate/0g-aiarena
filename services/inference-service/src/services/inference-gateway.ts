@@ -523,7 +523,7 @@ Write the commentary paragraph now:`;
       ? `P${params.latestSeasonStanding.position} in the ${params.latestSeasonStanding.season} standings, ${params.latestSeasonStanding.points} points, ${params.latestSeasonStanding.wins} wins`
       : 'no recent standings data available';
 
-    const prompt = `You are a sharp, data-driven Formula 1 analyst. Write a short prediction (2-3 sentences) of how ${params.driverName} is likely to perform at the upcoming ${params.grandPrixName}${params.circuitName ? ` (${params.circuitName})` : ''}, based ONLY on the real stats below. Be specific and grounded in the numbers -- no generic hype.
+    const prompt = `You are a sharp, data-driven Formula 1 analyst. Based ONLY on the real stats below, predict how ${params.driverName} is likely to perform at the upcoming ${params.grandPrixName}${params.circuitName ? ` (${params.circuitName})` : ''}. Be specific and grounded in the numbers -- no generic hype.
 
 DRIVER
 Name          : ${params.driverName}${params.abbr ? ` (${params.abbr})` : ''}
@@ -533,15 +533,18 @@ Career podiums: ${params.podiums ?? 'unknown'}
 Career points : ${params.careerPoints ?? 'unknown'}
 Current team  : ${params.currentTeamName ?? 'unknown'}
 Team history  : ${teamHistoryLine}
-Recent form   : ${standingLine}
+Current season: ${standingLine}
 
-Write the prediction now:`;
+Write 2-3 sentences of analysis, THEN end with one line in exactly this format:
+Predicted finish: P<best-case position>-P<worst-case position>
+
+Write it now:`;
 
     try {
       const response = await (this.compute as any).openai.chat.completions.create({
         model,
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 180,
+        max_tokens: 220,
         temperature: 0.7,
       });
       const prediction = (response.choices?.[0]?.message?.content ?? '').trim();
