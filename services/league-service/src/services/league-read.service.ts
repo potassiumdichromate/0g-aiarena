@@ -235,7 +235,11 @@ class LeagueReadService {
         pick: `${pickLabel(p.winner, p.match.homeTeam, p.match.awayTeam)} ${p.scoreHome}-${p.scoreAway}`,
         confidence: convictionToConfidencePct(p.conviction),
         result: actual.scoreHome != null && actual.scoreAway != null ? `${actual.scoreHome}-${actual.scoreAway}` : '',
-        outcome: p.isCorrectWinner ? 'WIN' : actual.winner === 'DRAW' ? 'DRAW' : 'LOSS',
+        // Was: `actual.winner === 'DRAW' ? 'DRAW' : 'LOSS'` -- mislabeled a WRONG pick as
+        // "DRAW" whenever the real match happened to end in a draw, even if the agent
+        // picked HOME/AWAY (i.e. was incorrect). Outcome here means "was this pick
+        // correct", which is strictly what isCorrectWinner already answers.
+        outcome: p.isCorrectWinner ? 'WIN' : 'LOSS',
         kpEarned: p.kpAwarded ?? 0,
       };
     });
