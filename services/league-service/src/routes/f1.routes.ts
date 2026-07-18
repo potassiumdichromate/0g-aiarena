@@ -219,4 +219,24 @@ export async function f1Routes(app: FastifyInstance): Promise<void> {
     const result = await f1FantasyService.scoreRace(raceId);
     return result;
   });
+
+  // POST /v1/f1/races/:raceId/settle — the whole real-results pipeline for
+  // one COMPLETED race, run in one call: pull real per-driver classification
+  // from the provider, settle every unsettled F1Prediction (isCorrect +
+  // settledAt) against it, then score every fantasy team's real points.
+  // Same idempotent guarantee as each step individually -- safe to re-run.
+  // Ops/admin, same X-Service-Key gate as the rest of this section. There is
+  // no automatic trigger for this yet (no F1-aware cron exists, unlike
+  // football's settlement-tick) -- this has to be called by hand once a race
+  // is actually over.
+  app.post('/races/:raceId/settle', async (req, reply) => {
+    const serviceKey = req.headers['x-service-key'];
+    if (serviceKey !== process.env.INTERNAL_SERVICE_SECRET) return reply.status(401).send({ error: 'Unauthorized' });
+
+    const { raceId } = req.params as { raceId: string };
+    const classification = await f1FantasyService.syncRaceClassification(raceId);
+    const predictions = await f1DataService.settlePredictions(raceId);
+    const fantasy = await f1FantasyService.scoreRace(raceId);
+    return { classification, predictions, fantasy };
+  });
 }

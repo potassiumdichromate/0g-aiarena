@@ -324,6 +324,51 @@ class F1DataService {
     const pick = await this.makePick(raceId, agentId, predictedDriverId, market, reasoning);
     return { pick, source };
   }
+
+  /**
+   * The other half of the pick flow that was never built: comparing a saved
+   * F1Prediction against what actually happened. Requires
+   * F1RaceClassification to already be synced for this race (real per-driver
+   * results -- see f1-fantasy.service.ts syncRaceClassification, same
+   * source fantasy-team scoring uses). Per market:
+   *   WINNER      -- correct if the picked driver finished P1.
+   *   PODIUM      -- correct if the picked driver finished P1-P3.
+   *   FASTEST_LAP -- correct if the picked driver set the fastest lap.
+   * Idempotent: only touches predictions that haven't been settled yet, so
+   * re-running (e.g. after a late classification correction) is safe.
+   */
+  async settlePredictions(raceId: string): Promise<{ settled: number; correct: number }> {
+    const race = await prisma.f1Race.findUnique({ where: { id: raceId } });
+    if (!race) throw new NotFoundError('race not found');
+    if (race.status !== 'COMPLETED') throw new ConflictError('cannot settle predictions for a race that is not COMPLETED');
+
+    const [classifications, predictions] = await Promise.all([
+      prisma.f1RaceClassification.findMany({ where: { raceId } }),
+      prisma.f1Prediction.findMany({ where: { raceId, settledAt: null } }),
+    ]);
+    if (classifications.length === 0) {
+      throw new ConflictError('no classification synced for this race -- run POST /v1/f1/fantasy/races/:raceId/sync-classification first');
+    }
+    const byDriverId = new Map(classifications.map((c) => [c.driverId, c]));
+
+    let correct = 0;
+    for (const prediction of predictions) {
+      const c = byDriverId.get(prediction.predictedDriverId);
+      const isCorrect =
+        prediction.market === 'WINNER' ? c?.position === 1 :
+        prediction.market === 'PODIUM' ? (c?.position ?? 99) <= 3 :
+        prediction.market === 'FASTEST_LAP' ? c?.fastestLap === true :
+        false;
+      if (isCorrect) correct++;
+
+      await prisma.f1Prediction.update({
+        where: { id: prediction.id },
+        data: { isCorrect, settledAt: new Date() },
+      });
+    }
+
+    return { settled: predictions.length, correct };
+  }
 }
 
 export const f1DataService = new F1DataService();
