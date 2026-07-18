@@ -189,7 +189,7 @@ async function readBody(req: http.IncomingMessage): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-http.createServer(async (req, res) => {
+const server = http.createServer(async (req, res) => {
   const url = req.url ?? '/';
 
   if (req.method === 'GET' && url === '/health') {
@@ -360,7 +360,18 @@ http.createServer(async (req, res) => {
     setTimeout(() => settledNonces.delete(nonce!), TIMEOUT * 2 * 1000);
   }
 
-}).listen(PORT, () => {
+});
+
+// Render sits behind Cloudflare's edge, which pools/reuses keep-alive
+// connections to the origin longer than Node's 5s default. If the edge
+// reuses a connection after Node has already torn down the idle socket,
+// the caller's next request on it fails at the connection level (exactly
+// OKX's "error sending request for url" / replayStatus=0 reports) --
+// raise both above any plausible edge idle-keepalive window.
+server.keepAliveTimeout = 65_000;
+server.headersTimeout   = 66_000;
+
+server.listen(PORT, () => {
   console.log(`[proxy] :${PORT} ready — x402 eip155:196`);
   console.log(`[proxy] resource=${RESOURCE}`);
   console.log(`[proxy] upstream=${UPSTREAM_URL}`);
