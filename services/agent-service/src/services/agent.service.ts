@@ -189,14 +189,35 @@ export class AgentService {
       });
     }
 
+    // ── Steps 7-9: INFT mint + ARENA reward — fire-and-forget ───────────────
+    // Both on-chain steps are already treated as non-fatal (agent creation
+    // succeeds either way), but they were previously awaited in sequence —
+    // measured at ~30s end-to-end for the OKX-paid create-agent path, well
+    // past OKX's ASP review harness's response-time tolerance (~8-10s).
+    // The agent record + traits (the actual thing being sold) are already
+    // persisted at this point, so the mint/reward run in the background;
+    // inftTokenId lands on the agent record a few seconds later instead of
+    // blocking the HTTP response.
+    this.mintInftAndGrantReward(agent.id, userId, { clan: params.clan, archetype, traits, metadataRootHash })
+      .catch(err => console.error('[AgentService] Background mint/reward pipeline errored:', err));
+
+    return { ...agent, avatarRootHash, metadataRootHash, inftTokenId: null };
+  }
+
+  /** Runs after createAgent() has already returned its response — see the call site for why. */
+  private async mintInftAndGrantReward(agentId: string, userId: string, params: {
+    clan: string;
+    archetype: string;
+    traits: Record<string, unknown>;
+    metadataRootHash: string | null;
+  }): Promise<void> {
     // ── Step 7: Publish event → inft-service will mint the INFT ─────────────
     try {
       const bus = await getEventBus();
       await bus.publish(SUBJECTS.AGENT_CREATED, {
-        agentId:          agent.id,
+        agentId,
         userId,
-        metadataRootHash,
-        avatarRootHash,
+        metadataRootHash: params.metadataRootHash,
       });
     } catch (err) {
       console.warn('[AgentService] Could not publish AGENT_CREATED event (NATS unavailable):', (err as Error).message);
@@ -217,11 +238,11 @@ export class AgentService {
               'X-Service-Key': process.env.INTERNAL_SERVICE_SECRET ?? '',
             },
             body: JSON.stringify({
-              agentId:          agent.id,
+              agentId,
               clan:             params.clan,
-              archetype,
-              traits,
-              metadataRootHash,
+              archetype:        params.archetype,
+              traits:           params.traits,
+              metadataRootHash: params.metadataRootHash,
             }),
           }).then(async r => {
             if (!r.ok) throw new Error(`inft-service responded ${r.status}`);
@@ -234,10 +255,10 @@ export class AgentService {
           inftTokenId = String(mintResp.tokenId);
           // Persist tokenId back to the agent record
           await prisma.agent.update({
-            where: { id: agent.id },
+            where: { id: agentId },
             data:  { inftTokenId },
           });
-          console.info(`[AgentService] INFT minted: token #${inftTokenId} for agent ${agent.id} (tx: ${mintResp.txHash})`);
+          console.info(`[AgentService] INFT minted: token #${inftTokenId} for agent ${agentId} (tx: ${mintResp.txHash})`);
         }
       } catch (err) {
         // Non-fatal — agent is created, INFT minting can be retried later
@@ -289,8 +310,6 @@ export class AgentService {
         console.warn('[AgentService] Agent Mint ARENA reward failed (non-fatal):', (err as Error).message);
       }
     }
-
-    return { ...agent, avatarRootHash, metadataRootHash, inftTokenId };
   }
 
   async getAgent(id: string) {
