@@ -66,13 +66,49 @@ export class AgentService {
   }) {
     const normalizedArchetype = normalizeArchetype(params.archetype);
     const archetype = normalizedArchetype.toLowerCase();
-
-    // TEMP: per-step timing to find where the remaining ~27s in the OKX-paid
-    // path is actually going, now that INFT mint/reward are fire-and-forget.
-    // Remove once the real bottleneck is identified and fixed.
-    const timing: Record<string, number> = {};
     const t0 = Date.now();
 
+    const defaultTraits: Record<string, unknown> = {
+      aggression: 50, patience: 50, adaptability: 50,
+      resilience: 50, creativity: 50, loyalty: 50, deception: 50, precision: 50,
+    };
+
+    // ── Persist agent immediately with default traits ────────────────────────
+    // Personality generation (0G Compute, up to 10s) and the metadata/avatar
+    // storage uploads (0G Storage, up to 10s each) were previously awaited
+    // here and measured at ~19s combined for the OKX-paid create-agent path
+    // -- moved to the background enrichment pipeline below, same pattern as
+    // the INFT mint/reward fix. Real traits/metadata land on the agent
+    // record a few seconds later instead of blocking the HTTP response.
+    const agent = await agentRepo.create({
+      user:      { connect: { id: userId } },
+      name:      params.name,
+      clan:      params.clan as any,
+      archetype: normalizedArchetype as any,
+      traits:    defaultTraits as any,
+      metadata: {
+        backstory:        params.backstory ?? '',
+        avatarRootHash:   null,
+        metadataRootHash: null,
+        avatarBase64:     null,
+      } as any,
+    });
+
+    this.enrichAgentAsync(agent.id, userId, {
+      name: params.name, clan: params.clan, archetype, backstory: params.backstory,
+    }).catch(err => console.error('[AgentService] Background enrichment pipeline errored:', err));
+
+    const timing = { persistAgentMs: Date.now() - t0 };
+    return { ...agent, avatarRootHash: null, metadataRootHash: null, inftTokenId: null, _timing: timing };
+  }
+
+  /** Runs after createAgent() has already returned its response — see the call site for why. */
+  private async enrichAgentAsync(agentId: string, userId: string, params: {
+    name: string;
+    clan: string;
+    archetype: string;
+    backstory?: string;
+  }): Promise<void> {
     // ── Step 1: Generate personality traits via 0G Compute ───────────────────
     let traits: Record<string, unknown> = {
       aggression: 50, patience: 50, adaptability: 50,
@@ -83,17 +119,17 @@ export class AgentService {
       traits = await withTimeout(
         this.compute.generatePersonality({
           name:        params.name,
-          description: params.backstory ?? `A ${archetype} agent from the ${params.clan} clan`,
+          description: params.backstory ?? `A ${params.archetype} agent from the ${params.clan} clan`,
           clan:        params.clan,
           hints:       { aggression: 50, intelligence: 50 },
         }),
         10_000, // 10-second timeout
         'generatePersonality',
       );
+      await prisma.agent.update({ where: { id: agentId }, data: { traits: traits as any } });
     } catch (err) {
       console.warn('[AgentService] 0G Compute unavailable for personality generation, using defaults:', err);
     }
-    timing.generatePersonalityMs = Date.now() - t0;
 
     // ── Step 2: Generate avatar image via 0G Compute ─────────────────────────
     // Skipped unless ENABLE_AVATAR_GEN=true (image gen is slow — skip in local dev)
@@ -102,12 +138,11 @@ export class AgentService {
 
     if (process.env.ENABLE_AVATAR_GEN === 'true') {
       try {
-        const tempId = `temp-${Date.now()}`;
         const avatarResult = await withTimeout(
           this.compute.generateAvatar({
-            agentId:         tempId,
+            agentId:         agentId,
             name:            params.name,
-            combatArchetype: archetype,
+            combatArchetype: params.archetype,
             clan:            params.clan,
             aggressionScore: (traits.aggression as number) ?? 50,
             evolutionStage:  1,
@@ -125,9 +160,9 @@ export class AgentService {
         const avatarTxHash = [uploadResult.txHash].flat()[0] ?? null;
 
         await prisma.storageIndex.upsert({
-          where:  { logicalPath: `agents/avatar-pending` },
+          where:  { logicalPath: `agents/${agentId}/avatar/v1` },
           update: { rootHash: avatarRootHash, txHash: avatarTxHash, mimeType: 'image/png', sizeBytes: avatarBuf.byteLength },
-          create: { logicalPath: `agents/avatar-pending`, rootHash: avatarRootHash, txHash: avatarTxHash, mimeType: 'image/png', sizeBytes: avatarBuf.byteLength },
+          create: { logicalPath: `agents/${agentId}/avatar/v1`, rootHash: avatarRootHash, txHash: avatarTxHash, mimeType: 'image/png', sizeBytes: avatarBuf.byteLength, uploadedBy: 'agent-service', tags: ['avatar', agentId] },
         });
       } catch (err) {
         console.warn('[AgentService] Avatar generation/upload failed, continuing without avatar:', err);
@@ -138,13 +173,12 @@ export class AgentService {
 
     // ── Step 4: Build + upload metadata blob to 0G Storage ───────────────────
     let metadataRootHash: string | null = null;
-    const t1 = Date.now();
 
     try {
       const metadataBlob = {
         name:          params.name,
         clan:          params.clan,
-        archetype,
+        archetype:     params.archetype,
         backstory:     params.backstory ?? '',
         traits,
         evolutionStage: 1,
@@ -159,73 +193,40 @@ export class AgentService {
         'uploadMetadata',
       );
       metadataRootHash = metaUpload.rootHash;
+
+      await prisma.storageIndex.upsert({
+        where:  { logicalPath: `agents/${agentId}/metadata/v1` },
+        update: { rootHash: metadataRootHash },
+        create: { logicalPath: `agents/${agentId}/metadata/v1`, rootHash: metadataRootHash, mimeType: 'application/json', uploadedBy: 'agent-service', tags: ['metadata', agentId] },
+      });
     } catch (err) {
       console.warn('[AgentService] Metadata upload to 0G Storage failed:', err);
     }
-    timing.uploadMetadataMs = Date.now() - t1;
 
-    // ── Step 5: Persist agent to Postgres ────────────────────────────────────
-    const t2 = Date.now();
-    const agent = await agentRepo.create({
-      user:      { connect: { id: userId } },
-      name:      params.name,
-      clan:      params.clan as any,
-      archetype: normalizedArchetype as any,
-      traits:    traits as any,
-      metadata: {
-        backstory:        params.backstory ?? '',
-        avatarRootHash,   // 0G Storage root hash for avatar PNG
-        metadataRootHash, // 0G Storage root hash for metadata blob
-        avatarBase64:     avatarBase64 ? avatarBase64.slice(0, 64) + '...' : null, // truncated for DB
-      } as any,
+    // ── Step 5: Reflect avatar/metadata root hashes on the agent record ──────
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: {
+        metadata: {
+          backstory:        params.backstory ?? '',
+          avatarRootHash,
+          metadataRootHash,
+          avatarBase64:     avatarBase64 ? avatarBase64.slice(0, 64) + '...' : null,
+        } as any,
+      },
     });
-    timing.persistAgentMs = Date.now() - t2;
 
-    // Update storage_index with real agentId path now that we have it
-    if (avatarRootHash) {
-      await prisma.storageIndex.upsert({
-        where:  { logicalPath: `agents/${agent.id}/avatar/v1` },
-        update: { rootHash: avatarRootHash },
-        create: { logicalPath: `agents/${agent.id}/avatar/v1`, rootHash: avatarRootHash, mimeType: 'image/png', uploadedBy: 'agent-service', tags: ['avatar', agent.id] },
-      });
-      // Clean up temp entry
-      await prisma.storageIndex.deleteMany({ where: { logicalPath: 'agents/avatar-pending' } });
-    }
-
-    if (metadataRootHash) {
-      await prisma.storageIndex.upsert({
-        where:  { logicalPath: `agents/${agent.id}/metadata/v1` },
-        update: { rootHash: metadataRootHash },
-        create: { logicalPath: `agents/${agent.id}/metadata/v1`, rootHash: metadataRootHash, mimeType: 'application/json', uploadedBy: 'agent-service', tags: ['metadata', agent.id] },
-      });
-    }
-
-    // ── Steps 7-9: INFT mint + ARENA reward — fire-and-forget ───────────────
-    // Both on-chain steps are already treated as non-fatal (agent creation
-    // succeeds either way), but they were previously awaited in sequence —
-    // measured at ~30s end-to-end for the OKX-paid create-agent path, well
-    // past OKX's ASP review harness's response-time tolerance (~8-10s).
-    // The agent record + traits (the actual thing being sold) are already
-    // persisted at this point, so the mint/reward run in the background;
-    // inftTokenId lands on the agent record a few seconds later instead of
-    // blocking the HTTP response.
-    this.mintInftAndGrantReward(agent.id, userId, { clan: params.clan, archetype, traits, metadataRootHash })
-      .catch(err => console.error('[AgentService] Background mint/reward pipeline errored:', err));
-
-    timing.totalMs = Date.now() - t0;
-    console.info('[AgentService] createAgent timing:', JSON.stringify(timing));
-
-    return { ...agent, avatarRootHash, metadataRootHash, inftTokenId: null, _timing: timing };
+    // ── Steps 6-8: INFT mint + ARENA reward ──────────────────────────────────
+    await this.mintInftAndGrantReward(agentId, userId, { clan: params.clan, archetype: params.archetype, traits, metadataRootHash });
   }
 
-  /** Runs after createAgent() has already returned its response — see the call site for why. */
   private async mintInftAndGrantReward(agentId: string, userId: string, params: {
     clan: string;
     archetype: string;
     traits: Record<string, unknown>;
     metadataRootHash: string | null;
   }): Promise<void> {
-    // ── Step 7: Publish event → inft-service will mint the INFT ─────────────
+    // ── Step 6: Publish event → inft-service will mint the INFT ─────────────
     try {
       const bus = await getEventBus();
       await bus.publish(SUBJECTS.AGENT_CREATED, {
@@ -237,7 +238,7 @@ export class AgentService {
       console.warn('[AgentService] Could not publish AGENT_CREATED event (NATS unavailable):', (err as Error).message);
     }
 
-    // ── Step 8: Direct HTTP mint via inft-service (no NATS dependency) ───────
+    // ── Step 7: Direct HTTP mint via inft-service (no NATS dependency) ───────
     // NATS events don't fire reliably on Render starter plan.
     // We call inft-service directly using an internal shared-secret header.
     let inftTokenId: string | null = null;
@@ -282,7 +283,7 @@ export class AgentService {
       console.info('[AgentService] INFT_SERVICE_URL not set — skipping on-chain INFT mint');
     }
 
-    // ── Step 9: NFT Mint success → Reward Distributor → Transfer 100 ARENA ──
+    // ── Step 8: NFT Mint success → Reward Distributor → Transfer 100 ARENA ──
     // to the agent owner's real 0G-chain wallet (User.walletAddress, the
     // same Privy embedded wallet used for login). Only fires after a
     // successful mint (inftTokenId set) — this is the replacement for the
