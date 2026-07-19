@@ -67,6 +67,12 @@ export class AgentService {
     const normalizedArchetype = normalizeArchetype(params.archetype);
     const archetype = normalizedArchetype.toLowerCase();
 
+    // TEMP: per-step timing to find where the remaining ~27s in the OKX-paid
+    // path is actually going, now that INFT mint/reward are fire-and-forget.
+    // Remove once the real bottleneck is identified and fixed.
+    const timing: Record<string, number> = {};
+    const t0 = Date.now();
+
     // ── Step 1: Generate personality traits via 0G Compute ───────────────────
     let traits: Record<string, unknown> = {
       aggression: 50, patience: 50, adaptability: 50,
@@ -87,6 +93,7 @@ export class AgentService {
     } catch (err) {
       console.warn('[AgentService] 0G Compute unavailable for personality generation, using defaults:', err);
     }
+    timing.generatePersonalityMs = Date.now() - t0;
 
     // ── Step 2: Generate avatar image via 0G Compute ─────────────────────────
     // Skipped unless ENABLE_AVATAR_GEN=true (image gen is slow — skip in local dev)
@@ -131,6 +138,7 @@ export class AgentService {
 
     // ── Step 4: Build + upload metadata blob to 0G Storage ───────────────────
     let metadataRootHash: string | null = null;
+    const t1 = Date.now();
 
     try {
       const metadataBlob = {
@@ -154,8 +162,10 @@ export class AgentService {
     } catch (err) {
       console.warn('[AgentService] Metadata upload to 0G Storage failed:', err);
     }
+    timing.uploadMetadataMs = Date.now() - t1;
 
     // ── Step 5: Persist agent to Postgres ────────────────────────────────────
+    const t2 = Date.now();
     const agent = await agentRepo.create({
       user:      { connect: { id: userId } },
       name:      params.name,
@@ -169,6 +179,7 @@ export class AgentService {
         avatarBase64:     avatarBase64 ? avatarBase64.slice(0, 64) + '...' : null, // truncated for DB
       } as any,
     });
+    timing.persistAgentMs = Date.now() - t2;
 
     // Update storage_index with real agentId path now that we have it
     if (avatarRootHash) {
@@ -201,7 +212,10 @@ export class AgentService {
     this.mintInftAndGrantReward(agent.id, userId, { clan: params.clan, archetype, traits, metadataRootHash })
       .catch(err => console.error('[AgentService] Background mint/reward pipeline errored:', err));
 
-    return { ...agent, avatarRootHash, metadataRootHash, inftTokenId: null };
+    timing.totalMs = Date.now() - t0;
+    console.info('[AgentService] createAgent timing:', JSON.stringify(timing));
+
+    return { ...agent, avatarRootHash, metadataRootHash, inftTokenId: null, _timing: timing };
   }
 
   /** Runs after createAgent() has already returned its response — see the call site for why. */

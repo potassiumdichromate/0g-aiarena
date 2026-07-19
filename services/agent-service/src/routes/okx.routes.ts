@@ -55,6 +55,7 @@ export async function okxRoutes(app: FastifyInstance): Promise<void> {
         inftTokenId:    (agent as any).inftTokenId ?? null,
         avatarStatus:   (agent as any).metadata?.avatarRootHash ? 'ready' : 'pending',
         avatarRootHash: (agent as any).metadata?.avatarRootHash ?? null,
+        _timing:        (agent as any)._timing ?? null,
       });
     } catch (err: any) {
       if (err.message?.includes('already being processed')) {
