@@ -9,6 +9,7 @@
  */
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import crypto               from 'node:crypto';
 import { AuthService }     from '../services/auth.service';
 import { prisma }          from '@ai-arena/db-client';
 
@@ -163,6 +164,56 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         custodialSolanaAddress: user.custodialSolanaAddress ?? '',
         isNewUser:              false,
         isDev:                  true,
+      });
+    } catch (err: any) {
+      return reply.status(500).send({ error: err.message });
+    }
+  });
+
+  // ── POST /auth/bot-register ───────────────────────────────────────────────
+  // Internal only. Mints a fresh throwaway account (randomly generated
+  // wallet address, not a real EVM key) for the agent-bot-service's
+  // scheduled agent creation. Unlike /dev-login this is NOT gated by
+  // NODE_ENV -- it must keep working in production -- so it's gated by a
+  // shared secret instead. Fails closed (503) if the secret isn't
+  // configured, so this can never accidentally be left open.
+  app.post('/bot-register', async (req, reply) => {
+    const expected = process.env.BOT_REGISTRATION_SECRET;
+    if (!expected) {
+      return reply.status(503).send({ error: 'Bot registration not configured' });
+    }
+
+    const provided = req.headers['x-bot-secret'];
+    const providedBuf = Buffer.from(typeof provided === 'string' ? provided : '');
+    const expectedBuf = Buffer.from(expected);
+    const valid = providedBuf.length === expectedBuf.length
+      && crypto.timingSafeEqual(providedBuf, expectedBuf);
+    if (!valid) {
+      return reply.status(401).send({ error: 'Invalid bot secret' });
+    }
+
+    const { label } = (req.body as { label?: string }) ?? {};
+    const walletAddress = `0x${crypto.randomBytes(20).toString('hex')}`;
+
+    try {
+      const user = await prisma.user.create({
+        data: {
+          walletAddress,
+          username:               `bot-${walletAddress.slice(2, 10)}`,
+          custodialSolanaAddress: `BotSolana${Date.now()}${crypto.randomBytes(4).toString('hex')}`,
+        },
+      });
+
+      const accessToken = app.jwt.sign(
+        { userId: user.id, walletAddress: user.walletAddress },
+        { expiresIn: '10m' },
+      );
+
+      return reply.send({
+        accessToken,
+        userId:        user.id,
+        walletAddress: user.walletAddress,
+        label:         label ?? null,
       });
     } catch (err: any) {
       return reply.status(500).send({ error: err.message });

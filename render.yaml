@@ -74,6 +74,8 @@ services:
         sync: false
       - key: SOLANA_RPC_URL
         value: https://api.devnet.solana.com
+      - key: BOT_REGISTRATION_SECRET
+        sync: false
 
   # ── Agent Service ─────────────────────────────────────────────────────────────
   - type: web
@@ -570,3 +572,31 @@ services:
         sync: false
       - key: API_FOOTBALL_API_KEY
         sync: false
+
+  # ── Agent Bot Service (trickle-mints filler agents so real players always ────
+  # have opponents; one agent per cycle, random 30-60min interval, 24/7. No DB
+  # access -- talks to the public gateway exactly like a real client would.) ───
+  - type: web
+    name: aiarena-agent-bot
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: services/agent-bot-service
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && node_modules/.bin/turbo run build --filter=@ai-arena/agent-bot-service...
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8070"
+      - key: NODE_ENV
+        value: production
+      - key: GATEWAY_URL
+        value: https://aiarena-gateway.onrender.com
+      - key: BOT_REGISTRATION_SECRET
+        sync: false
+      - key: MIN_INTERVAL_MINUTES
+        value: "30"
+      - key: MAX_INTERVAL_MINUTES
+        value: "60"
+      - key: MINT_ON_STARTUP
+        value: "true"
