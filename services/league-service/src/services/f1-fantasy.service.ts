@@ -17,7 +17,8 @@ const FASTEST_LAP_BONUS = 1; // only awarded to a top-10 finisher, per real F1 r
 interface ProviderRaceResult {
   driver: { id: number };
   position: number | null;
-  status: string;
+  // Confirmed live: omitted for classified finishers, only populated for DNF/retired rows.
+  status?: string;
   time?: { fastest_lap?: { rank?: number | null } | null } | null;
 }
 
@@ -97,11 +98,18 @@ class F1FantasyService {
       const position = r.position ?? null;
       const points = position ? (F1_POINTS_TABLE[position] ?? 0) : 0;
       const fastestLap = r.time?.fastest_lap?.rank === 1;
+      // The provider omits `status` for classified finishers in practice (only
+      // seen populated for DNF/retired rows in the real response) -- our own
+      // column is required, so default rather than crash. A driver with a real
+      // classified position wasn't a DNF, so "Finished" is a safe inference,
+      // not a guess about anything scoring depends on (position/points/
+      // fastestLap all come straight from the provider, unaffected by this).
+      const status = r.status ?? (position != null ? 'Finished' : 'Unknown');
 
       await prisma.f1RaceClassification.upsert({
         where: { raceId_driverId: { raceId, driverId: driver.id } },
-        create: { raceId, driverId: driver.id, position, points, fastestLap, status: r.status },
-        update: { position, points, fastestLap, status: r.status },
+        create: { raceId, driverId: driver.id, position, points, fastestLap, status },
+        update: { position, points, fastestLap, status },
       });
       synced++;
     }
