@@ -133,12 +133,20 @@ export async function f1Routes(app: FastifyInstance): Promise<void> {
   // ~24 drivers, races) takes a few minutes -- too long to hold one HTTP
   // request open. Check progress via Render logs or GET /v1/f1/drivers once
   // it's had time to run.
+  // Optional ?grandPrixId=&season= to sync a specific race weekend without
+  // needing F1_ACTIVE_GRAND_PRIX_ID set/redeployed first -- useful for
+  // checking a new race's real schedule before committing to the env var
+  // switch. Omit both to use the configured default (ACTIVE_GRAND_PRIX_ID).
   app.post('/sync', async (req, reply) => {
     const serviceKey = req.headers['x-service-key'];
     if (serviceKey !== process.env.INTERNAL_SERVICE_SECRET) {
       return reply.status(401).send({ error: 'Unauthorized' });
     }
-    f1DataService.syncAll().then(
+    const { grandPrixId, season } = req.query as { grandPrixId?: string; season?: string };
+    f1DataService.syncAll(
+      season ? parseInt(season, 10) : undefined,
+      grandPrixId ? parseInt(grandPrixId, 10) : undefined,
+    ).then(
       (result) => console.info('[F1 sync] completed:', result),
       (err) => console.error('[F1 sync] failed:', err),
     );
