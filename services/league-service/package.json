@@ -18,7 +18,8 @@
     "@ai-arena/shared-utils": "workspace:*",
     "@ai-arena/cache": "workspace:*",
     "@ai-arena/event-bus": "workspace:*",
-    "@ai-arena/db-client": "workspace:*"
+    "@ai-arena/db-client": "workspace:*",
+    "@ai-arena/football-data-client": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

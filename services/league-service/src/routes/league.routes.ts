@@ -7,6 +7,7 @@ import { rivalriesRoutes } from './rivalries.routes';
 import { leaderboardRoutes } from './leaderboard.routes';
 import { momentsRoutes } from './moments.routes';
 import { factionRoutes } from './faction.routes';
+import { adminRoutes } from './admin.routes';
 
 export async function leagueRoutes(app: FastifyInstance): Promise<void> {
   await app.register(meRoutes);
@@ -17,4 +18,5 @@ export async function leagueRoutes(app: FastifyInstance): Promise<void> {
   await app.register(leaderboardRoutes);
   await app.register(momentsRoutes);
   await app.register(factionRoutes);
+  await app.register(adminRoutes);
 }

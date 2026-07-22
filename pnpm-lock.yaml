@@ -839,6 +839,9 @@ importers:
       '@ai-arena/event-bus':
         specifier: workspace:*
         version: link:../../packages/event-bus
+      '@ai-arena/football-data-client':
+        specifier: workspace:*
+        version: link:../../packages/football-data-client
       '@ai-arena/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
