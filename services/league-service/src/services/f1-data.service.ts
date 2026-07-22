@@ -3,13 +3,18 @@ import { NotFoundError, ConflictError } from '../lib/errors';
 
 /**
  * F1 League data source: API-SPORTS Formula-1 API (docs/league/F1_LEAGUE_CONTEXT.md).
- * Now on the Pro plan (verified live via GET /status: plan "Pro", 7500 req/day)
- * -- full 2026 season data confirmed reachable, including the real Belgium GP
- * (competition id 15) weekend: 1st Practice 2026-07-17T11:30Z = 17:00 IST,
- * Race 2026-07-19T13:00Z.
+ * On the Pro plan (verified live via GET /status: plan "Pro", 7500 req/day) --
+ * full 2026 season data reachable.
+ *
+ * Which Grand Prix is "active" changes every race weekend -- was hardcoded to
+ * Belgium (competition id 15) initially, which meant every race swap needed a
+ * code change + redeploy. Now driven by F1_ACTIVE_GRAND_PRIX_ID (falls back
+ * to Belgium if unset) so switching to e.g. Hungary is just an env var
+ * change. Use GET /v1/f1/competitions (ops-gated) to look up a Grand Prix's
+ * real competition id before switching.
  */
 const F1_API_BASE = 'https://v1.formula-1.api-sports.io';
-const BELGIUM_GRAND_PRIX_ID = 15;
+const ACTIVE_GRAND_PRIX_ID = parseInt(process.env.F1_ACTIVE_GRAND_PRIX_ID ?? '15', 10);
 const DEFAULT_SEASON = parseInt(process.env.F1_DEFAULT_SEASON ?? '2026', 10);
 
 interface ProviderTeam {
@@ -105,11 +110,16 @@ class F1DataService {
    * unrestricted endpoints give us) + one Grand Prix's full race weekend.
    * Idempotent upsert -- safe to re-run on a schedule.
    */
-  async syncAll(season: number = DEFAULT_SEASON, grandPrixId: number = BELGIUM_GRAND_PRIX_ID): Promise<{ teams: number; drivers: number; races: number }> {
+  async syncAll(season: number = DEFAULT_SEASON, grandPrixId: number = ACTIVE_GRAND_PRIX_ID): Promise<{ teams: number; drivers: number; races: number }> {
     const teams = await this.syncTeams();
     const drivers = await this.syncDriversFromRankings(season);
     const races = await this.syncGrandPrix(grandPrixId, season);
     return { teams, drivers, races };
+  }
+
+  /** Real competition list from the provider -- used to look up a Grand Prix's id before switching F1_ACTIVE_GRAND_PRIX_ID. */
+  async listCompetitions(): Promise<Array<{ id: number; name: string; location?: { country: string; city: string } }>> {
+    return f1Fetch<{ id: number; name: string; location?: { country: string; city: string } }>('/competitions');
   }
 
   async syncTeams(): Promise<number> {
@@ -372,4 +382,4 @@ class F1DataService {
 }
 
 export const f1DataService = new F1DataService();
-export { BELGIUM_GRAND_PRIX_ID, DEFAULT_SEASON };
+export { ACTIVE_GRAND_PRIX_ID, DEFAULT_SEASON };

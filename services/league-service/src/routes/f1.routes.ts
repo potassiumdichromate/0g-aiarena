@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { jwtMiddleware } from '../middleware/jwt.middleware';
-import { f1DataService, BELGIUM_GRAND_PRIX_ID, DEFAULT_SEASON } from '../services/f1-data.service';
+import { f1DataService, ACTIVE_GRAND_PRIX_ID, DEFAULT_SEASON } from '../services/f1-data.service';
 import { jolpicaDataService } from '../services/jolpica-data.service';
 import { f1FantasyService } from '../services/f1-fantasy.service';
 
@@ -14,7 +14,7 @@ function serviceHeaders(): Record<string, string> {
 export async function f1Routes(app: FastifyInstance): Promise<void> {
   // GET /v1/f1/grand-prix/belgium — the upcoming-race section + all its sessions.
   app.get('/grand-prix/belgium', async (req, reply) => {
-    const weekend = await f1DataService.getGrandPrixWeekend(BELGIUM_GRAND_PRIX_ID, DEFAULT_SEASON);
+    const weekend = await f1DataService.getGrandPrixWeekend(ACTIVE_GRAND_PRIX_ID, DEFAULT_SEASON);
     if (!weekend) return reply.status(404).send({ error: 'Belgian GP not synced yet — call POST /v1/f1/sync first' });
     return weekend;
   });
@@ -38,7 +38,7 @@ export async function f1Routes(app: FastifyInstance): Promise<void> {
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const driver = await f1DataService.getDriver(id);
-      const weekend = await f1DataService.getGrandPrixWeekend(BELGIUM_GRAND_PRIX_ID, DEFAULT_SEASON);
+      const weekend = await f1DataService.getGrandPrixWeekend(ACTIVE_GRAND_PRIX_ID, DEFAULT_SEASON);
       const standing = await f1DataService.getCurrentStanding(driver.providerId, DEFAULT_SEASON).catch(() => null);
 
       const res = await fetch(`${INFERENCE_SERVICE_URL}/f1-driver-prediction`, {
@@ -112,6 +112,17 @@ export async function f1Routes(app: FastifyInstance): Promise<void> {
       return result;
     },
   );
+
+  // GET /v1/f1/competitions — real Grand Prix id lookup, so switching
+  // F1_ACTIVE_GRAND_PRIX_ID to the next race weekend doesn't require guessing.
+  // Ops-gated (burns quota like the other provider-hitting routes).
+  app.get('/competitions', async (req, reply) => {
+    const serviceKey = req.headers['x-service-key'];
+    if (serviceKey !== process.env.INTERNAL_SERVICE_SECRET) return reply.status(401).send({ error: 'Unauthorized' });
+
+    const competitions = await f1DataService.listCompetitions();
+    return { competitions };
+  });
 
   // POST /v1/f1/sync — admin/ops trigger to (re)pull teams/drivers/races from API-SPORTS.
   // Gated by the same internal-service secret used elsewhere (X-Service-Key), since it
