@@ -494,13 +494,15 @@ export class InferenceGateway {
     const loserStats  = params.playerStats?.[params.loserName]
       ?? Object.values(params.playerStats ?? {})[1];
 
-    // Game-specific stat line — Highway Hustle is distance-based, others are combat-based.
+    // Game-specific stat line — Highway Hustle is distance-based, Warzone Wave is coin-based, others are combat-based.
     const statsLine = (name: string, s?: typeof winnerStats) => {
       if (!s) return `${name}: stats unavailable`;
       if (gameName === 'Highway Hustle')
         return `${name}: ${s.distanceCovered}m driven before crash`;
       if (gameName === 'Robowar')
         return `${name}: dealt ${s.shotsConnected} hits · took ${s.timesHit} hits · ${s.distanceCovered}m moved`;
+      if (gameName === 'Warzone Wave')
+        return `${name}: collected ${s.shotsConnected} coins in ${params.durationSeconds}s`;
       return `${name}: ${s.jumps} jumps · ${s.shotsConnected} shots connected · took ${s.timesHit} hits · ${s.distanceCovered}m covered`;
     };
 
@@ -508,6 +510,7 @@ export class InferenceGateway {
     const gameContext: Record<string, string> = {
       'Highway Hustle': 'an endless neon highway race where AI drivers dodge traffic at breakneck speed — the loser crashed while the winner survived longer',
       'Robowar':        'a brutal robot combat arena called the Crush Pit where bots battle to destruction',
+      'Warzone Wave':   'a co-op wave survival gauntlet where two AI agents battle enemy waves together for 60 seconds — the agent that collects the most coins wins',
     };
     const context = gameContext[gameName] ?? 'a futuristic AI combat league';
 
@@ -517,6 +520,8 @@ export class InferenceGateway {
       : params.endReason === 'timeout'            ? 'timeout'
       : params.endReason === 'highway-hustle-crash' ? 'crash'
       : params.endReason === 'robowar-battle-end'   ? 'destruction'
+      : params.endReason === 'wave-complete'        ? 'wave complete'
+      : params.endReason === 'time-up'              ? 'time up'
       : params.endReason;
 
     const prompt = `You are an electrifying AI Arena battle commentator for ${gameName} — ${context} running on the 0G decentralised network.
