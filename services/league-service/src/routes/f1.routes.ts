@@ -105,7 +105,8 @@ export async function f1Routes(app: FastifyInstance): Promise<void> {
   // .../sync-classification).
   app.get('/races/:raceId/result', async (req) => {
     const { raceId } = req.params as { raceId: string };
-    const result = await f1DataService.getRaceResult(raceId);
+    const { pickedDriverId } = req.query as { pickedDriverId?: string };
+    const result = await f1DataService.getRaceResult(raceId, pickedDriverId);
     return { result };
   });
 
@@ -193,6 +194,26 @@ export async function f1Routes(app: FastifyInstance): Promise<void> {
     const form = await jolpicaDataService.getDriverForm(driverCode);
     if (!form) return reply.status(404).send({ error: 'no historical results found for this driver — run POST /v1/f1/sync-historical first' });
     return { form };
+  });
+
+  // GET /v1/f1/drivers/:id/form — same recent-form data as the Jolpica route
+  // above, but keyed by our own F1Driver id (looked up via its abbr) so the
+  // frontend never has to know Jolpica's separate driverId slugs.
+  app.get('/drivers/:id/form', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const driver = await f1DataService.getDriver(id);
+    if (!driver.abbr) return reply.status(404).send({ error: 'driver has no abbr to match against historical results' });
+    const form = await jolpicaDataService.getDriverFormByAbbr(driver.abbr);
+    if (!form) return reply.status(404).send({ error: 'no historical results found for this driver — run POST /v1/f1/sync-historical first' });
+    return { form };
+  });
+
+  // GET /v1/f1/agents/:agentId/accuracy — real prediction win-rate history
+  // (overall + per market), built only from settled F1Prediction rows.
+  app.get('/agents/:agentId/accuracy', async (req) => {
+    const { agentId } = req.params as { agentId: string };
+    const accuracy = await f1DataService.getAgentAccuracy(agentId);
+    return { accuracy };
   });
 
   // ── Fantasy League ─────────────────────────────────────────────────────────

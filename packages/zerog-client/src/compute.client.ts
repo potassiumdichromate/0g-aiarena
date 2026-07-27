@@ -96,6 +96,7 @@ export interface PolymarketSignalToolArgs {
 export interface F1RacePickToolArgs {
   predictedDriverId: string;
   reasoning: string;
+  confidence: 'LOW' | 'MEDIUM' | 'HIGH';
 }
 
 export interface F1FantasyDraftToolArgs {
@@ -385,8 +386,13 @@ Analyse the battle context and opponent profile, then produce a structured strat
               description: 'The internal id of the driver you predict for this market.',
             },
             reasoning: { type: 'string', description: 'One or two sentences grounded in the real stats provided.' },
+            confidence: {
+              type: 'string',
+              enum: ['LOW', 'MEDIUM', 'HIGH'],
+              description: 'Your own conviction in this pick, grounded in how clear-cut the real standings/stats are.',
+            },
           },
-          required: ['predictedDriverId', 'reasoning'],
+          required: ['predictedDriverId', 'reasoning', 'confidence'],
           additionalProperties: false,
         },
       },

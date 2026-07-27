@@ -644,7 +644,7 @@ Write it now:`;
       teamName?: string | null;
       standing?: { position: number; points: number; wins: number; season: number } | null;
     }>;
-  }): Promise<{ predictedDriverId: string; reasoning: string; source: 'AI' | 'FALLBACK' }> {
+  }): Promise<{ predictedDriverId: string; reasoning: string; confidence: 'LOW' | 'MEDIUM' | 'HIGH'; source: 'AI' | 'FALLBACK' }> {
     const agent = await prisma.agent.findUnique({ where: { id: params.agentId } });
     if (!agent) throw new Error(`generateF1RacePick: agent ${params.agentId} not found`);
     const traits = normalizeTraits(agent.traits);
@@ -683,7 +683,10 @@ Pick the single most likely driver and explain why in 1-2 sentences, in your voi
       return { ...result, source: 'AI' };
     } catch (err) {
       console.error('[InferenceGateway] F1 race pick inference failed, using fallback:', err);
-      return { ...pickFallbackDriver(params.agentId, `${params.raceId}:${params.market}`, params.drivers), source: 'FALLBACK' };
+      // Heuristic (top-5-by-standing, seeded random) rather than reasoned AI
+      // judgment -- LOW confidence is the honest label, not a real read on
+      // the field.
+      return { ...pickFallbackDriver(params.agentId, `${params.raceId}:${params.market}`, params.drivers), confidence: 'LOW' as const, source: 'FALLBACK' };
     }
   }
 

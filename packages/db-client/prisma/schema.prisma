@@ -1025,6 +1025,9 @@ model F1Prediction {
   market            F1PredictionMarket @default(WINNER)
   predictedDriverId String
   reasoning         String?
+  /// The AI's own stated conviction on this pick (reuses League's LOW/MEDIUM/HIGH
+  /// scale) -- null for older picks made before this field existed.
+  confidence        ConvictionLevel?
   isCorrect         Boolean?
   settledAt         DateTime?
   createdAt         DateTime           @default(now())

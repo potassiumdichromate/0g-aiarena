@@ -186,7 +186,29 @@ class JolpicaDataService {
       recentFormScore: weightSum > 0 ? weightedFinish / weightSum : null,
       last5PointsTotal: pointsSum,
       last5DnfRate: dnfCount / races.length,
+      // Chronological (oldest -> newest) so a sparkline reads left-to-right
+      // like a timeline, not most-recent-first like the query above.
+      races: [...races].reverse().map((r) => ({
+        season: r.season,
+        round: r.round,
+        raceName: r.raceName,
+        finishPosition: r.finishPosition,
+        points: r.points,
+        status: r.status,
+      })),
     };
+  }
+
+  /**
+   * Same as getDriverForm, but looked up by an F1Driver's 3-letter abbr
+   * (e.g. "NOR") instead of Jolpica's own driverId slug -- so the frontend
+   * can ask for a driver's form using the id it already has from
+   * GET /v1/f1/drivers, without needing to know Jolpica's separate naming.
+   */
+  async getDriverFormByAbbr(abbr: string) {
+    const row = await prisma.f1RaceResult.findFirst({ where: { driverAbbr: abbr }, select: { driverCode: true } });
+    if (!row) return null;
+    return this.getDriverForm(row.driverCode);
   }
 }
 

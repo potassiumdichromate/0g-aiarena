@@ -267,7 +267,14 @@ class F1DataService {
     return { position: row.position, points: row.points, wins: row.wins, season: row.season };
   }
 
-  async makePick(raceId: string, agentId: string, predictedDriverId: string, market: F1PredictionMarket = 'WINNER', reasoning?: string) {
+  async makePick(
+    raceId: string,
+    agentId: string,
+    predictedDriverId: string,
+    market: F1PredictionMarket = 'WINNER',
+    reasoning?: string,
+    confidence?: 'LOW' | 'MEDIUM' | 'HIGH',
+  ) {
     const [race, driver] = await Promise.all([
       prisma.f1Race.findUnique({ where: { id: raceId } }),
       prisma.f1Driver.findUnique({ where: { id: predictedDriverId } }),
@@ -278,8 +285,8 @@ class F1DataService {
 
     return prisma.f1Prediction.upsert({
       where: { raceId_agentId_market: { raceId, agentId, market } },
-      create: { raceId, agentId, market, predictedDriverId, reasoning },
-      update: { predictedDriverId, reasoning },
+      create: { raceId, agentId, market, predictedDriverId, reasoning, confidence },
+      update: { predictedDriverId, reasoning, confidence },
     });
   }
 
@@ -327,12 +334,59 @@ class F1DataService {
       const text = await res.text().catch(() => '');
       throw new Error(`inference-service f1-race-pick failed: ${text}`);
     }
-    const { predictedDriverId, reasoning, source } = (await res.json()) as {
-      predictedDriverId: string; reasoning: string; source: 'AI' | 'FALLBACK';
+    const { predictedDriverId, reasoning, confidence, source } = (await res.json()) as {
+      predictedDriverId: string; reasoning: string; confidence?: 'LOW' | 'MEDIUM' | 'HIGH'; source: 'AI' | 'FALLBACK';
     };
 
-    const pick = await this.makePick(raceId, agentId, predictedDriverId, market, reasoning);
+    const pick = await this.makePick(raceId, agentId, predictedDriverId, market, reasoning, confidence);
     return { pick, source };
+  }
+
+  /**
+   * Per-agent prediction accuracy across all settled F1 picks -- overall and
+   * broken out per market (Winner/Podium/Fastest Lap), plus a chronological
+   * history for a trend line. Only ever counts predictions that have
+   * actually been settled against real results (settlePredictions above), so
+   * this can never show a win rate the agent hasn't actually earned.
+   */
+  async getAgentAccuracy(agentId: string) {
+    const predictions = await prisma.f1Prediction.findMany({
+      where: { agentId, settledAt: { not: null } },
+      orderBy: { settledAt: 'asc' },
+      include: { race: true },
+    });
+
+    const markets: F1PredictionMarket[] = ['WINNER', 'PODIUM', 'FASTEST_LAP'];
+    const byMarket = Object.fromEntries(markets.map((m) => [m, { total: 0, correct: 0 }])) as Record<
+      F1PredictionMarket,
+      { total: number; correct: number }
+    >;
+
+    const history = predictions.map((p) => {
+      byMarket[p.market].total++;
+      if (p.isCorrect) byMarket[p.market].correct++;
+      return {
+        raceId: p.raceId,
+        grandPrixName: p.race.grandPrixName,
+        market: p.market,
+        confidence: p.confidence,
+        isCorrect: p.isCorrect,
+        settledAt: p.settledAt,
+      };
+    });
+
+    const totalCorrect = predictions.filter((p) => p.isCorrect).length;
+    return {
+      overall: {
+        total: predictions.length,
+        correct: totalCorrect,
+        winRate: predictions.length > 0 ? totalCorrect / predictions.length : null,
+      },
+      byMarket: Object.fromEntries(
+        markets.map((m) => [m, { ...byMarket[m], winRate: byMarket[m].total > 0 ? byMarket[m].correct / byMarket[m].total : null }]),
+      ),
+      history,
+    };
   }
 
   /**
@@ -345,7 +399,7 @@ class F1DataService {
    * -- no separate data path, so this can never disagree with what a pick
    * was actually graded against.
    */
-  async getRaceResult(raceId: string) {
+  async getRaceResult(raceId: string, pickedDriverId?: string) {
     const classifications = await prisma.f1RaceClassification.findMany({
       where: { raceId },
       include: { driver: true },
@@ -363,9 +417,15 @@ class F1DataService {
 
     const finishers = classifications.filter((c) => c.position != null);
     const fastestLapEntry = classifications.find((c) => c.fastestLap);
+    // What the picked driver *actually* did -- needed for markets like
+    // PODIUM where "the result" isn't one single driver to compare 1:1
+    // against (unlike WINNER/FASTEST_LAP), so the frontend needs the
+    // picked driver's own real finish to show alongside the podium.
+    const pickedEntry = pickedDriverId ? classifications.find((c) => c.driverId === pickedDriverId) : undefined;
 
     return {
       winner: finishers[0] ? toSummary(finishers[0]) : null,
+      pickedDriverResult: pickedEntry ? toSummary(pickedEntry) : null,
       podium: finishers.slice(0, 3).map(toSummary),
       fastestLapDriver: fastestLapEntry ? toSummary(fastestLapEntry) : null,
     };
