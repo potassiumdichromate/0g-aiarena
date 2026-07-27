@@ -19,7 +19,10 @@ interface ProviderRaceResult {
   position: number | null;
   // Confirmed live: omitted for classified finishers, only populated for DNF/retired rows.
   status?: string;
-  time?: { fastest_lap?: { rank?: number | null } | null } | null;
+}
+
+interface RaceResultJson {
+  fastest_lap?: { driver?: { id?: number | null } | null } | null;
 }
 
 class F1FantasyService {
@@ -89,6 +92,13 @@ class F1FantasyService {
     if (!res.ok) throw new Error(`F1 API rankings/races returned ${res.status}`);
     const data = (await res.json()) as { response: ProviderRaceResult[] };
 
+    // The per-driver rows above never actually carry a fastest-lap flag
+    // (verified live: `time.fastest_lap.rank` is absent from every row) --
+    // the real fastest-lap driver only shows up on the RACE record itself
+    // (F1Race.result.fastest_lap.driver.id, populated by the /races sync),
+    // so that's the source of truth here instead.
+    const fastestLapProviderId = (race.result as RaceResultJson | null)?.fastest_lap?.driver?.id ?? null;
+
     const rows = data.response ?? [];
     let synced = 0;
     for (const r of rows) {
@@ -97,7 +107,7 @@ class F1FantasyService {
 
       const position = r.position ?? null;
       const points = position ? (F1_POINTS_TABLE[position] ?? 0) : 0;
-      const fastestLap = r.time?.fastest_lap?.rank === 1;
+      const fastestLap = fastestLapProviderId != null && r.driver.id === fastestLapProviderId;
       // The provider omits `status` for classified finishers in practice (only
       // seen populated for DNF/retired rows in the real response) -- our own
       // column is required, so default rather than crash. A driver with a real
