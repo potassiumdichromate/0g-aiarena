@@ -2,7 +2,7 @@
   "name": "@ai-arena/agent-bot-service",
   "version": "0.1.0",
   "private": true,
-  "description": "Continuously mints filler agents on a random 30-60min schedule so real players always have opponents to face.",
+  "description": "Continuously mints filler agents + their Warzone save data on a random 30-60min schedule so real players always have opponents to face.",
   "scripts": {
     "dev": "ts-node-dev --transpile-only --respawn src/main.ts",
     "build": "tsc",
@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "fastify": "^4.26.0",
-    "@fastify/helmet": "^11.1.0"
+    "@fastify/helmet": "^11.1.0",
+    "ethers": "6.13.1"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

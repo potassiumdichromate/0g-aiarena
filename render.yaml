@@ -594,6 +594,8 @@ services:
         value: https://aiarena-gateway.onrender.com
       - key: BOT_REGISTRATION_SECRET
         sync: false
+      - key: WARZONE_BACKEND_URL
+        value: https://zerog-warzonewarriors.onrender.com
       - key: MIN_INTERVAL_MINUTES
         value: "30"
       - key: MAX_INTERVAL_MINUTES

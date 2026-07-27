@@ -9,12 +9,18 @@
  * the exact same path a real client would use, so it gets the full
  * personality-gen / 0G storage / INFT mint pipeline, not a shortcut.
  *
- * Deliberately NOT a batch/bulk minter: one agent, sleep, repeat.
+ * Same cycle also gives that bot its own Warzone game-save data (see
+ * warzone.ts) so bots have save data to bring into Warzone matchmaking too --
+ * a separate throwaway wallet, uploaded to 0G Storage via the WarzoneWarrior
+ * backend's binary save API.
+ *
+ * Deliberately NOT a batch/bulk minter: one agent + one save, sleep, repeat.
  */
 
 import Fastify from 'fastify';
 import helmet from '@fastify/helmet';
 import { randomAgentPayload, randomIntervalMs } from './generators';
+import { uploadRandomWarzoneSave } from './warzone';
 
 const PORT = parseInt(process.env.PORT ?? '8070', 10);
 const GATEWAY_URL = (process.env.GATEWAY_URL ?? 'http://localhost:8000').replace(/\/$/, '');
@@ -27,6 +33,12 @@ let mintedCount = 0;
 let lastMintAt: string | null = null;
 let lastAgent: { id: string; name: string; walletAddress: string } | null = null;
 let lastError: string | null = null;
+
+let warzoneUploadCount = 0;
+let lastWarzoneUploadAt: string | null = null;
+let lastWarzoneSave: { walletAddress: string; rootHash: string } | null = null;
+let lastWarzoneError: string | null = null;
+
 let stopped = false;
 let timer: NodeJS.Timeout | null = null;
 
@@ -59,6 +71,9 @@ async function createAgent(accessToken: string): Promise<{ id: string; name: str
 }
 
 async function mintOne(): Promise<void> {
+  if (!BOT_SECRET) {
+    throw new Error('BOT_REGISTRATION_SECRET is not set');
+  }
   const { walletAddress, accessToken } = await registerBotUser();
   const agent = await createAgent(accessToken);
 
@@ -71,10 +86,22 @@ async function mintOne(): Promise<void> {
   );
 }
 
+async function uploadWarzoneSaveOnce(): Promise<void> {
+  const { walletAddress, rootHash } = await uploadRandomWarzoneSave();
+
+  warzoneUploadCount += 1;
+  lastWarzoneUploadAt = new Date().toISOString();
+  lastWarzoneSave = { walletAddress, rootHash };
+  lastWarzoneError = null;
+  console.log(
+    `[agent-bot] uploaded warzone save for wallet ${walletAddress} (rootHash ${rootHash}) — total uploaded: ${warzoneUploadCount}`,
+  );
+}
+
 function scheduleNext(): void {
   if (stopped) return;
   const delay = randomIntervalMs(MIN_INTERVAL_MINUTES, MAX_INTERVAL_MINUTES);
-  console.log(`[agent-bot] next mint in ~${Math.round(delay / 60_000)} min`);
+  console.log(`[agent-bot] next cycle in ~${Math.round(delay / 60_000)} min`);
   timer = setTimeout(runCycle, delay);
 }
 
@@ -85,6 +112,14 @@ async function runCycle(): Promise<void> {
     lastError = (err as Error).message;
     console.error('[agent-bot] mint cycle failed:', lastError);
   }
+
+  try {
+    await uploadWarzoneSaveOnce();
+  } catch (err) {
+    lastWarzoneError = (err as Error).message;
+    console.error('[agent-bot] warzone upload failed:', lastWarzoneError);
+  }
+
   scheduleNext();
 }
 
@@ -100,6 +135,10 @@ async function bootstrap(): Promise<void> {
     lastMintAt,
     lastAgent,
     lastError,
+    warzoneUploadCount,
+    lastWarzoneUploadAt,
+    lastWarzoneSave,
+    lastWarzoneError,
     minIntervalMinutes: MIN_INTERVAL_MINUTES,
     maxIntervalMinutes: MAX_INTERVAL_MINUTES,
   }));
@@ -108,8 +147,9 @@ async function bootstrap(): Promise<void> {
   app.log.info(`agent-bot-service running on port ${PORT}`);
 
   if (!BOT_SECRET) {
-    app.log.error('BOT_REGISTRATION_SECRET is not set — mint loop will not start.');
-  } else if (MINT_ON_STARTUP) {
+    app.log.warn('BOT_REGISTRATION_SECRET is not set — arena agent minting will fail every cycle, but warzone save uploads will still run.');
+  }
+  if (MINT_ON_STARTUP) {
     runCycle();
   } else {
     scheduleNext();
