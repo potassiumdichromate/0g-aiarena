@@ -336,6 +336,42 @@ class F1DataService {
   }
 
   /**
+   * The real result for one race, once classified -- what a picked driver
+   * is actually compared against in settlePredictions below, surfaced so
+   * the frontend can show "here's who really won" next to a settled pick
+   * instead of just a bare Correct/Incorrect badge (same idea as the
+   * football board showing the real final score next to a prediction).
+   * Same F1RaceClassification source as settlePredictions/fantasy scoring
+   * -- no separate data path, so this can never disagree with what a pick
+   * was actually graded against.
+   */
+  async getRaceResult(raceId: string) {
+    const classifications = await prisma.f1RaceClassification.findMany({
+      where: { raceId },
+      include: { driver: true },
+      orderBy: { position: 'asc' },
+    });
+    if (classifications.length === 0) return null;
+
+    const toSummary = (c: (typeof classifications)[number]) => ({
+      id: c.driver.id,
+      name: c.driver.name,
+      abbr: c.driver.abbr,
+      image: c.driver.image,
+      position: c.position,
+    });
+
+    const finishers = classifications.filter((c) => c.position != null);
+    const fastestLapEntry = classifications.find((c) => c.fastestLap);
+
+    return {
+      winner: finishers[0] ? toSummary(finishers[0]) : null,
+      podium: finishers.slice(0, 3).map(toSummary),
+      fastestLapDriver: fastestLapEntry ? toSummary(fastestLapEntry) : null,
+    };
+  }
+
+  /**
    * The other half of the pick flow that was never built: comparing a saved
    * F1Prediction against what actually happened. Requires
    * F1RaceClassification to already be synced for this race (real per-driver

@@ -97,6 +97,18 @@ export async function f1Routes(app: FastifyInstance): Promise<void> {
     return { picks };
   });
 
+  // GET /v1/f1/races/:raceId/result — the real winner/podium/fastest-lap driver
+  // once a race is classified, so a settled pick can show what actually
+  // happened next to Correct/Incorrect (same idea as football showing the
+  // real final score). Public read, same as the pick-read route above --
+  // null until classification has been synced (POST .../settle or
+  // .../sync-classification).
+  app.get('/races/:raceId/result', async (req) => {
+    const { raceId } = req.params as { raceId: string };
+    const result = await f1DataService.getRaceResult(raceId);
+    return { result };
+  });
+
   // POST /v1/f1/races/:raceId/predict-pick — "Let AI Predict". The AI names the
   // driver itself (via inference-service's tool-forced pick) and the pick is
   // saved immediately -- no manual driver selection.
