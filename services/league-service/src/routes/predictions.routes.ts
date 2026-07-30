@@ -26,6 +26,18 @@ export async function predictionsRoutes(app: FastifyInstance): Promise<void> {
     return leagueReadService.getTodayPredictions(parseIntParam(limit, 10, { min: 1, max: 50 }));
   });
 
+  // GET /v1/league/agents/:agentId/predictions -- one agent's real football
+  // prediction track record (accuracy + recent picks), for the "AI
+  // Prediction Performance" panel on the My Agents detail view. Public read,
+  // same as /predictions/today above -- no auth needed to view an agent's
+  // own settled record.
+  app.get('/agents/:agentId/predictions', async (req) => {
+    const { agentId } = req.params as { agentId: string };
+    const invalid = findInvalidUuidParam({ agentId }, ['agentId']);
+    if (invalid) throw new BadRequestError(`invalid ${invalid}`);
+    return leagueReadService.getAgentPredictionPerformance(agentId);
+  });
+
   // §6.5 — PUT /v1/league/predictions/:matchId/:agentId
   app.put(
     '/predictions/:matchId/:agentId',

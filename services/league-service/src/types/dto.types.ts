@@ -121,6 +121,32 @@ export interface RecentPickDTO {
   kpEarned: number;
 }
 
+/** GET /v1/league/agents/:agentId/predictions item -- one settled football pick. */
+export interface AgentPredictionRowDTO {
+  id: string;
+  home: string;
+  away: string;
+  kickoffAt: string;
+  predictedScore: string;
+  actualScore: string | null;
+  confidence: number;
+  isCorrect: boolean;
+  settledAt: string | null;
+}
+
+/** GET /v1/league/agents/:agentId/predictions -- one agent's real football prediction track record. */
+export interface AgentPredictionPerformanceDTO {
+  overall: {
+    total: number;
+    correct: number;
+    incorrect: number;
+    winRate: number | null;
+    currentStreak: number;
+    avgConfidence: number | null;
+  };
+  recent: AgentPredictionRowDTO[];
+}
+
 /** §15.4 — GET /v1/league/rivalries/featured */
 export interface RivalryDTO {
   leftAgentId: string;

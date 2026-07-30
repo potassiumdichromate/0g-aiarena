@@ -24,6 +24,7 @@ import { getReputationLeaderboard, getUserGlobalRank, ReputationLeaderboardRow }
 import { NotFoundError } from '../lib/errors';
 import {
   AgentBetDTO,
+  AgentPredictionPerformanceDTO,
   KpLeaderboardRowDTO,
   LeaguePredictionQuestionAgentDTO,
   LeaguePredictionQuestionDTO,
@@ -243,6 +244,61 @@ class LeagueReadService {
         kpEarned: p.kpAwarded ?? 0,
       };
     });
+  }
+
+  /**
+   * GET /v1/league/agents/:agentId/predictions -- one agent's real football
+   * prediction track record (accuracy + a recent-picks table), for the
+   * per-agent "AI Prediction Performance" panel. Same LeaguePrediction rows
+   * and isCorrectWinner/conviction fields getMyRecentPicks above already
+   * uses, just scoped to one agent and including the running stats
+   * (streak/win-rate/avg confidence) rather than a bare list.
+   */
+  async getAgentPredictionPerformance(agentId: string, recentLimit = 15): Promise<AgentPredictionPerformanceDTO> {
+    const predictions = await prisma.leaguePrediction.findMany({
+      where: { agentId, status: 'SETTLED' },
+      include: { match: true },
+      orderBy: { settledAt: 'desc' },
+    });
+
+    const total = predictions.length;
+    const correct = predictions.filter((p) => p.isCorrectWinner).length;
+
+    let currentStreak = 0;
+    for (const p of predictions) {
+      if (p.isCorrectWinner) currentStreak++;
+      else break;
+    }
+
+    const avgConfidence =
+      total > 0 ? Math.round(predictions.reduce((sum, p) => sum + convictionToConfidencePct(p.conviction), 0) / total) : null;
+
+    const recent = predictions.slice(0, recentLimit).map((p) => {
+      const actual = (p.match.result ?? {}) as { scoreHome?: number; scoreAway?: number };
+      return {
+        id: p.id,
+        home: p.match.homeTeam,
+        away: p.match.awayTeam,
+        kickoffAt: p.match.kickoffAt.toISOString(),
+        predictedScore: `${p.scoreHome}-${p.scoreAway}`,
+        actualScore: actual.scoreHome != null && actual.scoreAway != null ? `${actual.scoreHome}-${actual.scoreAway}` : null,
+        confidence: convictionToConfidencePct(p.conviction),
+        isCorrect: p.isCorrectWinner ?? false,
+        settledAt: p.settledAt ? p.settledAt.toISOString() : null,
+      };
+    });
+
+    return {
+      overall: {
+        total,
+        correct,
+        incorrect: total - correct,
+        winRate: total > 0 ? correct / total : null,
+        currentStreak,
+        avgConfidence,
+      },
+      recent,
+    };
   }
 
   /** §15.4 — GET /v1/league/rivalries/featured */
