@@ -353,7 +353,7 @@ class F1DataService {
     const predictions = await prisma.f1Prediction.findMany({
       where: { agentId, settledAt: { not: null } },
       orderBy: { settledAt: 'asc' },
-      include: { race: true },
+      include: { race: true, predictedDriver: true },
     });
 
     const markets: F1PredictionMarket[] = ['WINNER', 'PODIUM', 'FASTEST_LAP'];
@@ -369,6 +369,7 @@ class F1DataService {
         raceId: p.raceId,
         grandPrixName: p.race.grandPrixName,
         market: p.market,
+        predictedDriverName: p.predictedDriver.name,
         confidence: p.confidence,
         isCorrect: p.isCorrect,
         settledAt: p.settledAt,
