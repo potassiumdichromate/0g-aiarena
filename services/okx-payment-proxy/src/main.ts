@@ -238,17 +238,25 @@ const server = http.createServer(async (req, res) => {
 
   const body = await readBody(req);
 
-  const hdrV2  = req.headers['payment-signature'] as string | undefined;
-  const hdrV1  = req.headers['x-payment']         as string | undefined;
-  const payHdr = hdrV2 ?? hdrV1;
-  const ver: 1 | 2 = hdrV2 ? 2 : 1;
+  // OKX's own Service Seller SDK docs reference a short-form "PAYMENT-SIG"
+  // header alongside the "PAYMENT-SIGNATURE" (v2) / "X-PAYMENT" (v1) names
+  // we already handle -- accept all three defensively, since the marketplace's
+  // task-402-pay replay has been silently 402ing (falling through to "no
+  // payment header detected") despite producing a valid, independently-
+  // verified signature, and this is the leading unconfirmed suspect.
+  const hdrV2     = req.headers['payment-signature'] as string | undefined;
+  const hdrV2Alt  = req.headers['payment-sig']        as string | undefined;
+  const hdrV1     = req.headers['x-payment']          as string | undefined;
+  const payHdr = hdrV2 ?? hdrV2Alt ?? hdrV1;
+  const ver: 1 | 2 = (hdrV2 ?? hdrV2Alt) ? 2 : 1;
 
   if (!payHdr) {
     send402(res);
     return;
   }
 
-  console.log(`[proxy] payment header detected (x402 v${ver})`);
+  const matchedHeader = hdrV2 ? 'PAYMENT-SIGNATURE' : hdrV2Alt ? 'PAYMENT-SIG' : 'X-PAYMENT';
+  console.log(`[proxy] payment header detected (x402 v${ver}, header=${matchedHeader})`);
 
   // ── Idempotency: already delivered for this nonce? ────────────────────────
   let nonce: string | undefined;
