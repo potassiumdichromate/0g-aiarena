@@ -238,25 +238,50 @@ const server = http.createServer(async (req, res) => {
 
   const body = await readBody(req);
 
-  // OKX's own Service Seller SDK docs reference a short-form "PAYMENT-SIG"
-  // header alongside the "PAYMENT-SIGNATURE" (v2) / "X-PAYMENT" (v1) names
-  // we already handle -- accept all three defensively, since the marketplace's
-  // task-402-pay replay has been silently 402ing (falling through to "no
-  // payment header detected") despite producing a valid, independently-
-  // verified signature, and this is the leading unconfirmed suspect.
-  const hdrV2     = req.headers['payment-signature'] as string | undefined;
-  const hdrV2Alt  = req.headers['payment-sig']        as string | undefined;
-  const hdrV1     = req.headers['x-payment']          as string | undefined;
-  const payHdr = hdrV2 ?? hdrV2Alt ?? hdrV1;
-  const ver: 1 | 2 = (hdrV2 ?? hdrV2Alt) ? 2 : 1;
+  // The marketplace's task-402-pay replay has been intermittently/silently
+  // 402ing (falling through to "no payment header detected") despite
+  // producing a valid, independently-verified signature -- confirmed real
+  // sales worked through 2026-07-24 ~04:00 then broke with no deploy on our
+  // side, so the header name/convention their CLI sends under may have
+  // shifted server-side on OKX's end. Rather than chase exact names one at
+  // a time (PAYMENT-SIGNATURE / X-PAYMENT / PAYMENT-SIG all already tried),
+  // accept ANY header whose name contains "payment" as a last-resort
+  // catch-all, so a future/unknown naming convention still gets picked up.
+  const KNOWN_HEADERS = ['payment-signature', 'payment-sig', 'x-payment'] as const;
+  let payHdr: string | undefined;
+  let matchedHeaderName: string | undefined;
+  for (const h of KNOWN_HEADERS) {
+    const v = req.headers[h] as string | undefined;
+    if (v) { payHdr = v; matchedHeaderName = h.toUpperCase(); break; }
+  }
+  if (!payHdr) {
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (key.toLowerCase().includes('payment') && typeof value === 'string' && value.length > 20) {
+        payHdr = value;
+        matchedHeaderName = key;
+        break;
+      }
+    }
+  }
+  // Version: prefer the payload's own x402Version field (authoritative) over
+  // guessing from header name, since the header-name convention is exactly
+  // what's in question here.
+  let ver: 1 | 2 = matchedHeaderName === 'PAYMENT-SIGNATURE' || matchedHeaderName === 'PAYMENT-SIG' ? 2 : 1;
+  if (payHdr) {
+    try {
+      const peek = decodeHeader(payHdr) as unknown as { x402Version?: number };
+      if (peek.x402Version === 1) ver = 1;
+      else if (peek.x402Version === 2) ver = 2;
+    } catch { /* fall back to header-name guess above */ }
+  }
 
   if (!payHdr) {
+    console.log('[proxy] no payment header found; headers seen:', Object.keys(req.headers).join(', '));
     send402(res);
     return;
   }
 
-  const matchedHeader = hdrV2 ? 'PAYMENT-SIGNATURE' : hdrV2Alt ? 'PAYMENT-SIG' : 'X-PAYMENT';
-  console.log(`[proxy] payment header detected (x402 v${ver}, header=${matchedHeader})`);
+  console.log(`[proxy] payment header detected (x402 v${ver}, header=${matchedHeaderName})`);
 
   // ── Idempotency: already delivered for this nonce? ────────────────────────
   let nonce: string | undefined;
