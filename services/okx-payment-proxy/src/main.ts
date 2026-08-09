@@ -276,8 +276,19 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (!payHdr) {
+    // TEMP DEBUG: echo received header names back in the 402 body so we can
+    // see exactly what task-402-pay actually sent, since we have no direct
+    // access to Render's live logs. Remove once the marketplace-replay
+    // mystery is resolved.
     console.log('[proxy] no payment header found; headers seen:', Object.keys(req.headers).join(', '));
-    send402(res);
+    const debugBody = {
+      x402Version: 2, resource: resourceInfo(), accepts: [paymentRequirements()], error: 'Payment required',
+      _debugReceivedHeaderNames: Object.keys(req.headers),
+    };
+    res.statusCode = 402;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('PAYMENT-REQUIRED', Buffer.from(JSON.stringify(debugBody)).toString('base64'));
+    res.end(JSON.stringify(debugBody));
     return;
   }
 
