@@ -234,20 +234,21 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if ((req.method === 'GET' || req.method === 'HEAD') && url === '/create-agent') {
-    send402(res, undefined, req.method === 'HEAD');
-    return;
-  }
-
-  if (req.method !== 'POST' || url !== '/create-agent') {
+  const isCreateAgentMethod = req.method === 'GET' || req.method === 'HEAD' || req.method === 'POST';
+  if (!isCreateAgentMethod || url !== '/create-agent') {
     res.statusCode = 404;
     res.end(JSON.stringify({ error: 'Not found' }));
     return;
   }
 
-  // ── POST /create-agent ────────────────────────────────────────────────────
+  // ── GET/HEAD/POST /create-agent ───────────────────────────────────────────
+  // The marketplace's task-402-pay replay sends its payment as a GET request
+  // (confirmed via echo test), not POST — a payment header must be honored
+  // regardless of method, or a paid GET is indistinguishable from a bare
+  // unpaid probe. Only fall back to a fresh 402 challenge when no payment
+  // header is present.
 
-  const body = await readBody(req);
+  const body = req.method === 'POST' ? await readBody(req) : Buffer.alloc(0);
 
   // The marketplace's task-402-pay replay has been intermittently/silently
   // 402ing (falling through to "no payment header detected") despite
@@ -287,11 +288,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (!payHdr) {
-    send402(res);
+    send402(res, undefined, req.method === 'HEAD');
     return;
   }
 
-  console.log(`[proxy] payment header detected (x402 v${ver}, header=${matchedHeaderName})`);
+  console.log(`[proxy] payment header detected (x402 v${ver}, method=${req.method}, header=${matchedHeaderName})`);
 
   // ── Idempotency: already delivered for this nonce? ────────────────────────
   let nonce: string | undefined;
