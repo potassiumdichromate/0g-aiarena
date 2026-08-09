@@ -58,7 +58,11 @@ function paymentRequirements() {
     amount:            AMOUNT,
     payTo:             PAY_TO,
     maxTimeoutSeconds: TIMEOUT,
-    extra:             { name: 'USD₮0', version: '1' },
+    // A working marketplace-flow ASP (agent #9795 "Horos") includes
+    // `decimals` in extra alongside name/version -- we didn't. task-402-pay
+    // succeeded first-try against their endpoint, consistently 402s against
+    // ours; this is the one concrete structural difference found so far.
+    extra:             { name: 'USD₮0', version: '1', decimals: 6 },
   };
 }
 
