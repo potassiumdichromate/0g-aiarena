@@ -47,6 +47,14 @@ async function main() {
   await app.register(cors, {
     origin: process.env.ALLOWED_ORIGINS?.split(',') ?? ['http://localhost:3000'],
     credentials: true,
+    // Non-browser callers (server-to-server x402 buyers, review harnesses)
+    // send OPTIONS without real preflight headers or a matching Origin --
+    // strictPreflight's default (true) 400s those before they ever reach
+    // route logic, e.g. OKX's ASP review hitting /v1/okx/* with a bare
+    // OPTIONS and getting "Invalid Preflight Request" instead of any
+    // response at all. Lenient mode still applies CORS headers for real
+    // browser requests, it just doesn't hard-error on non-browser ones.
+    strictPreflight: false,
   });
 
   await app.register(helmet, {

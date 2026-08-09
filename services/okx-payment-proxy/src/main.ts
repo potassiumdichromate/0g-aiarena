@@ -72,12 +72,13 @@ function resourceInfo() {
 
 // ── 402 challenge ─────────────────────────────────────────────────────────────
 
-function send402(res: http.ServerResponse, reason?: string): void {
+function send402(res: http.ServerResponse, reason?: string, headersOnly = false): void {
   const body = { x402Version: 2, resource: resourceInfo(), accepts: [paymentRequirements()], error: reason ?? 'Payment required' };
   const encoded = Buffer.from(JSON.stringify(body)).toString('base64');
   res.statusCode = 402;
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('PAYMENT-REQUIRED', encoded);
+  if (headersOnly) { res.end(); return; } // HEAD — headers (incl. the challenge) but no body
   res.end(JSON.stringify(body));
 }
 
@@ -211,14 +212,19 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'OPTIONS' && url === '/create-agent') {
+    // Some review/discovery clients probe with OPTIONS expecting to see
+    // the payment challenge, not just an Allow header — include it
+    // defensively alongside the normal 200 CORS-preflight response.
+    const body = { x402Version: 2, resource: resourceInfo(), accepts: [paymentRequirements()], error: 'Payment required' };
     res.statusCode = 200;
-    res.setHeader('Allow', 'GET, POST, OPTIONS');
+    res.setHeader('Allow', 'GET, HEAD, POST, OPTIONS');
+    res.setHeader('PAYMENT-REQUIRED', Buffer.from(JSON.stringify(body)).toString('base64'));
     res.end();
     return;
   }
 
-  if (req.method === 'GET' && url === '/create-agent') {
-    send402(res);
+  if ((req.method === 'GET' || req.method === 'HEAD') && url === '/create-agent') {
+    send402(res, undefined, req.method === 'HEAD');
     return;
   }
 
