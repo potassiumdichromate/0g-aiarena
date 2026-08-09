@@ -77,7 +77,14 @@ function resourceInfo() {
 // ── 402 challenge ─────────────────────────────────────────────────────────────
 
 function send402(res: http.ServerResponse, reason?: string, headersOnly = false): void {
-  const body = { x402Version: 2, resource: resourceInfo(), accepts: [paymentRequirements()], error: reason ?? 'Payment required' };
+  // A working marketplace-flow ASP (Horos, #9795) includes a top-level
+  // challenge nonce (sibling of accepts/resource/x402Version, distinct from
+  // the authorization's own nonce) that we didn't have at all. Undocumented
+  // in anything we found, but present in a proven-working implementation --
+  // task-402-pay may key off it internally. Purely additive on our side;
+  // we don't validate it ourselves.
+  const challengeNonce = crypto.randomBytes(16).toString('hex');
+  const body = { x402Version: 2, resource: resourceInfo(), accepts: [paymentRequirements()], nonce: challengeNonce, error: reason ?? 'Payment required' };
   const encoded = Buffer.from(JSON.stringify(body)).toString('base64');
   res.statusCode = 402;
   res.setHeader('Content-Type', 'application/json');
