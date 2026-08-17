@@ -74,20 +74,29 @@ signs and the relayer pays. The agent-EOA gas is only for publishing reputation.
 
 ## Step 2 — Database migration
 
-No database was reachable during development, so no migration SQL was ever
-generated. The schema validates and the client generates, but **the tables do
-not exist**.
+Migrations are committed and verified: all 16 apply cleanly from an empty
+database with zero drift against the schema.
+
+**On Render, run `migrate deploy` — never `migrate dev`.**
 
 ```bash
-cd packages/db-client && npx dotenv -e ../../.env -- npx prisma migrate dev --name a2a_marketplace
+cd ~/project/src/packages/db-client
+npx prisma migrate deploy
 ```
 
-Creates: `AgentBaseIdentity`, `AgentCapabilitySnapshot`, `A2AJob`,
-`A2ANegotiation`, `A2ANegotiationMessage`, plus the execution, verification and
-reputation columns on `A2AJob`.
+`migrate dev` is a development command. Against a production database it can
+detect drift and offer to **reset it**, wiping agents, battles and league data.
+It also needs a shadow database, and it writes migration files to the instance
+disk on Render, where they are lost on the next deploy. `migrate deploy` only
+applies migration files that already exist in the repo, which is what you want.
 
-Commit the generated migration folder — production runs `prisma migrate deploy`,
-which will not create it for you.
+Mind the path: Render puts the checkout at `~/project/src`, and a service shell
+opens in that service's own `rootDir`, so a relative `cd packages/db-client`
+fails.
+
+Covers: `AgentBaseIdentity`, `AgentCapabilitySnapshot`, `A2AJob`,
+`A2ANegotiation`, `A2ANegotiationMessage`, plus the execution, verification
+and reputation columns on `A2AJob`.
 
 ---
 
