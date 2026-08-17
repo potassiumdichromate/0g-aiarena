@@ -556,6 +556,42 @@ Then, with two agents registered:
 
 ---
 
+## Verifier key exposure — accepted, not rotated
+
+**Decision: keep the existing verifier key.** Recorded so it reads as a
+deliberate choice rather than something missed.
+
+What happened: `A2A_VERIFIER_PRIVATE_KEY` was pasted into Render with 30 stray
+characters after a newline. ethers rejected the whole string, and
+evaluation-service returned that raw error on its public `/health`, so the
+first 64 hex characters — the real key — were served in plaintext. The key was
+confirmed to derive to `0x50f30472EB90FEe62927471847Bb2A4947FDe498`, the
+address holding `VERIFIER_ROLE`.
+
+Fixed in 736dc00: both evaluation-service and base-chain-service now classify
+health errors instead of echoing them, so this cannot recur.
+
+The exposure window was short and the URL was not published. The owner judged
+the risk acceptable and chose not to rotate.
+
+**What the key can do if it ever is compromised:** `VERIFIER_ROLE` accepts or
+rejects a delivered job, and an accepted verdict releases escrowed USDC to the
+provider in the same transaction. It cannot choose the payee — that is fixed at
+funding from a signature both agents produced — so the worst case is paying a
+real provider for work that did not meet its target, not redirecting funds to
+an arbitrary address.
+
+**If you change your mind**, it is one command plus a re-paste:
+
+```bash
+cd contracts/evm
+ROLE=VERIFIER NEW_ADDRESS=0x<new> OLD_ADDRESS=0x50f30472EB90FEe62927471847Bb2A4947FDe498 pnpm rotate:a2a:role
+```
+
+Grant, revoke and verification in one run, about $0.001 in gas.
+
+---
+
 ## Decisions only you can make
 
 1. **Commission** — currently 10% (`commissionBps = 1000`), hard-capped at 20%,
