@@ -353,9 +353,6 @@ Then, with two agents registered:
 - **Negotiation is read-only.** The API client has `sendOffer`,
   `providerRespond` and `signAgreement`; no controls are rendered. Drive
   negotiation through the API for now.
-- **No live training panel.** `progressFromStatus()` in `TrainingPage.tsx`
-  still returns hardcoded 18/64/100 and must be deleted when the real progress
-  feed is wired.
 
 ### Pre-existing, not from this work
 - `contracts/evm/test/AIArenaINFT.test.ts` — fails since the first commit
@@ -388,7 +385,7 @@ Then, with two agents registered:
 | 6 Escrow + settlement | Built — EIP-3009 funding, verdict payout, permissionless timeout refund |
 | 7 Verification | Service built; worker link missing (see above) |
 | 8 Reputation | Built — ERC-8004 feedback + settled-jobs-only aggregate; auto-publish not wired |
-| 9 Frontend | Board, post flow, job detail, lifecycle rail built; negotiation controls and training panel not |
+| 9 Frontend | Board, post flow, job detail, lifecycle rail, live training progress built; negotiation controls not |
 
 ```
 a2a-protocol       60 pass
