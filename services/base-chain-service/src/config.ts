@@ -40,8 +40,23 @@ export const AGENT_WALLET_SET_TYPES = {
   ],
 } as const;
 
-/** The contract rejects deadlines further out than its MAX_DEADLINE_DELAY. */
-export const WALLET_SIG_TTL_SECONDS = 15 * 60;
+/**
+ * How far ahead a setAgentWallet signature deadline may be set.
+ *
+ * The deployed ERC-8004 IdentityRegistry rejects anything at or beyond
+ * `block.timestamp + 300` with "deadline too far". Measured against the live
+ * contract on Base, not inferred: 299s passes the deadline check and reverts
+ * later on the signature, 300s does not.
+ *
+ * 120s leaves margin for the gap between building the signature and the
+ * transaction being mined. A value at the 299s edge would fail whenever a
+ * block took a moment longer than expected, which is a far worse failure than
+ * a signature that expires slightly sooner — the whole call is retried anyway.
+ */
+export const WALLET_SIG_TTL_SECONDS = 120;
+
+/** The contract's hard limit, kept for the assertion in bindAgentWallet. */
+export const WALLET_SIG_MAX_TTL_SECONDS = 300;
 
 export function requireEnv(name: string): string {
   const value = process.env[name];
