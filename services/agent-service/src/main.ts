@@ -4,6 +4,7 @@ import helmet from '@fastify/helmet';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import { agentRoutes } from './routes/agent.routes';
+import { capabilityRoutes } from './routes/capability.routes';
 import { okxRoutes } from './routes/okx.routes';
 
 const PORT = parseInt(process.env.PORT ?? '8002', 10);
@@ -18,6 +19,9 @@ async function bootstrap(): Promise<void> {
 
   app.get('/health', async () => ({ status: 'ok', service: 'agent-service' }));
   await app.register(agentRoutes, { prefix: '/agents' });
+  // Capability profiles + discovery. Same /agents prefix: these are properties
+  // of an agent, and it keeps the gateway route table unchanged.
+  await app.register(capabilityRoutes, { prefix: '/agents' });
   await app.register(okxRoutes, { prefix: '/okx' });
 
   await app.listen({ port: PORT, host: '0.0.0.0' });

@@ -1,0 +1,39 @@
+# Test/verification image for the trait-training pipeline.
+#
+# CPU-only torch on purpose — the whole design premise is that this environment
+# (32 features, 7 actions) trains on CPU in minutes, so the test image must
+# prove that rather than quietly depend on CUDA.
+#
+# Build context is the `ml/` directory, because trait_training imports
+# AIArenaBattleEnv from ml/reinforcement_learning and BCPolicyNetwork from
+# ml/behaviour_cloning (see trait_training/__init__.py for why those are
+# sys.path entries rather than package imports).
+#
+#   docker build -f trait_training/Dockerfile.test -t kult-trait-training ml/
+#   docker run --rm kult-trait-training
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# CPU-only torch wheels: ~200MB instead of the ~2.5GB CUDA build.
+RUN pip install --no-cache-dir \
+      --index-url https://download.pytorch.org/whl/cpu \
+      torch==2.5.1 \
+ && pip install --no-cache-dir \
+      numpy==1.26.4 \
+      gymnasium==0.29.1 \
+      pytest==8.3.4
+
+COPY reinforcement_learning/ ./reinforcement_learning/
+COPY behaviour_cloning/ ./behaviour_cloning/
+COPY trait_training/ ./trait_training/
+
+ENV PYTHONPATH=/app
+ENV PYTHONDONTWRITEBYTECODE=1
+# Unbuffered so long runs stream progress instead of emitting nothing until exit.
+ENV PYTHONUNBUFFERED=1
+# Threading is NOT pinned here — see trait_training.evaluate.deterministic_inference(),
+# which pins threads only for evaluation, where reproducibility actually matters.
+
+CMD ["pytest", "-q", "trait_training/tests", "-p", "no:cacheprovider"]

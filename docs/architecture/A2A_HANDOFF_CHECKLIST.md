@@ -1,0 +1,402 @@
+# A2A Marketplace — your deployment runbook
+
+Everything here needs a human: a key, a funded wallet, a database, a Render
+dashboard, or a decision. Follow it in order — several steps depend on outputs
+from earlier ones.
+
+`render.yaml` is kept accurate as documentation, but since you are deploying
+manually it is a **reference for settings**, not something Render will read.
+Every value you need is reproduced below.
+
+Last updated: 2026-08-17.
+
+---
+
+## Step 0 — Rotate the leaked key (blocking)
+
+`EVM_DEPLOYER_PRIVATE_KEY` / `ZEROG_STORAGE_PRIVATE_KEY` = `0x309b…9150`
+→ address `0x63F63DC442299cCFe470657a769fdC6591d65eCa`.
+
+It is committed in `.env.example` and pushed to GitHub. It still holds
+oracle/owner authority on `AIArenaINFT` and signs 0G Storage uploads.
+
+**Nothing that touches USDC may reuse it.** `hardhat.config.ts` already
+enforces this structurally — the `base` network reads `BASE_DEPLOYER_PRIVATE_KEY`,
+a deliberately different variable, so a Base deploy cannot accidentally pick up
+the 0G key.
+
+Rotate it and everything downstream (JWT secrets, custodial encryption key, OKX
+API credentials) before going further.
+
+---
+
+## Step 1 — Generate five secrets
+
+Four are wallets, one is a symmetric encryption key.
+
+```bash
+node -e "const {Wallet}=require('ethers');for(const n of ['DEPLOYER','RELAYER','VERIFIER','ARBITER']){const w=Wallet.createRandom();console.log(n.padEnd(9),w.address,w.privateKey)}"
+```
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+| Secret | Env var | Purpose | Must differ from |
+|---|---|---|---|
+| Deployer | `BASE_DEPLOYER_PRIVATE_KEY` | Deploys the escrow, keeps `DEFAULT_ADMIN_ROLE` (pause/config) | the 0G deployer |
+| Relayer | `BASE_RELAYER_PRIVATE_KEY` | `RELAYER_ROLE` — drives job state, pays all gas | verifier |
+| Verifier | `A2A_VERIFIER_PRIVATE_KEY` | `VERIFIER_ROLE` — judges outcomes | relayer |
+| Arbiter | address → `A2A_ARBITER_ADDRESS` | `ARBITER_ROLE` — splits disputed escrow | both |
+| Agent key encryption | `AGENT_WALLET_ENCRYPTION_KEY` | AES-256-GCM for stored agent signing keys | — |
+
+**The deploy script refuses to run if relayer and verifier are the same
+address.** That is threat T3 (one key that both drives a job and judges it),
+and it is a hard failure, not a warning.
+
+⚠️ **`AGENT_WALLET_ENCRYPTION_KEY` is not rotatable in place.** Changing it
+without re-encrypting existing rows permanently orphans every stored agent
+signing key. Set it once, back it up.
+
+### Fund these wallets with ETH on Base
+
+| Wallet | Amount | Why |
+|---|---|---|
+| Deployer | ~0.003 ETH | One deploy + three `grantRole` transactions |
+| Relayer | ongoing | Pays gas for **every** job: post, fund, executing, deliver |
+| Verifier | ongoing | Pays gas per verdict |
+| Each creator agent EOA | ~0.0005 ETH each | ERC-8004 records `msg.sender` as the reviewer, so an agent must sign its own feedback |
+
+Agents need **no** ETH to fund escrow — that path is EIP-3009, where the agent
+signs and the relayer pays. The agent-EOA gas is only for publishing reputation.
+
+---
+
+## Step 2 — Database migration
+
+No database was reachable during development, so no migration SQL was ever
+generated. The schema validates and the client generates, but **the tables do
+not exist**.
+
+```bash
+cd packages/db-client && npx dotenv -e ../../.env -- npx prisma migrate dev --name a2a_marketplace
+```
+
+Creates: `AgentBaseIdentity`, `AgentCapabilitySnapshot`, `A2AJob`,
+`A2ANegotiation`, `A2ANegotiationMessage`, plus the execution, verification and
+reputation columns on `A2AJob`.
+
+Commit the generated migration folder — production runs `prisma migrate deploy`,
+which will not create it for you.
+
+---
+
+## Step 3 — Verify the reused Base addresses
+
+Before writing a single transaction against them:
+
+```bash
+cd contracts/evm && pnpm verify:base:addresses
+```
+
+Confirms USDC (`0x8335…2913`), the ERC-8004 IdentityRegistry
+(`0x8004A169…`) and ReputationRegistry (`0x8004BAa1…`) are really what we
+think they are, on-chain. These are reused, not deployed — they are canonical
+and audited.
+
+---
+
+## Step 4 — Deploy the escrow
+
+Set in `.env` first: `BASE_DEPLOYER_PRIVATE_KEY`, `BASE_RELAYER_ADDRESS`,
+`A2A_VERIFIER_ADDRESS`, `A2A_ARBITER_ADDRESS`, `A2A_TREASURY_ADDRESS`.
+
+```bash
+cd contracts/evm && pnpm deploy:a2a:base
+```
+
+It prints the deployed address and grants the three roles. Then verify the
+source on BaseScan (needs `BASESCAN_API_KEY`):
+
+```bash
+cd contracts/evm && pnpm verify:base <ESCROW_ADDRESS> <DEPLOYER_ADDR> 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 <TREASURY_ADDR>
+```
+
+⚠️ **Signatures are bound to this address.** The EIP-712 domain includes the
+verifying contract, so redeploying invalidates every unfunded agreement. That
+is deliberate replay protection (T6) — but it means the address must be final
+before agents start signing.
+
+Record the address. Three services need it.
+
+---
+
+## Step 5 — Deploy services on Render (manual)
+
+Four new services. Create them in this order — each depends on the one before.
+
+### Shared settings for all three Node services
+
+- **Repository / Branch**: this repo, your deploy branch
+- **Region**: Oregon (match the existing services, or latency and DB egress suffer)
+- **Runtime**: Node
+- **Instance type**: Starter
+- **Auto-Deploy**: your preference
+
+Manual creation does **not** wire `fromDatabase` links. For `DATABASE_URL`,
+copy the **Internal Database URL** from `aiarena-db` and paste it.
+
+`INTERNAL_SERVICE_SECRET` must be **byte-identical** across the gateway,
+base-chain, marketplace and evaluation services. A mismatch shows up as 401s
+between services, not as a config error.
+
+---
+
+### 5a. `aiarena-base-chain` — the Base relayer
+
+| Field | Value |
+|---|---|
+| Type | Web Service |
+| Root Directory | `services/base-chain-service` |
+| Health Check Path | `/health` |
+
+**Build Command**
+```
+cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/base-chain-service...
+```
+
+**Start Command**
+```
+node dist/main.js
+```
+
+**Environment**
+
+| Key | Value |
+|---|---|
+| `PORT` | `8051` |
+| `NODE_ENV` | `production` |
+| `DATABASE_URL` | *(paste internal DB URL)* |
+| `BASE_RPC_URL` | `https://mainnet.base.org` |
+| `BASE_RELAYER_PRIVATE_KEY` | *(secret)* |
+| `AGENT_WALLET_ENCRYPTION_KEY` | *(secret)* |
+| `A2A_PUBLIC_BASE_URL` | `https://aiarena-base-chain.onrender.com` |
+| `ERC8004_REPUTATION_REGISTRY_ADDRESS` | `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` |
+| `A2A_JOB_ESCROW_ADDRESS` | *(from Step 4)* |
+| `INTERNAL_SERVICE_SECRET` | *(secret, shared)* |
+| `ZEROG_NETWORK` | `mainnet` |
+| `ZEROG_STORAGE_PRIVATE_KEY` | *(rotated key from Step 0)* |
+
+`A2A_PUBLIC_BASE_URL` becomes the ERC-8004 `tokenURI` host. Changing it after
+agents are registered breaks their published registration files.
+
+---
+
+### 5b. `aiarena-a2a-marketplace` — job meaning
+
+| Field | Value |
+|---|---|
+| Type | Web Service |
+| Root Directory | `services/a2a-marketplace-service` |
+| Health Check Path | `/health` |
+
+**Build Command**
+```
+cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/a2a-marketplace-service...
+```
+
+**Start Command**: `node dist/main.js`
+
+| Key | Value |
+|---|---|
+| `PORT` | `8080` |
+| `NODE_ENV` | `production` |
+| `DATABASE_URL` | *(paste)* |
+| `BASE_CHAIN_SERVICE_URL` | `https://aiarena-base-chain.onrender.com` |
+| `A2A_JOB_ESCROW_ADDRESS` | *(from Step 4)* |
+| `BASE_CHAIN_ID` | `8453` |
+| `INTERNAL_SERVICE_SECRET` | *(shared)* |
+| `ZEROG_NETWORK` | `mainnet` |
+| `ZEROG_COMPUTE_API_KEY` | *(secret)* |
+| `ZEROG_STORAGE_PRIVATE_KEY` | *(secret)* |
+
+Without `A2A_JOB_ESCROW_ADDRESS` this service **refuses to sign anything**
+rather than guessing a domain — negotiation will error clearly.
+
+---
+
+### 5c. `aiarena-evaluation` — the verifier
+
+| Field | Value |
+|---|---|
+| Type | Web Service |
+| Root Directory | `services/evaluation-service` |
+| Health Check Path | `/health` |
+
+**Build Command**
+```
+cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/evaluation-service...
+```
+
+**Start Command**: `node dist/main.js`
+
+| Key | Value |
+|---|---|
+| `PORT` | `8081` |
+| `NODE_ENV` | `production` |
+| `DATABASE_URL` | *(paste)* |
+| `BASE_RPC_URL` | `https://mainnet.base.org` |
+| `A2A_JOB_ESCROW_ADDRESS` | *(from Step 4)* |
+| `A2A_VERIFIER_PRIVATE_KEY` | *(secret — NOT the relayer key)* |
+| `INTERNAL_SERVICE_SECRET` | *(shared)* |
+| `ZEROG_NETWORK` | `mainnet` |
+| `ZEROG_STORAGE_PRIVATE_KEY` | *(secret)* |
+
+Its `/health` reports whether the key actually holds `VERIFIER_ROLE` on-chain.
+Check it after deploy — a misconfigured verifier looks healthy right up until
+the first verdict reverts.
+
+---
+
+### 5d. `aiarena-training-worker` — real trait training
+
+Not a web service. No HTTP surface.
+
+| Field | Value |
+|---|---|
+| Type | **Background Worker** |
+| Runtime | **Docker** |
+| Dockerfile Path | `./workers/training-worker/Dockerfile` |
+| Docker Build Context | `.` *(repo root — it imports `ml/trait_training`)* |
+
+| Key | Value |
+|---|---|
+| `DATABASE_URL` | *(paste)* |
+| `TRAINING_POLL_INTERVAL_S` | `5` |
+| `TRAINING_STALE_AFTER_S` | `300` |
+| `TRAINING_CHECKPOINT_DIR` | `/tmp` |
+
+CPU only — the environment is 32 features over 7 actions, no GPU plan needed.
+Jobs are claimed with `FOR UPDATE SKIP LOCKED`, so scaling to more than one
+replica is safe and each claims a distinct row.
+
+⚠️ A Starter instance will be **noticeably slower** than the ~4.5 min/job
+measured on 16 cores. Size this against your demo timing.
+
+---
+
+## Step 6 — Update the existing gateway
+
+Add to `aiarena-gateway`'s environment, then redeploy it:
+
+| Key | Value |
+|---|---|
+| `BASE_CHAIN_SERVICE_URL` | `https://aiarena-base-chain.onrender.com` |
+| `A2A_MARKETPLACE_SERVICE_URL` | `https://aiarena-a2a-marketplace.onrender.com` |
+
+**This is not optional.** The gateway's routing table falls back to
+`http://localhost:8080`, so without it every `/v1/marketplace/*` call 500s in
+production. (I found this missing while writing this doc and fixed
+`render.yaml`; the dashboard still needs it set by hand.)
+
+**Frontend needs no new env var.** The marketplace client goes through the
+existing `VITE_AI_ARENA_GATEWAY_URL`.
+
+---
+
+## Step 7 — Smoke test, in order
+
+```bash
+curl https://aiarena-base-chain.onrender.com/health
+curl https://aiarena-a2a-marketplace.onrender.com/health
+curl https://aiarena-evaluation.onrender.com/health    # check role.hasVerifierRole === true
+curl https://aiarena-gateway.onrender.com/v1/marketplace/jobs
+```
+
+Then, with two agents registered:
+
+1. Post a job in the UI → confirm → a real Base tx appears
+2. Fetch `/v1/marketplace/jobs/:id/requirements.json` and check the hash
+   reproduces against the chain
+3. Open a negotiation, converge, sign the agreement
+4. Fund escrow — watch USDC move on BaseScan
+
+---
+
+## Decisions only you can make
+
+1. **Commission** — currently 10% (`commissionBps = 1000`), hard-capped at 20%,
+   locked per job at funding.
+2. **Treasury address** — `A2A_TREASURY_ADDRESS` defaults to the deployer.
+3. **Arbiter** — until `A2A_ARBITER_ADDRESS` is granted, disputed jobs cannot
+   be resolved and will sit until a timeout refund.
+4. **Provider floors** — `decideProviderResponse` needs a `floorBaseUnits` per
+   provider agent. No UI for it yet; set via the API.
+5. **Security review of `A2AJobEscrow` before real money.** 42 tests pass
+   including the full failure matrix, but tests are not an audit.
+
+---
+
+## Broken / incomplete — know before you demo
+
+### Blocks the full lifecycle
+- **The Python worker never sets `A2AJob.verificationSnapshotId`.** The
+  evaluation service reads that field and refuses to settle without it. The
+  chain is: worker runs verification → sets the field → verifier settles. The
+  middle link is missing. It fails loudly rather than settling on a wrong
+  number, but a job will not reach SETTLE unaided today.
+- **`publishJobFeedback` is never called automatically.** The endpoint works
+  (`POST /v1/a2a/reputation/jobs/:jobId/publish`) but nothing invokes it after
+  settlement.
+
+### Incomplete UI
+- **Negotiation is read-only.** The API client has `sendOffer`,
+  `providerRespond` and `signAgreement`; no controls are rendered. Drive
+  negotiation through the API for now.
+- **No live training panel.** `progressFromStatus()` in `TrainingPage.tsx`
+  still returns hardcoded 18/64/100 and must be deleted when the real progress
+  feed is wired.
+
+### Pre-existing, not from this work
+- `contracts/evm/test/AIArenaINFT.test.ts` — fails since the first commit
+  (`incorrect number of arguments to constructor`). `pnpm test` in
+  `contracts/evm` will show 1 failing; the A2A suites pass.
+- `src/types/aiArenaGateway.ts` — 12 TypeScript errors (duplicate declarations
+  with mismatched modifiers). Confirmed pre-existing by stashing local changes.
+  The production build succeeds regardless.
+
+### Design limits, stated deliberately
+- **Verification is a trusted oracle.** The verifier key can accept bad work.
+  Mitigated by publishing seeds, difficulty ladder and the full report so fraud
+  is *detectable*. Say this plainly to Base; do not claim trustlessness.
+- **Concurrent negotiations can all reach AGREED.** The on-chain
+  `fundWithAuthorization` resolves the race (second funder gets `not fundable`),
+  but nothing off-chain tells the loser, and the UI will show a stale AGREED.
+- **Eligibility is checked at negotiation open, not at funding.**
+
+---
+
+## What is built
+
+| Phase | State |
+|---|---|
+| 1 Foundations, agent identity | Built — ERC-8004 registration, agent EOAs (AES-256-GCM), cards on 0G Storage |
+| 2 Real trait training | Built — CPU-only, seeded, reproducible. Traits measured, never written |
+| 3 Capability + discovery | Built — ladder chosen from measurement, not intuition |
+| 4 Job creation + registration | Built — canonical hashing, NL parsing with deterministic fallback |
+| 5 Negotiation + agreement | Built — hash-chained signed transcript, contract/TS digest cross-check |
+| 6 Escrow + settlement | Built — EIP-3009 funding, verdict payout, permissionless timeout refund |
+| 7 Verification | Service built; worker link missing (see above) |
+| 8 Reputation | Built — ERC-8004 feedback + settled-jobs-only aggregate; auto-publish not wired |
+| 9 Frontend | Board, post flow, job detail, lifecycle rail built; negotiation controls and training panel not |
+
+```
+a2a-protocol       60 pass
+capability         24 pass
+A2AJobEscrow       42 pass   (9 agreement + 33 money path)
+trait_training     45 pass
+```
+
+Typechecks clean across `base-chain-service`, `a2a-marketplace-service`,
+`evaluation-service`, `api-gateway`, `a2a-protocol`, `capability`. Frontend
+builds.

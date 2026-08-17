@@ -176,32 +176,32 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── $ARENA Token Service ───────────────────────────────────────────────────
-  token-service:
+  # ── $ARENA on-chain relayer/indexer (0G Chain) ──────────────────────────────
+  # Replaces the old Solana token-service/bridge-listener pair, archived at
+  # archive/solana-vault-stack/. See docs/ARENA_TOKEN_0G.md.
+  arena-chain-service:
     build:
-      context: ./services/token-service
+      context: ./services/arena-chain-service
       dockerfile: ../../Dockerfile.service
-    container_name: ai-arena-token-service
+    container_name: ai-arena-chain-service
     restart: unless-stopped
     ports:
       - "8050:8050"
     environment:
       PORT: 8050
       NODE_ENV: production
-      DATABASE_URL:              ${DATABASE_URL}
-      REDIS_URL:                 ${REDIS_URL}
-      NATS_URL:                  ${NATS_URL}
-      SOLANA_RPC_URL:            ${SOLANA_RPC_URL}
-      ARENA_RESERVE_PROGRAM_ID:  ${ARENA_RESERVE_PROGRAM_ID}
-      ARENA_TOKEN_MINT:          ${ARENA_TOKEN_MINT}
-      USDC_MINT:                 ${USDC_MINT}
-      USDT_MINT:                 ${USDT_MINT}
-      RELAYER_SOLANA_PRIVATE_KEY: ${RELAYER_SOLANA_PRIVATE_KEY}
-      BASE_RPC_URL:              ${BASE_RPC_URL}
-      BASE_DEPOSIT_VAULT_ADDRESS: ${BASE_DEPOSIT_VAULT_ADDRESS}
-      ZEROG_EVM_RPC:             ${ZEROG_EVM_RPC}
-      ZEROG_DEPOSIT_VAULT_ADDRESS: ${ZEROG_DEPOSIT_VAULT_ADDRESS}
-      ALLOWED_ORIGINS:           ${ALLOWED_ORIGINS}
+      DATABASE_URL:                       ${DATABASE_URL}
+      REDIS_URL:                          ${REDIS_URL}
+      NATS_URL:                           ${NATS_URL}
+      ZEROG_RPC_URL:                      ${ZEROG_RPC_URL}
+      ARENA_TOKEN_ADDRESS:                ${ARENA_TOKEN_ADDRESS}
+      ARENA_TREASURY_ADDRESS:             ${ARENA_TREASURY_ADDRESS}
+      ARENA_REWARD_DISTRIBUTOR_ADDRESS:   ${ARENA_REWARD_DISTRIBUTOR_ADDRESS}
+      ARENA_ESCROW_ADDRESS:               ${ARENA_ESCROW_ADDRESS}
+      ARENA_TOURNAMENT_ADDRESS:           ${ARENA_TOURNAMENT_ADDRESS}
+      ARENA_RELAYER_PRIVATE_KEY:          ${ARENA_RELAYER_PRIVATE_KEY}
+      INTERNAL_SERVICE_SECRET:            ${INTERNAL_SERVICE_SECRET}
+      ALLOWED_ORIGINS:                    ${ALLOWED_ORIGINS}
     depends_on:
       - postgres
       - redis
@@ -212,30 +212,3 @@ services:
       interval: 20s
       timeout: 5s
       retries: 5
-
-  # Bridge listener (separate container — must stay alive indefinitely)
-  bridge-listener:
-    build:
-      context: ./services/token-service
-      dockerfile: ../../Dockerfile.service
-    container_name: ai-arena-bridge-listener
-    restart: always
-    command: ["node", "dist/workers/bridge-listener.js"]
-    environment:
-      NODE_ENV: production
-      DATABASE_URL:              ${DATABASE_URL}
-      REDIS_URL:                 ${REDIS_URL}
-      NATS_URL:                  ${NATS_URL}
-      SOLANA_RPC_URL:            ${SOLANA_RPC_URL}
-      ARENA_RESERVE_PROGRAM_ID:  ${ARENA_RESERVE_PROGRAM_ID}
-      ARENA_TOKEN_MINT:          ${ARENA_TOKEN_MINT}
-      RELAYER_SOLANA_PRIVATE_KEY: ${RELAYER_SOLANA_PRIVATE_KEY}
-      BASE_RPC_URL:              ${BASE_RPC_URL}
-      BASE_DEPOSIT_VAULT_ADDRESS: ${BASE_DEPOSIT_VAULT_ADDRESS}
-      ZEROG_EVM_RPC:             ${ZEROG_EVM_RPC}
-      ZEROG_DEPOSIT_VAULT_ADDRESS: ${ZEROG_DEPOSIT_VAULT_ADDRESS}
-    depends_on:
-      - postgres
-      - redis
-    networks:
-      - ai-arena-net

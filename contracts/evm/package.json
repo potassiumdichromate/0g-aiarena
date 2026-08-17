@@ -5,12 +5,18 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
-    "deploy:testnet":         "hardhat run scripts/deploy.ts --network zerog-testnet",
-    "deploy:local":           "hardhat run scripts/deploy.ts --network localhost",
-    "deploy:arena:testnet":   "hardhat run scripts/deploy-arena-economy.ts --network zerog-testnet",
-    "deploy:arena:mainnet":   "hardhat run scripts/deploy-arena-economy.ts --network zerog-mainnet",
+    "deploy:testnet": "hardhat run scripts/deploy.ts --network zerog-testnet",
+    "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
+    "deploy:arena:testnet": "hardhat run scripts/deploy-arena-economy.ts --network zerog-testnet",
+    "deploy:arena:mainnet": "hardhat run scripts/deploy-arena-economy.ts --network zerog-mainnet",
     "redeploy:arena:permit:mainnet": "hardhat run scripts/redeploy-arena-permit.ts --network zerog-mainnet",
-    "verify:zerog":           "hardhat verify --network zerog-mainnet"
+    "deploy:creator:testnet": "hardhat run scripts/deploy-creator-studio.ts --network zerog-testnet",
+    "deploy:creator:mainnet": "hardhat run scripts/deploy-creator-studio.ts --network zerog-mainnet",
+    "verify:zerog": "hardhat verify --network zerog-mainnet",
+    "verify:base:addresses": "hardhat run scripts/verify-base-contracts.ts --network base",
+    "deploy:a2a:base": "hardhat run scripts/deploy-a2a-base.ts --network base",
+    "verify:base": "hardhat verify --network base",
+    "node:base-fork": "hardhat node --fork ${BASE_RPC_URL:-https://mainnet.base.org}"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",

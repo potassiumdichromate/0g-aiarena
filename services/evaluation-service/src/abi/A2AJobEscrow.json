@@ -1,0 +1,1460 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "admin",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "usdcAddress",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "treasuryAddress",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "inputs": [],
+    "name": "AccessControlBadConfirmation",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "neededRole",
+        "type": "bytes32"
+      }
+    ],
+    "name": "AccessControlUnauthorizedAccount",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "EnforcedPause",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ExpectedPause",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidShortString",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ReentrancyGuardReentrantCall",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "SafeERC20FailedOperation",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "str",
+        "type": "string"
+      }
+    ],
+    "name": "StringTooLong",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint16",
+        "name": "newBps",
+        "type": "uint16"
+      }
+    ],
+    "name": "CommissionBpsUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "deliverableHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "DeliverableSubmitted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "raisedBy",
+        "type": "address"
+      }
+    ],
+    "name": "DisputeRaised",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint128",
+        "name": "toProvider",
+        "type": "uint128"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint128",
+        "name": "toCreator",
+        "type": "uint128"
+      }
+    ],
+    "name": "DisputeResolved",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [],
+    "name": "EIP712DomainChanged",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "JobCancelled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "JobExecuting",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "providerAgentId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "providerWallet",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint128",
+        "name": "agreedPrice",
+        "type": "uint128"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "agreementHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "executionDeadline",
+        "type": "uint64"
+      }
+    ],
+    "name": "JobFunded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "creatorAgentId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "creatorWallet",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "requirementsHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint128",
+        "name": "budgetMin",
+        "type": "uint128"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint128",
+        "name": "budgetMax",
+        "type": "uint128"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "executionWindow",
+        "type": "uint32"
+      }
+    ],
+    "name": "JobPosted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "creatorWallet",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint128",
+        "name": "amount",
+        "type": "uint128"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "reason",
+        "type": "string"
+      }
+    ],
+    "name": "JobRefunded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "providerWallet",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint128",
+        "name": "payout",
+        "type": "uint128"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint128",
+        "name": "commission",
+        "type": "uint128"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "reportHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "JobSettled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "Paused",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "role",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "previousAdminRole",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "newAdminRole",
+        "type": "bytes32"
+      }
+    ],
+    "name": "RoleAdminChanged",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "role",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "sender",
+        "type": "address"
+      }
+    ],
+    "name": "RoleGranted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "role",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "sender",
+        "type": "address"
+      }
+    ],
+    "name": "RoleRevoked",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "newTreasury",
+        "type": "address"
+      }
+    ],
+    "name": "TreasuryUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "Unpaused",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "AGREEMENT_TYPEHASH",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "ARBITER_ROLE",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "DEFAULT_ADMIN_ROLE",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_COMMISSION_BPS",
+    "outputs": [
+      {
+        "internalType": "uint16",
+        "name": "",
+        "type": "uint16"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_EXECUTION_WINDOW",
+    "outputs": [
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MIN_EXECUTION_WINDOW",
+    "outputs": [
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "RELAYER_ROLE",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "VERIFICATION_GRACE",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "VERIFIER_ROLE",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "cancelBeforeFunding",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "claimTimeoutRefund",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "commissionBps",
+    "outputs": [
+      {
+        "internalType": "uint16",
+        "name": "",
+        "type": "uint16"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "domainSeparator",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "eip712Domain",
+    "outputs": [
+      {
+        "internalType": "bytes1",
+        "name": "fields",
+        "type": "bytes1"
+      },
+      {
+        "internalType": "string",
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "internalType": "string",
+        "name": "version",
+        "type": "string"
+      },
+      {
+        "internalType": "uint256",
+        "name": "chainId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "verifyingContract",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "salt",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "extensions",
+        "type": "uint256[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "exists",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      },
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "jobId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint256",
+            "name": "creatorAgentId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "providerAgentId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "providerWallet",
+            "type": "address"
+          },
+          {
+            "internalType": "uint128",
+            "name": "agreedPrice",
+            "type": "uint128"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "requirementsHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "executionWindow",
+            "type": "uint32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "transcriptHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint64",
+            "name": "expiry",
+            "type": "uint64"
+          }
+        ],
+        "internalType": "struct A2AJobEscrow.Agreement",
+        "name": "agreement",
+        "type": "tuple"
+      },
+      {
+        "internalType": "address",
+        "name": "creatorSigner",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes",
+        "name": "creatorSig",
+        "type": "bytes"
+      },
+      {
+        "internalType": "address",
+        "name": "providerSigner",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes",
+        "name": "providerSig",
+        "type": "bytes"
+      },
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "from",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "value",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "validAfter",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "validBefore",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "nonce",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint8",
+            "name": "v",
+            "type": "uint8"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "r",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "s",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct A2AJobEscrow.ReceiveAuthorization",
+        "name": "auth",
+        "type": "tuple"
+      }
+    ],
+    "name": "fundWithAuthorization",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "getJob",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "creatorAgentId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "providerAgentId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "creatorWallet",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "providerWallet",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "requirementsHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "agreementHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "deliverableHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "reportHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint128",
+            "name": "budgetMin",
+            "type": "uint128"
+          },
+          {
+            "internalType": "uint128",
+            "name": "budgetMax",
+            "type": "uint128"
+          },
+          {
+            "internalType": "uint128",
+            "name": "agreedPrice",
+            "type": "uint128"
+          },
+          {
+            "internalType": "uint64",
+            "name": "createdAt",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "fundedAt",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "executionDeadline",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint32",
+            "name": "executionWindow",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint16",
+            "name": "commissionBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "enum A2AJobEscrow.JobStatus",
+            "name": "status",
+            "type": "uint8"
+          }
+        ],
+        "internalType": "struct A2AJobEscrow.Job",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "role",
+        "type": "bytes32"
+      }
+    ],
+    "name": "getRoleAdmin",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "role",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "grantRole",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "role",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "hasRole",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "jobId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint256",
+            "name": "creatorAgentId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "providerAgentId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "providerWallet",
+            "type": "address"
+          },
+          {
+            "internalType": "uint128",
+            "name": "agreedPrice",
+            "type": "uint128"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "requirementsHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "executionWindow",
+            "type": "uint32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "transcriptHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint64",
+            "name": "expiry",
+            "type": "uint64"
+          }
+        ],
+        "internalType": "struct A2AJobEscrow.Agreement",
+        "name": "agreement",
+        "type": "tuple"
+      }
+    ],
+    "name": "hashAgreement",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "jobStatus",
+    "outputs": [
+      {
+        "internalType": "enum A2AJobEscrow.JobStatus",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "markExecuting",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "pause",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "paused",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "creatorAgentId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "creatorWallet",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "requirementsHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint128",
+        "name": "budgetMin",
+        "type": "uint128"
+      },
+      {
+        "internalType": "uint128",
+        "name": "budgetMax",
+        "type": "uint128"
+      },
+      {
+        "internalType": "uint32",
+        "name": "executionWindow",
+        "type": "uint32"
+      }
+    ],
+    "name": "postJob",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "raiseDispute",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "refundClaimable",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "role",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "callerConfirmation",
+        "type": "address"
+      }
+    ],
+    "name": "renounceRole",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint128",
+        "name": "toProvider",
+        "type": "uint128"
+      },
+      {
+        "internalType": "uint128",
+        "name": "toCreator",
+        "type": "uint128"
+      }
+    ],
+    "name": "resolveDispute",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "role",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "revokeRole",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint16",
+        "name": "bps",
+        "type": "uint16"
+      }
+    ],
+    "name": "setCommissionBps",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newTreasury",
+        "type": "address"
+      }
+    ],
+    "name": "setTreasury",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "deliverableHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "submitDeliverable",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bool",
+        "name": "accepted",
+        "type": "bool"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "reportHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "submitVerdict",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes4",
+        "name": "interfaceId",
+        "type": "bytes4"
+      }
+    ],
+    "name": "supportsInterface",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "treasury",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "unpause",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "usdc",
+    "outputs": [
+      {
+        "internalType": "contract IERC20",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "jobId",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint256",
+            "name": "creatorAgentId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "providerAgentId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "providerWallet",
+            "type": "address"
+          },
+          {
+            "internalType": "uint128",
+            "name": "agreedPrice",
+            "type": "uint128"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "requirementsHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "executionWindow",
+            "type": "uint32"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "transcriptHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint64",
+            "name": "expiry",
+            "type": "uint64"
+          }
+        ],
+        "internalType": "struct A2AJobEscrow.Agreement",
+        "name": "agreement",
+        "type": "tuple"
+      },
+      {
+        "internalType": "address",
+        "name": "creatorSigner",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes",
+        "name": "creatorSig",
+        "type": "bytes"
+      },
+      {
+        "internalType": "address",
+        "name": "providerSigner",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes",
+        "name": "providerSig",
+        "type": "bytes"
+      }
+    ],
+    "name": "verifyAgreement",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

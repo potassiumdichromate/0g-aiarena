@@ -22,6 +22,8 @@
       "@ai-arena/shared-types": ["../../packages/shared-types/src"],
       "@ai-arena/shared-utils": ["../../packages/shared-utils/src"],
       "@ai-arena/db-client": ["../../packages/db-client/src"],
+      "@ai-arena/capability": ["../../packages/capability/src"],
+      "@ai-arena/a2a-protocol": ["../../packages/a2a-protocol/src"],
       "@ai-arena/event-bus": ["../../packages/event-bus/src"],
       "@ai-arena/cache": ["../../packages/cache/src"],
       "@ai-arena/zerog-client": ["../../packages/zerog-client/src"],

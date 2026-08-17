@@ -3,6 +3,13 @@
 /* eslint-disable */
 import type * as aiArenaInftSol from "./AIArenaINFT.sol";
 export type { aiArenaInftSol };
+import type * as arena from "./arena";
+export type { arena };
+import type * as base from "./base";
+export type { base };
+import type * as creator from "./creator";
+export type { creator };
+import type * as test from "./test";
+export type { test };
 export type { AgentRegistry } from "./AgentRegistry";
-export type { ArenaDepositVault } from "./ArenaDepositVault";
 export type { ModuleMarketplace } from "./ModuleMarketplace";

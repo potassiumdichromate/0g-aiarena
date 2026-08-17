@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/create-agent", "destination": "/api/create-agent" },
+    { "source": "/health", "destination": "/api/health" }
+  ]
+}

@@ -2,6 +2,9 @@
 /* tslint:disable */
 /* eslint-disable */
 export * as aiArenaInftSol from "./AIArenaINFT.sol";
+export * as arena from "./arena";
+export * as base from "./base";
+export * as creator from "./creator";
+export * as test from "./test";
 export { AgentRegistry__factory } from "./AgentRegistry__factory";
-export { ArenaDepositVault__factory } from "./ArenaDepositVault__factory";
 export { ModuleMarketplace__factory } from "./ModuleMarketplace__factory";

@@ -3,6 +3,9 @@ dist/
 .next/
 .turbo/
 *.env
+# Backup env files: '*.env' does not match '.env.bak-...', and these hold real secrets.
+.env.bak*
+.env.*.bak
 !.env.example
 .DS_Store
 *.log
@@ -15,3 +18,6 @@ __pycache__/
 coverage/
 *.pem
 *.key
+
+# Per-developer Claude Code state (launch.json is shareable, local settings are not)
+.claude/settings.local.json

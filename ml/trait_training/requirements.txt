@@ -1,0 +1,6 @@
+# Deliberately minimal. No Ray, no transformers, no PEFT/TRL — see policy.py
+# for why PPO is local rather than RLlib. torch + numpy + gymnasium is the
+# entire dependency surface, which is what keeps this runnable on a CPU dyno.
+torch>=2.2.0
+numpy>=1.26.0
+gymnasium>=0.29.0

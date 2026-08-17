@@ -218,6 +218,17 @@ async function main() {
     { prefix: '/v1/analytics',    envKey: 'ANALYTICS_SERVICE_URL',   fallback: 'http://localhost:8040', rewritePrefix: ''              },
     { prefix: '/v1/storage',      envKey: 'STORAGE_SERVICE_URL',     fallback: 'http://localhost:8042', rewritePrefix: ''              },
     { prefix: '/v1/notifications',envKey: 'NOTIFICATION_SERVICE_URL',fallback: 'http://localhost:8043', rewritePrefix: ''              },
+    // A2A agent commerce on Base mainnet (ERC-8004 identity, USDC escrow).
+    // OPTIONAL until base-chain-service is deployed, so an unset URL yields a
+    // clean 503 rather than ECONNREFUSED. Note the ERC-8004 tokenURI points at
+    // /v1/a2a/identity/agents/:id/registration.json through this prefix, so the
+    // route must stay publicly reachable and unauthenticated once live.
+    { prefix: '/v1/a2a',          envKey: 'BASE_CHAIN_SERVICE_URL',  fallback: 'http://localhost:8051', rewritePrefix: ''              },
+    // Marketplace jobs. A SEPARATE prefix, not /v1/a2a/jobs: two overlapping
+    // proxy prefixes both register a wildcard, and the nested one either
+    // conflicts at boot or shadows unpredictably. /v1/a2a stays with
+    // base-chain-service (it serves the public ERC-8004 tokenURI).
+    { prefix: '/v1/marketplace',  envKey: 'A2A_MARKETPLACE_SERVICE_URL', fallback: 'http://localhost:8080', rewritePrefix: '' },
   ];
 
   const registerService = async (svc: SvcDef) => {

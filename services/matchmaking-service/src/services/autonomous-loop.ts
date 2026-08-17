@@ -153,6 +153,31 @@ async function simulateAutonomousBattles(autonomousIds: Set<string>): Promise<vo
 
     if (!battleEnded) continue;
 
+    // ── 1b. Mark the row as simulator-generated ────────────────────────────
+    //
+    // The winner above was drawn from an ELO coin flip and the playerStats
+    // from rand() ranges — none of it is evidence that either agent can
+    // actually do anything. Marketplace capability profiles and reputation
+    // filter on this flag (packages/capability/src/profile.ts); without it a
+    // provider could manufacture "100+ Warzone wins" just by leaving
+    // autonomous mode running overnight, which is threat T13.
+    //
+    // Set after the battle-service call rather than before, because that call
+    // is what writes the result we are labelling. Failing to mark is worse
+    // than failing to simulate, so it is logged loudly rather than swallowed.
+    try {
+      await prisma.battle.update({
+        where: { id: battle.id },
+        data:  { isSimulated: true },
+      });
+    } catch (err) {
+      console.error(
+        `[AutonomousLoop] FAILED to mark battle ${battle.id} as simulated — ` +
+        'it will be counted as real capability evidence until corrected:',
+        (err as Error).message,
+      );
+    }
+
     // ── 2. Evolve traits — fire-and-forget ────────────────────────────────
     const traitCalls: [string, 'WIN' | 'LOSS', typeof winnerStats][] = [
       [winnerId, 'WIN',  winnerStats],

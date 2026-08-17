@@ -326,6 +326,162 @@ services:
       - key: INTERNAL_SERVICE_SECRET
         sync: false
 
+  # ── Training Worker (real trait training) ────────────────────────────────────
+  # Executes the ml/trait_training pipeline: the trainer donates demonstrations
+  # from its own policy, the student learns by behaviour cloning, PPO refines it
+  # on the trainer's curriculum, and a seeded evaluation measures the result.
+  #
+  # A worker (not a web service): it has no HTTP surface and claims jobs from
+  # Postgres with FOR UPDATE SKIP LOCKED, so several replicas are safe and NATS
+  # delivery is never on the correctness path.
+  #
+  # CPU only. The environment is 32 features over 7 actions — no GPU plan needed.
+  # Scale to >1 replica for concurrent marketplace jobs; each claims a distinct
+  # row.
+  - type: worker
+    name: aiarena-training-worker
+    env: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./workers/training-worker/Dockerfile
+    # Repo root: the worker imports ml/trait_training, which imports
+    # ml/reinforcement_learning and ml/behaviour_cloning.
+    dockerContext: .
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: TRAINING_POLL_INTERVAL_S
+        value: "5"
+      # A RUNNING job whose heartbeat is older than this is treated as
+      # abandoned and requeued.
+      - key: TRAINING_STALE_AFTER_S
+        value: "300"
+      - key: TRAINING_CHECKPOINT_DIR
+        value: /tmp
+
+  # ── Evaluation Service (the verifier) ────────────────────────────────────────
+  # Holds VERIFIER_ROLE and nothing else. Its key MUST differ from the base
+  # chain relayer key — one drives job state, the other judges outcomes (T3).
+  - type: web
+    name: aiarena-evaluation
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: services/evaluation-service
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/evaluation-service...
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8081"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: BASE_RPC_URL
+        value: https://mainnet.base.org
+      - key: A2A_JOB_ESCROW_ADDRESS
+        sync: false
+      - key: A2A_VERIFIER_PRIVATE_KEY
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+      - key: ZEROG_NETWORK
+        value: mainnet
+      - key: ZEROG_STORAGE_PRIVATE_KEY
+        sync: false
+
+  # ── A2A Marketplace Service (job meaning) ────────────────────────────────────
+  # Owns prompts, requirement parsing and negotiation. Holds NO chain key —
+  # every on-chain action is delegated to aiarena-base-chain.
+  - type: web
+    name: aiarena-a2a-marketplace
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: services/a2a-marketplace-service
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/a2a-marketplace-service...
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8080"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: BASE_CHAIN_SERVICE_URL
+        value: https://aiarena-base-chain.onrender.com
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+      # 0G Compute assists requirement extraction; a deterministic parser is
+      # always run alongside it, so an outage degrades quality, not uptime.
+      - key: ZEROG_NETWORK
+        value: mainnet
+      - key: ZEROG_COMPUTE_API_KEY
+        sync: false
+      - key: ZEROG_STORAGE_PRIVATE_KEY
+        sync: false
+
+  # ── Base Chain Service (A2A agent commerce on Base mainnet) ──────────────────
+  # Sole relayer/signer for Base. Holds BASE_RELAYER_PRIVATE_KEY and the agent
+  # signing-key encryption secret. See docs/architecture/A2A_MARKETPLACE_BASE.md.
+  #
+  # A2A_PUBLIC_BASE_URL must be this service's own public origin: it becomes the
+  # ERC-8004 tokenURI, which foreign agents resolve without any credentials. If
+  # it is wrong, registered agent identities point at a dead URL and fixing it
+  # costs an on-chain setAgentURI per agent.
+  - type: web
+    name: aiarena-base-chain
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: services/base-chain-service
+    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/base-chain-service...
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8051"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: BASE_RPC_URL
+        value: https://mainnet.base.org
+      # Gas-payer for every Base transaction. Must NOT reuse the 0G deployer key
+      # (that one is in this repo's public git history).
+      - key: BASE_RELAYER_PRIVATE_KEY
+        sync: false
+      # Rotating this without re-encrypting existing rows permanently orphans
+      # every stored agent signing key.
+      - key: AGENT_WALLET_ENCRYPTION_KEY
+        sync: false
+      - key: A2A_PUBLIC_BASE_URL
+        value: https://aiarena-base-chain.onrender.com
+      - key: ERC8004_REPUTATION_REGISTRY_ADDRESS
+        value: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"
+      - key: A2A_JOB_ESCROW_ADDRESS
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+      # 0G Storage — publishes the agent registration file whose Merkle root is
+      # committed alongside the on-chain registration. Indexer/RPC endpoints
+      # come from getZeroGConfig()'s per-network defaults, not env, so only the
+      # signing key and network selector are set here.
+      - key: ZEROG_NETWORK
+        value: mainnet
+      - key: ZEROG_STORAGE_PRIVATE_KEY
+        sync: false
+
   # ── Leaderboard Service ───────────────────────────────────────────────────────
   - type: web
     name: aiarena-leaderboard
@@ -398,6 +554,14 @@ services:
         value: https://aiarena-league.onrender.com
       - key: OKX_PAYMENT_PROXY_URL
         value: https://aiarena-okx-payment-proxy.onrender.com
+      # A2A agent commerce on Base. Serves the public ERC-8004 tokenURI via
+      # /v1/a2a/identity/agents/:id/registration.json — must stay unauthenticated.
+      - key: BASE_CHAIN_SERVICE_URL
+        value: https://aiarena-base-chain.onrender.com
+      # Without this, /v1/marketplace/* falls back to http://localhost:8080 and
+      # 500s in production — the gateway routing table has a localhost default.
+      - key: A2A_MARKETPLACE_SERVICE_URL
+        value: https://aiarena-a2a-marketplace.onrender.com
 
   # ── INFT Service (ERC-7857 Living NFT on 0G Chain) ───────────────────────────
   - type: web

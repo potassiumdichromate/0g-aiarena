@@ -527,6 +527,60 @@ Analyse the battle context and opponent profile, then produce a structured strat
     return JSON.parse(content);
   }
 
+  // ── A2A Job Requirement Extraction ────────────────────────────────────────
+
+  /**
+   * Extract structured training-job requirements from a natural-language prompt.
+   *
+   * Used by a2a-marketplace-service for job creation. The caller ALWAYS runs a
+   * deterministic parser as well and reconciles the two
+   * (@ai-arena/a2a-protocol `mergeExtractions`) — anything this returns whose
+   * numbers do not literally appear in the prompt is discarded, because the
+   * parsed result becomes an on-chain commitment the escrow settles against.
+   *
+   * temperature 0 and json_object response format: this is extraction, not
+   * generation, and a creative reading of a price threshold is a bug.
+   */
+  async extractJobRequirements(prompt: string): Promise<{
+    gameId: string | null;
+    target: { metric: string; op: string; value: number } | null;
+    providerRequirements: Array<{ metric: string; op: string; value: number }>;
+  }> {
+    const response = await this.openai.chat.completions.create({
+      model: this.config.modelChat,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You extract structured training-job requirements from a user prompt. ' +
+            'Respond with JSON matching exactly: {"gameId":string|null,' +
+            '"target":{"metric":string,"op":"gte","value":integer}|null,' +
+            '"providerRequirements":[{"metric":string,"op":"gte","value":integer}]}. ' +
+            'Valid metrics: combatSkill, precision, aggression, patience, adaptability, ' +
+            'resilience, creativity, wins, losses, winRate, eloRating. ' +
+            'Valid gameId: warzone, robowar, highway-hustle. ' +
+            '"target" is what the requester wants their OWN agent to reach. ' +
+            '"providerRequirements" is what the TRAINER must already have. ' +
+            'Use only numbers that literally appear in the prompt. If unsure, use null.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      max_tokens: 512,
+      temperature: 0,
+      response_format: { type: 'json_object' },
+    });
+
+    const parsed = JSON.parse(response.choices[0]?.message?.content ?? '{}') as Record<string, unknown>;
+
+    return {
+      gameId: typeof parsed.gameId === 'string' ? parsed.gameId : null,
+      target: (parsed.target ?? null) as { metric: string; op: string; value: number } | null,
+      providerRequirements: Array.isArray(parsed.providerRequirements)
+        ? (parsed.providerRequirements as Array<{ metric: string; op: string; value: number }>)
+        : [],
+    };
+  }
+
   // ── Avatar Generation ──────────────────────────────────────────────────────
 
   /**

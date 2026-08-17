@@ -402,13 +402,42 @@ export class AgentService {
     };
   }
 
+  /**
+   * Queue a real trait-training job.
+   *
+   * Until now this wrote a bare TrainingJob row that nothing ever consumed, so
+   * every job created from the product sat at QUEUED forever. The row is now
+   * picked up by workers/training-worker, which claims it with FOR UPDATE SKIP
+   * LOCKED and runs the ml/trait_training pipeline against AIArenaBattleEnv.
+   *
+   * No routing changed to make that work: the worker claims from the queue
+   * directly, so this endpoint became real rather than moving.
+   *
+   * The config written here is the worker's contract — see
+   * trait_training_runner._plan_from_config.
+   */
   async queueTraining(agentId: string, params: { type?: string; priority?: number; config?: Record<string, unknown> }) {
+    const requested = (params.config ?? {}) as Record<string, unknown>;
+
+    // Every evaluation needs a seed root. Generating it server-side (rather
+    // than accepting one from the caller) is what stops an agent from
+    // requesting seeds it has already been tuned against — the same
+    // train-on-the-test-set problem the marketplace guards with T18.
+    const evalSeedRoot =
+      typeof requested.evalSeedRoot === 'number'
+        ? requested.evalSeedRoot
+        : Math.floor(Math.random() * 2_147_483_647);
+
     return prisma.trainingJob.create({
       data: {
         agent:    { connect: { id: agentId } },
         type:     (params.type as any) ?? 'BEHAVIOUR_CLONING',
         priority: params.priority ?? 5,
-        config:   (params.config as any) ?? {},
+        config: {
+          ...requested,
+          evalSeedRoot,
+          targetMetric: (requested.targetMetric as string) ?? 'combatSkill',
+        } as any,
       },
     });
   }

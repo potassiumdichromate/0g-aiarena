@@ -18,6 +18,7 @@
     "@ai-arena/shared-types": "workspace:*",
     "@ai-arena/shared-utils": "workspace:*",
     "@ai-arena/db-client": "workspace:*",
+    "@ai-arena/capability": "workspace:*",
     "@ai-arena/cache": "workspace:*",
     "@ai-arena/event-bus": "workspace:*",
     "@ai-arena/zerog-client": "workspace:*"

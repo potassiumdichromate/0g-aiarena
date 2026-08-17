@@ -5,6 +5,9 @@ dotenv.config({ path: '../../.env' });
 
 const DEPLOYER_KEY = process.env.EVM_DEPLOYER_PRIVATE_KEY ?? '';
 
+/** Base deployer — intentionally NOT EVM_DEPLOYER_PRIVATE_KEY (see the `base` network note). */
+const BASE_DEPLOYER_KEY = process.env.BASE_DEPLOYER_PRIVATE_KEY ?? '';
+
 const config: HardhatUserConfig = {
   solidity: {
     version: '0.8.24',
@@ -34,12 +37,40 @@ const config: HardhatUserConfig = {
     // ── Base Mainnet ──────────────────────────────────────────────────────────
     // Chain ID : 8453
     // Explorer : https://basescan.org
-    // Tokens   : USDC 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
-    //            USDT 0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2
-    'base-mainnet': {
+    // Tokens   : USDC 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 (canonical, EIP-3009)
+    //
+    // Home of the A2A agent-commerce marketplace: ERC-8004 agent identity +
+    // reputation (canonical registries, already deployed — we do not deploy
+    // our own) and the A2AJobEscrow that custodies USDC between agents.
+    // See docs/architecture/A2A_MARKETPLACE_BASE.md.
+    //
+    // Deliberately a separate signer from the 0G deployer: the 0G
+    // EVM_DEPLOYER_PRIVATE_KEY was committed to .env.example and pushed, so
+    // nothing that touches real USDC may reuse it.
+    base: {
       url:      process.env.BASE_RPC_URL ?? 'https://mainnet.base.org',
-      accounts: DEPLOYER_KEY ? [DEPLOYER_KEY] : [],
+      accounts: BASE_DEPLOYER_KEY ? [BASE_DEPLOYER_KEY] : [],
       chainId:  8453,
+      gasPrice: 'auto',
+    },
+
+    // ── Base Mainnet fork (local testing against real USDC/ERC-8004) ──────────
+    // `pnpm hardhat node --fork $BASE_RPC_URL` then target this network. Escrow
+    // tests run here so they exercise the real USDC contract rather than a mock.
+    'base-fork': {
+      url:     'http://127.0.0.1:8545',
+      chainId: 8453,
+    },
+
+    // ── 0G Chain Testnet ──────────────────────────────────────────────────────
+    // Chain ID : 16600
+    // Used for staging the ARENA economy contracts before a mainnet deploy.
+    // Previously referenced by package.json's deploy:testnet script but never
+    // defined here — that script was broken until this entry was added.
+    'zerog-testnet': {
+      url:      process.env.ZEROG_EVM_RPC_TESTNET ?? 'https://evmrpc-testnet.0g.ai',
+      accounts: DEPLOYER_KEY ? [DEPLOYER_KEY] : [],
+      chainId:  16600,
       gasPrice: 'auto',
     },
   },
@@ -57,8 +88,8 @@ const config: HardhatUserConfig = {
 
   etherscan: {
     apiKey: {
-      base:            process.env.BASESCAN_API_KEY ?? '',
       'zerog-mainnet': 'no-api-key-required',
+      base:            process.env.BASESCAN_API_KEY ?? '',
     },
     customChains: [
       {
@@ -67,6 +98,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL:      'https://chainscan.0g.ai/api',
           browserURL:  'https://chainscan.0g.ai',
+        },
+      },
+      {
+        network:  'base',
+        chainId:  8453,
+        urls: {
+          apiURL:     'https://api.basescan.org/api',
+          browserURL: 'https://basescan.org',
         },
       },
     ],
