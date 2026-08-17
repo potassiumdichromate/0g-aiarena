@@ -420,6 +420,17 @@ services:
         value: https://aiarena-base-chain.onrender.com
       - key: INTERNAL_SERVICE_SECRET
         sync: false
+      # EIP-712 signatures are bound to one escrow on one chain. Without
+      # these the service refuses to sign rather than guessing a domain, so
+      # negotiation fails closed instead of producing junk signatures.
+      - key: A2A_JOB_ESCROW_ADDRESS
+        sync: false
+      - key: BASE_CHAIN_ID
+        value: "8453"
+      # Advances EXECUTING jobs once training finishes. Without the tick a
+      # job sits until the escrow times out.
+      - key: EXECUTION_POLL_INTERVAL_MS
+        value: "30000"
       # 0G Compute assists requirement extraction; a deterministic parser is
       # always run alongside it, so an outage degrades quality, not uptime.
       - key: ZEROG_NETWORK
