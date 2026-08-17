@@ -31,6 +31,7 @@ import {
   ERC8004_IDENTITY_REGISTRY,
   IDENTITY_EIP712_DOMAIN,
   WALLET_SIG_TTL_SECONDS,
+  WALLET_SIG_MAX_TTL_SECONDS,
   publicBaseUrl,
 } from './config';
 import {
@@ -269,6 +270,16 @@ async function bindAgentWallet(agentId: string): Promise<string> {
   const agentSigner = new ethers.Wallet(decryptAgentKey(identity.eoaKeyEnc));
   if (ethers.getAddress(agentSigner.address) !== ethers.getAddress(identity.eoaAddress)) {
     throw new Error('Decrypted agent key does not match stored eoaAddress');
+  }
+
+  // The registry rejects a deadline at or beyond its limit with "deadline too
+  // far", and that only surfaces as a revert after the signature is built and a
+  // transaction attempted. Fail here instead, where the cause is obvious.
+  if (WALLET_SIG_TTL_SECONDS >= WALLET_SIG_MAX_TTL_SECONDS) {
+    throw new Error(
+      `WALLET_SIG_TTL_SECONDS is ${WALLET_SIG_TTL_SECONDS}s but the registry rejects ` +
+        `anything at or beyond ${WALLET_SIG_MAX_TTL_SECONDS}s`,
+    );
   }
 
   const deadline = Math.floor(Date.now() / 1000) + WALLET_SIG_TTL_SECONDS;
