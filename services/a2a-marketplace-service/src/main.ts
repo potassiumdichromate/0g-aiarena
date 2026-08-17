@@ -15,6 +15,8 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import { jobRoutes } from './routes/job.routes';
 import { negotiationRoutes } from './routes/negotiation.routes';
+import { executionRoutes } from './routes/execution.routes';
+import { pollExecution } from './execution.service';
 
 const PORT = parseInt(process.env.PORT ?? '8080', 10);
 const SERVICE_NAME = 'a2a-marketplace-service';
@@ -33,6 +35,14 @@ async function bootstrap(): Promise<void> {
 
   await app.register(jobRoutes, { prefix: '/jobs' });
   await app.register(negotiationRoutes, { prefix: '/negotiations' });
+  await app.register(executionRoutes, { prefix: '/execution' });
+
+  // Advance delivered work on a tick. Without this a job sits at EXECUTING
+  // after training finishes and only ever reaches the escrow timeout.
+  const POLL_MS = parseInt(process.env.EXECUTION_POLL_INTERVAL_MS ?? '30000', 10);
+  setInterval(() => {
+    pollExecution().catch((err) => app.log.error({ err }, 'execution poll failed'));
+  }, POLL_MS).unref();
 
   await app.listen({ port: PORT, host: '0.0.0.0' });
   app.log.info(`${SERVICE_NAME} listening on :${PORT}`);

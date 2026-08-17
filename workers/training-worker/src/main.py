@@ -37,6 +37,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from verification_runner import claim_next_verification, execute_verification
 from trait_training_runner import (
     WORKER_ID,
     claim_next_job,
@@ -89,6 +90,26 @@ def main() -> int:
                 last_sweep = time.monotonic()
 
             job = claim_next_job(conn)
+
+            if job is None:
+                # Nothing to train. Verify a delivered marketplace job instead —
+                # it is seconds of work, and a job sitting unverified is a
+                # provider waiting to be paid.
+                pending = claim_next_verification(conn)
+                if pending is not None:
+                    try:
+                        result = execute_verification(conn, pending, CHECKPOINT_DIR)
+                        conn.commit()
+                        if result:
+                            logger.info(
+                                "Verified job %s: %s = %s (target %s)",
+                                result["jobId"], result["targetMetric"],
+                                result["measuredValue"], result["targetValue"],
+                            )
+                    except Exception:
+                        conn.rollback()
+                        logger.exception("Verification pass failed for job %s", pending["id"])
+                    continue
             if job is None:
                 time.sleep(POLL_INTERVAL_S)
                 continue

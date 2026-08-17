@@ -1176,6 +1176,11 @@ model A2AJob {
   /// The verifier's INDEPENDENT re-run. Distinct from the provider's own FINAL
   /// snapshot — the provider never supplies the number it is paid on.
   verificationSnapshotId String?
+  /// Worker that claimed this job for verification. Lets several workers run
+  /// concurrently without two of them verifying the same delivery, and lets a
+  /// stale claim be reclaimed after the holder dies.
+  verificationClaimedBy  String?
+  verificationClaimedAt  DateTime?
   verifiedValue          Int?
   verdictAccepted        Boolean?
   verdictReportHash      String?
