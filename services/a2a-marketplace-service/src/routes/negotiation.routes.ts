@@ -8,6 +8,7 @@
  */
 
 import { FastifyInstance } from 'fastify';
+import { requireAuth, assertOwnsAgent, assertOwnsNegotiationSide } from '../middleware/auth';
 import {
   appendOffer,
   getNegotiation,
@@ -19,11 +20,14 @@ import {
 
 export async function negotiationRoutes(app: FastifyInstance): Promise<void> {
   /** POST /negotiations — a provider opens a thread. Eligibility re-derived here. */
-  app.post('/', async (req, reply) => {
+  app.post('/', { onRequest: [requireAuth(app)] as never }, async (req, reply) => {
     const { jobId, providerAgentId } = (req.body ?? {}) as Record<string, string>;
     if (!jobId || !providerAgentId) {
       return reply.status(400).send({ error: 'jobId and providerAgentId are required' });
     }
+    // A provider proposes as itself, not as an agent it merely names.
+    if (!(await assertOwnsAgent(req, reply, providerAgentId))) return;
+
     try {
       return reply.status(201).send(await openNegotiation({ jobId, providerAgentId }));
     } catch (err) {
@@ -32,12 +36,16 @@ export async function negotiationRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /** POST /negotiations/:id/offers — append one signed offer. */
-  app.post('/:id/offers', async (req, reply) => {
+  app.post('/:id/offers', { onRequest: [requireAuth(app)] as never }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const body = (req.body ?? {}) as Record<string, string>;
     if (!body.role || !body.kind) {
       return reply.status(400).send({ error: 'role and kind are required' });
     }
+
+    // Speak only for your own side of the table.
+    if (!(await assertOwnsNegotiationSide(req, reply, id, body.role as never))) return;
+
     try {
       return await appendOffer({
         negotiationId: id,
@@ -58,12 +66,15 @@ export async function negotiationRoutes(app: FastifyInstance): Promise<void> {
    * The autonomous path. Deterministic given the transcript and policy, so a
    * disputed negotiation can be replayed and the decision reproduced.
    */
-  app.post('/:id/respond', async (req, reply) => {
+  app.post('/:id/respond', { onRequest: [requireAuth(app)] as never }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const body = (req.body ?? {}) as Record<string, string>;
     if (!body.floorBaseUnits) {
       return reply.status(400).send({ error: 'floorBaseUnits is required — a provider needs a floor' });
     }
+
+    if (!(await assertOwnsNegotiationSide(req, reply, id, 'PROVIDER'))) return;
+
     try {
       return await providerRespond({
         negotiationId: id,
@@ -77,8 +88,12 @@ export async function negotiationRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /** POST /negotiations/:id/agreement — both agents sign the agreed terms. */
-  app.post('/:id/agreement', async (req, reply) => {
+  app.post('/:id/agreement', { onRequest: [requireAuth(app)] as never }, async (req, reply) => {
     const { id } = req.params as { id: string };
+
+    // Signing binds the creator to a payment, so the creator must ask for it.
+    if (!(await assertOwnsNegotiationSide(req, reply, id, 'CREATOR'))) return;
+
     try {
       return await signAgreement(id);
     } catch (err) {

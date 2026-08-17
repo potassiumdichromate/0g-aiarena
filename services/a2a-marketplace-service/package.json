@@ -15,7 +15,8 @@
     "@ai-arena/db-client": "workspace:*",
     "@ai-arena/a2a-protocol": "workspace:*",
     "@ai-arena/capability": "workspace:*",
-    "@ai-arena/zerog-client": "workspace:*"
+    "@ai-arena/zerog-client": "workspace:*",
+    "@fastify/jwt": "^8.0.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

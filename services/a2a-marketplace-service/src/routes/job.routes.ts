@@ -8,6 +8,7 @@
  */
 
 import { FastifyInstance } from 'fastify';
+import { requireAuth, assertOwnsAgent, assertOwnsJobCreator } from '../middleware/auth';
 import {
   confirmAndPost,
   createDraft,
@@ -19,20 +20,23 @@ import {
 
 export async function jobRoutes(app: FastifyInstance): Promise<void> {
   /** POST /jobs/parse — preview an interpretation without storing anything. */
-  app.post('/parse', async (req, reply) => {
+  app.post('/parse', { onRequest: [requireAuth(app)] as never }, async (req, reply) => {
     const { prompt } = (req.body ?? {}) as { prompt?: string };
     if (!prompt?.trim()) return reply.status(400).send({ error: 'prompt is required' });
     return parsePrompt(prompt);
   });
 
   /** POST /jobs/draft — parse, validate and stage. Nothing on-chain yet. */
-  app.post('/draft', async (req, reply) => {
+  app.post('/draft', { onRequest: [requireAuth(app)] as never }, async (req, reply) => {
     const body = (req.body ?? {}) as Record<string, never>;
     const required = ['creatorAgentId', 'prompt', 'budgetMin', 'budgetMax'] as const;
     const missing = required.filter((k) => !body[k]);
     if (missing.length) {
       return reply.status(400).send({ error: `missing required fields: ${missing.join(', ')}` });
     }
+
+    // Without this, any caller could post a job as somebody else's agent.
+    if (!(await assertOwnsAgent(req, reply, String(body.creatorAgentId)))) return;
 
     try {
       return reply.status(201).send(await createDraft(body as never));
@@ -42,8 +46,11 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /** POST /jobs/:jobId/confirm — publish the confirmed draft to Base. */
-  app.post('/:jobId/confirm', async (req, reply) => {
+  app.post('/:jobId/confirm', { onRequest: [requireAuth(app)] as never }, async (req, reply) => {
     const { jobId } = req.params as { jobId: string };
+
+    // Confirming spends gas and commits the job on-chain — creator only.
+    if (!(await assertOwnsJobCreator(req, reply, jobId))) return;
     try {
       return await confirmAndPost(jobId);
     } catch (err) {

@@ -13,9 +13,11 @@
 import Fastify, { FastifyRequest, FastifyReply } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
+import jwt from '@fastify/jwt';
 import { jobRoutes } from './routes/job.routes';
 import { negotiationRoutes } from './routes/negotiation.routes';
 import { executionRoutes } from './routes/execution.routes';
+import { identityRoutes } from './routes/identity.routes';
 import { pollExecution } from './execution.service';
 
 const PORT = parseInt(process.env.PORT ?? '8080', 10);
@@ -26,6 +28,8 @@ async function bootstrap(): Promise<void> {
 
   await app.register(cors, { origin: true });
   await app.register(helmet);
+  // Writes act AS an agent, so they need a session to prove who is asking.
+  await app.register(jwt, { secret: process.env.JWT_SECRET ?? 'dev-secret' });
 
   app.get('/health', async () => ({
     status: 'ok',
@@ -36,6 +40,7 @@ async function bootstrap(): Promise<void> {
   await app.register(jobRoutes, { prefix: '/jobs' });
   await app.register(negotiationRoutes, { prefix: '/negotiations' });
   await app.register(executionRoutes, { prefix: '/execution' });
+  await app.register(identityRoutes, { prefix: '/agents' });
 
   // Advance delivered work on a tick. Without this a job sits at EXECUTING
   // after training finishes and only ever reaches the escrow timeout.

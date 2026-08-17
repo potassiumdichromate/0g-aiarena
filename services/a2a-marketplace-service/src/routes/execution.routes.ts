@@ -8,10 +8,11 @@
 
 import { FastifyInstance } from 'fastify';
 import { executionProgress, pollExecution, startExecution } from '../execution.service';
+import { requireServiceKey } from '../middleware/auth';
 
 export async function executionRoutes(app: FastifyInstance): Promise<void> {
   /** POST /execution/jobs/:jobId/start — queue the real work for a funded job. */
-  app.post('/jobs/:jobId/start', async (req, reply) => {
+  app.post('/jobs/:jobId/start', { onRequest: [requireServiceKey()] as never }, async (req, reply) => {
     const { jobId } = req.params as { jobId: string };
     try {
       return await startExecution(jobId);
@@ -26,7 +27,7 @@ export async function executionRoutes(app: FastifyInstance): Promise<void> {
    * Exposed as an endpoint rather than only a timer so it can be driven by an
    * external scheduler, and so a stuck job can be nudged without a redeploy.
    */
-  app.post('/poll', async (req) => {
+  app.post('/poll', { onRequest: [requireServiceKey()] as never }, async (req) => {
     const { limit } = (req.body ?? {}) as { limit?: number };
     return { results: await pollExecution(limit) };
   });
