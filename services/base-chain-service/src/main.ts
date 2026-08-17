@@ -38,6 +38,18 @@ const SERVICE_NAME = 'base-chain-service';
 /** Relayer balance below this and registrations will start failing. */
 const LOW_BALANCE_ETH = 0.0005;
 
+/** Public-safe classification of a relayer failure. Never echoes the raw error. */
+function classifyRelayerError(err: unknown): string {
+  const message = (err as Error)?.message ?? "";
+
+  if (/invalid BytesLike|invalid private key|incorrect data length|invalid arrayify/i.test(message)) {
+    return "BASE_RELAYER_PRIVATE_KEY is malformed. Check for a trailing newline or wrapped paste.";
+  }
+  if (/not configured|is not configured/i.test(message)) return "A required environment variable is not set.";
+  if (/could not detect network|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|fetch failed/i.test(message)) return "Base RPC unreachable.";
+  return "Relayer check failed. See service logs.";
+}
+
 async function bootstrap(): Promise<void> {
   const app = Fastify({ logger: true });
 
@@ -78,7 +90,11 @@ async function bootstrap(): Promise<void> {
         blockNumber,
       };
     } catch (err) {
-      relayer = { configured: false, error: (err as Error).message };
+      // Same hazard as evaluation-service: /health is public and ethers puts
+      // the offending value in its message, so a malformed relayer key would
+      // be served to anyone. Classify, and log the real error privately.
+      relayer = { configured: false, error: classifyRelayerError(err) };
+      app.log.error({ err }, 'relayer health check failed');
     }
 
     return {
