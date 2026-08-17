@@ -15,7 +15,7 @@
  * Layer and is not touched by any of this.
  */
 
-import Fastify, { FastifyRequest, FastifyReply } from 'fastify';
+import Fastify, { FastifyRequest, FastifyReply, FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import { identityRoutes } from './routes/identity.routes';
@@ -50,11 +50,37 @@ function classifyRelayerError(err: unknown): string {
   return "Relayer check failed. See service logs.";
 }
 
+/**
+ * Accept POSTs that carry a JSON content-type but no body.
+ *
+ * Several endpoints here take no arguments — confirming a job, signing an
+ * agreement, registering an identity. Browsers and HTTP clients routinely set
+ * Content-Type: application/json on any POST, and Fastify's default parser
+ * rejects an empty body in that case with FST_ERR_CTP_EMPTY_JSON_BODY.
+ *
+ * Treating an empty body as {} is the behaviour callers expect, and it means
+ * an argument-free endpoint does not need every client to remember to send a
+ * placeholder object.
+ */
+function acceptEmptyJsonBody(app: FastifyInstance): void {
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+    const raw = typeof body === 'string' ? body.trim() : '';
+    if (raw === '') return done(null, {});
+    try {
+      done(null, JSON.parse(raw));
+    } catch (err) {
+      (err as Error & { statusCode?: number }).statusCode = 400;
+      done(err as Error, undefined);
+    }
+  });
+}
+
 async function bootstrap(): Promise<void> {
   const app = Fastify({ logger: true });
 
   await app.register(cors, { origin: true });
   await app.register(helmet);
+  acceptEmptyJsonBody(app);
 
   // GETs are open: everything they return is already public on Base, and
   // /registration.json must be fetchable by foreign agents that hold no KULT

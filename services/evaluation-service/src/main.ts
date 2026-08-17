@@ -10,7 +10,7 @@
  * delivered checkpoint under a fresh seed root; this service settles on that.
  */
 
-import Fastify, { FastifyRequest, FastifyReply } from 'fastify';
+import Fastify, { FastifyRequest, FastifyReply, FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import { pendingVerdicts, roleCheck, verifierAddress, verifyAndSettle } from './verifier.service';
@@ -43,11 +43,37 @@ function classifyRoleError(err: unknown): string {
   return "Verifier role check failed. See service logs.";
 }
 
+/**
+ * Accept POSTs that carry a JSON content-type but no body.
+ *
+ * Several endpoints here take no arguments — confirming a job, signing an
+ * agreement, registering an identity. Browsers and HTTP clients routinely set
+ * Content-Type: application/json on any POST, and Fastify's default parser
+ * rejects an empty body in that case with FST_ERR_CTP_EMPTY_JSON_BODY.
+ *
+ * Treating an empty body as {} is the behaviour callers expect, and it means
+ * an argument-free endpoint does not need every client to remember to send a
+ * placeholder object.
+ */
+function acceptEmptyJsonBody(app: FastifyInstance): void {
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+    const raw = typeof body === 'string' ? body.trim() : '';
+    if (raw === '') return done(null, {});
+    try {
+      done(null, JSON.parse(raw));
+    } catch (err) {
+      (err as Error & { statusCode?: number }).statusCode = 400;
+      done(err as Error, undefined);
+    }
+  });
+}
+
 async function bootstrap(): Promise<void> {
   const app = Fastify({ logger: true });
 
   await app.register(cors, { origin: true });
   await app.register(helmet);
+  acceptEmptyJsonBody(app);
 
   // Everything except /health moves real money or reveals the verifier key's
   // address; internal callers only.
