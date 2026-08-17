@@ -16,6 +16,7 @@ import {
   transferIdentityToOwner,
   signAsAgent,
   signTypedDataAsAgent,
+  reconcileIdentity,
 } from '../agent-identity.service';
 import { basescanTx, basescanToken } from '../config';
 
@@ -134,4 +135,22 @@ export async function identityRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: (err as Error).message });
     }
   });
+  /**
+   * POST /identity/agents/:agentId/reconcile
+   *
+   * Bind a row to a registration that already landed on-chain, for the case
+   * where the mint succeeded but its result was never recorded. Body: { txHash }.
+   */
+  app.post('/agents/:agentId/reconcile', async (req, reply) => {
+    const { agentId } = req.params as { agentId: string };
+    const { txHash } = (req.body ?? {}) as { txHash?: string };
+    if (!txHash) return reply.status(400).send({ error: 'txHash is required' });
+
+    try {
+      return await reconcileIdentity(agentId, txHash);
+    } catch (err) {
+      return reply.status(400).send({ error: (err as Error).message });
+    }
+  });
+
 }

@@ -214,6 +214,16 @@ async function registerOnChain(agentId: string, agentURI: string): Promise<strin
     { metadataKey: 'platform', metadataValue: ethers.toUtf8Bytes('kult-ai-arena') },
   ]);
   const tx = await getRelayerSigner().sendTransaction(withAttribution(populated));
+
+  // Persist the hash BEFORE waiting. If the wait fails — a flaky RPC is enough,
+  // and ethers reports those as "could not coalesce error" — the mint may still
+  // have landed. Without the hash recorded, a retry cannot tell the difference
+  // and would mint a SECOND identity, which cannot be merged with the first.
+  await prisma.agentBaseIdentity.update({
+    where: { agentId },
+    data: { registerTxHash: tx.hash },
+  });
+
   const receipt = await tx.wait();
   if (!receipt) throw new Error(`register() produced no receipt for agent ${agentId}`);
 
@@ -328,11 +338,65 @@ async function claimRegistration(agentId: string): Promise<boolean> {
  * Register an agent on Base, resuming from wherever it currently is.
  * Safe to call repeatedly — that is the intended retry mechanism.
  */
+/**
+ * Adopt a registration whose transaction landed but whose result we never read.
+ *
+ * A dropped RPC connection between sendTransaction and the receipt leaves the
+ * mint on-chain and our row blank. Re-registering in that state mints a second
+ * identity for the same agent, so the sent transaction is looked up first and
+ * its Registered event adopted if present.
+ *
+ * Returns the ERC-8004 id when a mined registration was found.
+ */
+async function adoptExistingRegistration(agentId: string, txHash: string): Promise<string | null> {
+  try {
+    const receipt = await getProvider().getTransactionReceipt(txHash);
+    if (!receipt) return null;            // still pending, or dropped
+    if (receipt.status === 0) return null; // reverted, safe to retry
+
+    const registry = identityRegistryRead();
+    const registered = receipt.logs
+      .map((log) => {
+        try { return registry.interface.parseLog({ topics: [...log.topics], data: log.data }); }
+        catch { return null; }
+      })
+      .find((parsed) => parsed?.name === 'Registered');
+
+    if (!registered) return null;
+
+    const erc8004AgentId = (registered.args.agentId as bigint).toString();
+
+    await prisma.agentBaseIdentity.update({
+      where: { agentId },
+      data: {
+        erc8004AgentId,
+        registerTxHash: txHash,
+        status: 'REGISTERED',
+        registeredAt: new Date(),
+        lastError: null,
+      },
+    });
+
+    console.info(`[identity] Adopted existing registration for ${agentId}: ERC-8004 #${erc8004AgentId} (tx ${txHash})`);
+    return erc8004AgentId;
+  } catch (err) {
+    console.warn(`[identity] Could not check prior registration tx ${txHash}: ${revertReason(err)}`);
+    return null;
+  }
+}
+
 export async function ensureIdentity(agentId: string): Promise<IdentityView> {
-  const identity = await ensureRow(agentId);
+  let identity = await ensureRow(agentId);
 
   // Already complete — nothing to do.
   if (identity.status === 'WALLET_LINKED') return toView(identity);
+
+  // A transaction was sent but its result never recorded. Adopt it rather than
+  // minting again.
+  if (!identity.erc8004AgentId && identity.registerTxHash) {
+    const adopted = await adoptExistingRegistration(agentId, identity.registerTxHash);
+    if (adopted) identity = await prisma.agentBaseIdentity.findUniqueOrThrow({ where: { agentId } });
+  }
 
   // Past register() already: only the wallet binding is outstanding. This is
   // idempotent on-chain (setAgentWallet just overwrites the metadata with the
@@ -512,4 +576,63 @@ export async function isValidContractSignature(
   } catch {
     return false;
   }
+}
+
+/**
+ * Reconcile a row against a registration that already landed on-chain.
+ *
+ * For identities minted before the adoption path existed, where the row carries
+ * no registerTxHash to look up. An operator supplies the transaction hash from
+ * the explorer.
+ *
+ * The transaction is verified to have registered THIS agent before anything is
+ * written, so a mistyped hash cannot bind an agent to an identity belonging to
+ * someone else.
+ */
+export async function reconcileIdentity(agentId: string, txHash: string): Promise<IdentityView> {
+  const identity = await prisma.agentBaseIdentity.findUniqueOrThrow({ where: { agentId } });
+
+  // Already reconciled. Idempotent so a repeated call is harmless.
+  if (identity.erc8004AgentId) return toView(identity);
+
+  const receipt = await getProvider().getTransactionReceipt(txHash);
+  if (!receipt) throw new Error(`Transaction ${txHash} not found on Base`);
+  if (receipt.status === 0) throw new Error(`Transaction ${txHash} reverted; there is nothing to reconcile`);
+
+  const registry = identityRegistryRead();
+  const registered = receipt.logs
+    .map((log) => {
+      try { return registry.interface.parseLog({ topics: [...log.topics], data: log.data }); }
+      catch { return null; }
+    })
+    .find((parsed) => parsed?.name === 'Registered');
+
+  if (!registered) throw new Error(`Transaction ${txHash} contains no Registered event`);
+
+  const erc8004AgentId = (registered.args.agentId as bigint).toString();
+
+  // The tokenURI must name this agent. Without this check, a wrong hash would
+  // silently bind the agent to an identity it does not own.
+  const uri: string = await registry.tokenURI(erc8004AgentId);
+  if (!uri.includes(agentId)) {
+    throw new Error(
+      `Transaction ${txHash} registered ERC-8004 #${erc8004AgentId}, whose tokenURI does not ` +
+        `reference agent ${agentId}. Refusing to bind.`,
+    );
+  }
+
+  await prisma.agentBaseIdentity.update({
+    where: { agentId },
+    data: {
+      erc8004AgentId,
+      registerTxHash: txHash,
+      agentURI: uri,
+      status: 'REGISTERED',
+      registeredAt: new Date(),
+      lastError: null,
+    },
+  });
+
+  console.info(`[identity] Reconciled ${agentId} -> ERC-8004 #${erc8004AgentId}`);
+  return toView(await prisma.agentBaseIdentity.findUniqueOrThrow({ where: { agentId } }));
 }

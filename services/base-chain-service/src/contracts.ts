@@ -49,7 +49,23 @@ export function identityRegistryWrite(): ethers.Contract {
 
 /** Extract a clean revert reason from an ethers error, matching arena-chain-service. */
 export function revertReason(err: unknown): string {
-  const e = err as { shortMessage?: string; reason?: string; message?: string };
+  const e = err as {
+    shortMessage?: string;
+    reason?: string;
+    message?: string;
+    error?: { message?: string; code?: number };
+    info?: { error?: { message?: string; code?: number } };
+  };
+
+  // ethers wraps an RPC-level failure it cannot classify as "could not
+  // coalesce error", burying the actual cause in .error/.info.error. That
+  // wrapper is useless to whoever reads the log, so prefer the inner message.
+  const rpc = e.error?.message ?? e.info?.error?.message;
+  if (rpc) {
+    const code = e.error?.code ?? e.info?.error?.code;
+    return code ? `RPC ${code}: ${rpc}` : rpc;
+  }
+
   return e.shortMessage ?? e.reason ?? e.message ?? 'unknown error';
 }
 
