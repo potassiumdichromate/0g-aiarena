@@ -554,6 +554,9 @@ importers:
 
   services/base-chain-service:
     dependencies:
+      '@ai-arena/a2a-protocol':
+        specifier: workspace:*
+        version: link:../../packages/a2a-protocol
       '@ai-arena/db-client':
         specifier: workspace:*
         version: link:../../packages/db-client

@@ -16,6 +16,7 @@ import { ethers } from 'ethers';
 import { basescanTx } from './config';
 import { jobEscrowRead, jobEscrowWrite } from './job.service';
 import { revertReason } from './contracts';
+import { sendAttributed } from './attribution';
 
 export interface AgreementInput {
   jobId: string;
@@ -129,19 +130,12 @@ export async function fundJob(params: {
     toAuthTuple(params.authorization),
   ] as const;
 
-  try {
-    await write.fundWithAuthorization.staticCall(...args);
-  } catch (err) {
-    throw new Error(`fundWithAuthorization would revert: ${revertReason(err)}`);
-  }
-
-  const tx = await write.fundWithAuthorization(...args);
-  const receipt = await tx.wait();
+  const sent = await sendAttributed(write, 'fundWithAuthorization', args, revertReason);
 
   return {
-    txHash: tx.hash,
-    blockNumber: Number(receipt.blockNumber),
-    explorer: basescanTx(tx.hash),
+    txHash: sent.txHash,
+    blockNumber: sent.blockNumber,
+    explorer: basescanTx(sent.txHash),
     alreadyFunded: false,
   };
 }
@@ -184,21 +178,11 @@ export async function resolveDispute(jobId: string, toProviderBaseUnits: string,
 }
 
 async function relay(method: string, args: readonly unknown[]) {
-  const write = jobEscrowWrite();
-
-  try {
-    await write[method].staticCall(...args);
-  } catch (err) {
-    throw new Error(`${method} would revert: ${revertReason(err)}`);
-  }
-
-  const tx = await write[method](...args);
-  const receipt = await tx.wait();
-
+  const sent = await sendAttributed(jobEscrowWrite(), method, args, revertReason);
   return {
-    txHash: tx.hash,
-    blockNumber: Number(receipt.blockNumber),
-    explorer: basescanTx(tx.hash),
+    txHash: sent.txHash,
+    blockNumber: sent.blockNumber,
+    explorer: basescanTx(sent.txHash),
   };
 }
 

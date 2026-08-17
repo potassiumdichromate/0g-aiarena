@@ -15,6 +15,7 @@
 import { ethers } from 'ethers';
 import A2AJobEscrowAbi from './abi/A2AJobEscrow.json';
 import { getProvider, getRelayerSigner, revertReason } from './contracts';
+import { sendAttributed } from './attribution';
 import { requireEnv, basescanTx } from './config';
 
 export function jobEscrowAddress(): string {
@@ -88,20 +89,13 @@ export async function postJob(params: PostJobParams): Promise<PostJobResult> {
     params.executionWindowSeconds,
   ] as const;
 
-  try {
-    await write.postJob.staticCall(...args);
-  } catch (err) {
-    throw new Error(`postJob would revert: ${revertReason(err)}`);
-  }
-
-  const tx = await write.postJob(...args);
-  const receipt = await tx.wait();
+  const sent = await sendAttributed(write, 'postJob', args, revertReason);
 
   return {
     jobId: params.jobId,
-    txHash: tx.hash,
-    blockNumber: Number(receipt.blockNumber),
-    explorer: basescanTx(tx.hash),
+    txHash: sent.txHash,
+    blockNumber: sent.blockNumber,
+    explorer: basescanTx(sent.txHash),
     alreadyOnChain: false,
   };
 }

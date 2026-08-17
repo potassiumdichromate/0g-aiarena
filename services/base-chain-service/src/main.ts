@@ -21,6 +21,7 @@ import helmet from '@fastify/helmet';
 import { identityRoutes } from './routes/identity.routes';
 import { jobRoutes } from './routes/job.routes';
 import { settlementRoutes } from './routes/settlement.routes';
+import { attributionStatus } from './attribution';
 import { reputationRoutes } from './routes/reputation.routes';
 import { assertEncryptionConfigured } from './crypto';
 import { getRelayerAddress, relayerBalanceEth, getProvider } from './contracts';
@@ -90,6 +91,10 @@ async function bootstrap(): Promise<void> {
         usdc: BASE_USDC,
       },
       relayer,
+      // ERC-8021 attribution fails silently when misconfigured — a bad builder
+      // code just means transactions go untagged, with no error anywhere.
+      // Surfacing it here is the only way to notice.
+      attribution: attributionStatus(),
     };
   });
 
