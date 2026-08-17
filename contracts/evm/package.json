@@ -18,7 +18,8 @@
     "node:base-fork": "hardhat node --fork ${BASE_RPC_URL:-https://mainnet.base.org}",
     "grant:a2a:roles": "hardhat run scripts/grant-a2a-roles.ts --network base",
     "check:a2a:deploy": "hardhat run scripts/check-deploy-state.ts --network base",
-    "verify:a2a:base": "hardhat run scripts/verify-etherscan-v2.ts --network base"
+    "verify:a2a:base": "hardhat run scripts/verify-etherscan-v2.ts --network base",
+    "rotate:a2a:role": "hardhat run scripts/rotate-a2a-role.ts --network base"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",
