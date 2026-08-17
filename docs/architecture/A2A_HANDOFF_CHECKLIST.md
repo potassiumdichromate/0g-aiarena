@@ -177,6 +177,190 @@ BASE_RPC_URL=https://base-rpc.publicnode.com
 
 ## Step 5 — Deploy services on Render (manual)
 
+> **Paste only what is inside the backticks.** Cells written like *(secret)* or
+> *(paste)* describe what to supply — they are not values. Render validates
+> several fields against `^[A-Za-z0-9-_./ ]*# A2A Marketplace — your deployment runbook
+
+Everything here needs a human: a key, a funded wallet, a database, a Render
+dashboard, or a decision. Follow it in order — several steps depend on outputs
+from earlier ones.
+
+`render.yaml` is kept accurate as documentation, but since you are deploying
+manually it is a **reference for settings**, not something Render will read.
+Every value you need is reproduced below.
+
+Last updated: 2026-08-17.
+
+---
+
+## Step 0 — Rotate the leaked key (blocking)
+
+`EVM_DEPLOYER_PRIVATE_KEY` / `ZEROG_STORAGE_PRIVATE_KEY` = `0x309b…9150`
+→ address `0x63F63DC442299cCFe470657a769fdC6591d65eCa`.
+
+It is committed in `.env.example` and pushed to GitHub. It still holds
+oracle/owner authority on `AIArenaINFT` and signs 0G Storage uploads.
+
+**Nothing that touches USDC may reuse it.** `hardhat.config.ts` already
+enforces this structurally — the `base` network reads `BASE_DEPLOYER_PRIVATE_KEY`,
+a deliberately different variable, so a Base deploy cannot accidentally pick up
+the 0G key.
+
+Rotate it and everything downstream (JWT secrets, custodial encryption key, OKX
+API credentials) before going further.
+
+---
+
+## Step 1 — Generate five secrets
+
+Four are wallets, one is a symmetric encryption key.
+
+```bash
+node -e "const {Wallet}=require('ethers');for(const n of ['DEPLOYER','RELAYER','VERIFIER','ARBITER']){const w=Wallet.createRandom();console.log(n.padEnd(9),w.address,w.privateKey)}"
+```
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+| Secret | Env var | Purpose | Must differ from |
+|---|---|---|---|
+| Deployer | `BASE_DEPLOYER_PRIVATE_KEY` | Deploys the escrow, keeps `DEFAULT_ADMIN_ROLE` (pause/config) | the 0G deployer |
+| Relayer | `BASE_RELAYER_PRIVATE_KEY` | `RELAYER_ROLE` — drives job state, pays all gas | verifier |
+| Verifier | `A2A_VERIFIER_PRIVATE_KEY` | `VERIFIER_ROLE` — judges outcomes | relayer |
+| Arbiter | address → `A2A_ARBITER_ADDRESS` | `ARBITER_ROLE` — splits disputed escrow | both |
+| Agent key encryption | `AGENT_WALLET_ENCRYPTION_KEY` | AES-256-GCM for stored agent signing keys | — |
+
+**The deploy script refuses to run if relayer and verifier are the same
+address.** That is threat T3 (one key that both drives a job and judges it),
+and it is a hard failure, not a warning.
+
+⚠️ **`AGENT_WALLET_ENCRYPTION_KEY` is not rotatable in place.** Changing it
+without re-encrypting existing rows permanently orphans every stored agent
+signing key. Set it once, back it up.
+
+### Fund these wallets with ETH on Base
+
+| Wallet | Amount | Why |
+|---|---|---|
+| Deployer | ~0.003 ETH | One deploy + three `grantRole` transactions |
+| Relayer | ongoing | Pays gas for **every** job: post, fund, executing, deliver |
+| Verifier | ongoing | Pays gas per verdict |
+| Each creator agent EOA | ~0.0005 ETH each | ERC-8004 records `msg.sender` as the reviewer, so an agent must sign its own feedback |
+
+Agents need **no** ETH to fund escrow — that path is EIP-3009, where the agent
+signs and the relayer pays. The agent-EOA gas is only for publishing reputation.
+
+---
+
+## Step 2 — Database migration
+
+Migrations are committed and verified: all 16 apply cleanly from an empty
+database with zero drift against the schema.
+
+**On Render, run `migrate deploy` — never `migrate dev`.**
+
+```bash
+cd ~/project/src/packages/db-client
+npx prisma migrate deploy
+```
+
+`migrate dev` is a development command. Against a production database it can
+detect drift and offer to **reset it**, wiping agents, battles and league data.
+It also needs a shadow database, and it writes migration files to the instance
+disk on Render, where they are lost on the next deploy. `migrate deploy` only
+applies migration files that already exist in the repo, which is what you want.
+
+Mind the path: Render puts the checkout at `~/project/src`, and a service shell
+opens in that service's own `rootDir`, so a relative `cd packages/db-client`
+fails.
+
+Covers: `AgentBaseIdentity`, `AgentCapabilitySnapshot`, `A2AJob`,
+`A2ANegotiation`, `A2ANegotiationMessage`, plus the execution, verification
+and reputation columns on `A2AJob`.
+
+---
+
+## Step 3 — Verify the reused Base addresses
+
+Before writing a single transaction against them:
+
+```bash
+cd contracts/evm && pnpm verify:base:addresses
+```
+
+Confirms USDC (`0x8335…2913`), the ERC-8004 IdentityRegistry
+(`0x8004A169…`) and ReputationRegistry (`0x8004BAa1…`) are really what we
+think they are, on-chain. These are reused, not deployed — they are canonical
+and audited.
+
+---
+
+## Step 4 — Deploy the escrow — DONE
+
+```
+A2AJobEscrow  0x20f04e3D088b3CFa70FD608acf08783AA6429877
+```
+
+Deployed and source-verified on Base mainnet. Confirmed against the chain:
+
+| | |
+|---|---|
+| USDC | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
+| Treasury | `0x043091b10bBcD3F8C5158C27AD291CC56B4F46db` |
+| Commission | 1000 bps (10%) |
+| Paused | false |
+| AGREEMENT_TYPEHASH | matches a2a-protocol exactly |
+
+Roles, audited on-chain — every wallet holds exactly one, nothing overlaps:
+
+| wallet | role |
+|---|---|
+| `0x4304683F…a92a` | DEFAULT_ADMIN only |
+| `0xFeF00117…214f` | RELAYER only |
+| `0x50f30472…e498` | VERIFIER only |
+| `0x7E8a87F7…fA8f` | ARBITER only |
+
+The relayer cannot render verdicts and the verifier cannot drive job state, so
+threat T3 holds in practice and not merely by intent.
+
+### If you ever redeploy
+
+Three scripts exist because the first attempt died mid-run, leaving the
+contract deployed with none of its roles granted:
+
+```bash
+pnpm check:a2a:deploy    # did it land? is re-running the deploy safe?
+pnpm grant:a2a:roles     # idempotent, resumable role grants
+pnpm verify:a2a:base     # source verification via Etherscan V2
+```
+
+Never re-run `deploy:a2a:base` to fix missing roles. It deploys a second
+escrow, and EIP-712 signatures bind to the contract address.
+
+### Verification goes through Etherscan V2, not BaseScan V1
+
+BaseScan V1 is retired and answers every request, keyed or not, with a
+deprecation notice, so `hardhat verify --network base` cannot work with the
+bundled plugin version. `pnpm verify:a2a:base` posts to the V2 unified
+endpoint instead. An existing BaseScan API key works against V2 unchanged.
+
+### RPC
+
+The public endpoint rate-limits heavily and drops connections. Set a dedicated
+one before Step 5, since the relayer hits it on every job:
+
+```bash
+BASE_RPC_URL=https://base-rpc.publicnode.com
+```
+
+---
+
+ and rejects anything with
+> parentheses or punctuation, so a copied annotation fails with a
+> `BaseDir must match re` error rather than being ignored.
+
+
 Four new services. Create them in this order — each depends on the one before.
 
 ### Shared settings for all three Node services
@@ -311,7 +495,7 @@ Not a web service. No HTTP surface.
 | Type | **Background Worker** |
 | Runtime | **Docker** |
 | Dockerfile Path | `./workers/training-worker/Dockerfile` |
-| Docker Build Context | `.` *(repo root — it imports `ml/trait_training`)* |
+| Docker Build Context | `.` |
 
 | Key | Value |
 |---|---|
@@ -319,6 +503,11 @@ Not a web service. No HTTP surface.
 | `TRAINING_POLL_INTERVAL_S` | `5` |
 | `TRAINING_STALE_AFTER_S` | `300` |
 | `TRAINING_CHECKPOINT_DIR` | `/tmp` |
+
+The build context is a single dot: the repo root. It has to be the root rather
+than `workers/training-worker`, because the worker imports `ml/trait_training`,
+which imports `ml/reinforcement_learning` and `ml/behaviour_cloning`.
+
 
 CPU only — the environment is 32 features over 7 actions, no GPU plan needed.
 Jobs are claimed with `FOR UPDATE SKIP LOCKED`, so scaling to more than one
