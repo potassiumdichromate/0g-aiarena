@@ -104,6 +104,18 @@ const config: HardhatUserConfig = {
           browserURL:  'https://chainscan.0g.ai',
         },
       },
+      // NOTE: BaseScan's V1 API is retired. It now answers every request,
+      // keyed or not, with "You are using a deprecated V1 endpoint, switch to
+      // Etherscan API V2". The bundled hardhat-verify predates V2, so
+      // `hardhat verify --network base` cannot work here at all.
+      //
+      // Use `pnpm verify:a2a:base` instead — scripts/verify-etherscan-v2.ts
+      // talks to the V2 unified endpoint directly. An existing BaseScan API key
+      // works against V2 unchanged.
+      //
+      // This entry is left pointing at the dead URL deliberately: removing it
+      // would make `hardhat verify` fail with a confusing "chain not
+      // configured" instead of an explicit deprecation message.
       {
         network:  'base',
         chainId:  8453,

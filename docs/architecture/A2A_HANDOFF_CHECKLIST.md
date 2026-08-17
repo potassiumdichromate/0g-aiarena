@@ -115,28 +115,63 @@ and audited.
 
 ---
 
-## Step 4 — Deploy the escrow
+## Step 4 — Deploy the escrow — DONE
 
-Set in `.env` first: `BASE_DEPLOYER_PRIVATE_KEY`, `BASE_RELAYER_ADDRESS`,
-`A2A_VERIFIER_ADDRESS`, `A2A_ARBITER_ADDRESS`, `A2A_TREASURY_ADDRESS`.
-
-```bash
-cd contracts/evm && pnpm deploy:a2a:base
+```
+A2AJobEscrow  0x20f04e3D088b3CFa70FD608acf08783AA6429877
 ```
 
-It prints the deployed address and grants the three roles. Then verify the
-source on BaseScan (needs `BASESCAN_API_KEY`):
+Deployed and source-verified on Base mainnet. Confirmed against the chain:
+
+| | |
+|---|---|
+| USDC | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
+| Treasury | `0x043091b10bBcD3F8C5158C27AD291CC56B4F46db` |
+| Commission | 1000 bps (10%) |
+| Paused | false |
+| AGREEMENT_TYPEHASH | matches a2a-protocol exactly |
+
+Roles, audited on-chain — every wallet holds exactly one, nothing overlaps:
+
+| wallet | role |
+|---|---|
+| `0x4304683F…a92a` | DEFAULT_ADMIN only |
+| `0xFeF00117…214f` | RELAYER only |
+| `0x50f30472…e498` | VERIFIER only |
+| `0x7E8a87F7…fA8f` | ARBITER only |
+
+The relayer cannot render verdicts and the verifier cannot drive job state, so
+threat T3 holds in practice and not merely by intent.
+
+### If you ever redeploy
+
+Three scripts exist because the first attempt died mid-run, leaving the
+contract deployed with none of its roles granted:
 
 ```bash
-cd contracts/evm && pnpm verify:base <ESCROW_ADDRESS> <DEPLOYER_ADDR> 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 <TREASURY_ADDR>
+pnpm check:a2a:deploy    # did it land? is re-running the deploy safe?
+pnpm grant:a2a:roles     # idempotent, resumable role grants
+pnpm verify:a2a:base     # source verification via Etherscan V2
 ```
 
-⚠️ **Signatures are bound to this address.** The EIP-712 domain includes the
-verifying contract, so redeploying invalidates every unfunded agreement. That
-is deliberate replay protection (T6) — but it means the address must be final
-before agents start signing.
+Never re-run `deploy:a2a:base` to fix missing roles. It deploys a second
+escrow, and EIP-712 signatures bind to the contract address.
 
-Record the address. Three services need it.
+### Verification goes through Etherscan V2, not BaseScan V1
+
+BaseScan V1 is retired and answers every request, keyed or not, with a
+deprecation notice, so `hardhat verify --network base` cannot work with the
+bundled plugin version. `pnpm verify:a2a:base` posts to the V2 unified
+endpoint instead. An existing BaseScan API key works against V2 unchanged.
+
+### RPC
+
+The public endpoint rate-limits heavily and drops connections. Set a dedicated
+one before Step 5, since the relayer hits it on every job:
+
+```bash
+BASE_RPC_URL=https://base-rpc.publicnode.com
+```
 
 ---
 
