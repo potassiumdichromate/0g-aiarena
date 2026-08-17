@@ -24,6 +24,7 @@ import { prisma } from '@ai-arena/db-client';
 import { getZeroGConfig, ZeroGStorageClient } from '@ai-arena/zerog-client';
 
 import A2AJobEscrowAbi from './abi/A2AJobEscrow.json';
+import { sendAttributed } from '@ai-arena/a2a-protocol';
 
 const storage = new ZeroGStorageClient(getZeroGConfig());
 
@@ -210,27 +211,19 @@ export async function verifyAndSettle(jobId: string): Promise<VerdictResult> {
     if (!job.deliverableHash) {
       throw new Error(`Job ${jobId} has no deliverable hash recorded — nothing to commit`);
     }
-    try {
-      await write.submitDeliverable.staticCall(jobId, job.deliverableHash);
-    } catch (err) {
-      throw new Error(`submitDeliverable would revert: ${revertReason(err)}`);
-    }
-    const tx = await write.submitDeliverable(jobId, job.deliverableHash);
-    await tx.wait();
-    deliverTxHash = tx.hash;
+    const sent = await sendAttributed(write, 'submitDeliverable', [jobId, job.deliverableHash], {
+      revertReasonOf: revertReason,
+    });
+    deliverTxHash = sent.txHash;
   } else if (status !== 4) {
     throw new Error(`Job ${jobId} is on-chain status ${status}; expected ESCROWED, EXECUTING or DELIVERED`);
   }
 
   // ── Verdict ───────────────────────────────────────────────────────────────
-  try {
-    await write.submitVerdict.staticCall(jobId, accepted, reportHash);
-  } catch (err) {
-    throw new Error(`submitVerdict would revert: ${revertReason(err)}`);
-  }
-
-  const verdictTx = await write.submitVerdict(jobId, accepted, reportHash);
-  await verdictTx.wait();
+  const verdictSent = await sendAttributed(write, 'submitVerdict', [jobId, accepted, reportHash], {
+    revertReasonOf: revertReason,
+  });
+  const verdictTx = { hash: verdictSent.txHash };
 
   await prisma.a2AJob.update({
     where: { id: jobId },

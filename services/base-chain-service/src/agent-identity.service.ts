@@ -41,6 +41,7 @@ import {
   revertReason,
 } from './contracts';
 import { encryptAgentKey, decryptAgentKey } from './crypto';
+import { sendAttributed, withAttribution } from '@ai-arena/a2a-protocol';
 import { buildAgentCard, serializeAgentCard, AgentCardCapability } from './agent-card';
 
 const storage = new ZeroGStorageClient(getZeroGConfig());
@@ -205,11 +206,16 @@ async function registerOnChain(agentId: string, agentURI: string): Promise<strin
 
   // Explicit overload selection — register() has three signatures and ethers
   // cannot disambiguate by arity alone in a way we want to depend on.
-  const tx = await registry['register(string,(string,bytes)[])'](agentURI, [
+  // Populated then sent by hand so the ERC-8021 attribution suffix can be
+  // appended: agent registration is the highest-volume Base transaction we
+  // make, and attribution cannot be applied retroactively.
+  const populated = await registry['register(string,(string,bytes)[])'].populateTransaction(agentURI, [
     { metadataKey: 'kultAgentId', metadataValue: ethers.toUtf8Bytes(agentId) },
     { metadataKey: 'platform', metadataValue: ethers.toUtf8Bytes('kult-ai-arena') },
   ]);
+  const tx = await getRelayerSigner().sendTransaction(withAttribution(populated));
   const receipt = await tx.wait();
+  if (!receipt) throw new Error(`register() produced no receipt for agent ${agentId}`);
 
   const registered = receipt.logs
     .map((log: ethers.Log) => {
@@ -267,13 +273,13 @@ async function bindAgentWallet(agentId: string): Promise<string> {
     },
   );
 
-  const tx = await identityRegistryWrite().setAgentWallet(
-    identity.erc8004AgentId,
-    identity.eoaAddress,
-    deadline,
-    signature,
+  const sent = await sendAttributed(
+    identityRegistryWrite(),
+    'setAgentWallet',
+    [identity.erc8004AgentId, identity.eoaAddress, deadline, signature],
+    { revertReasonOf: revertReason },
   );
-  await tx.wait();
+  const tx = { hash: sent.txHash };
 
   await prisma.agentBaseIdentity.update({
     where: { agentId },
@@ -432,12 +438,13 @@ export async function transferIdentityToOwner(agentId: string): Promise<{ txHash
   }
 
   const relayer = getRelayerSigner();
-  const tx = await identityRegistryWrite().transferFrom(
-    relayer.address,
-    ethers.getAddress(identity.ownerWallet),
-    identity.erc8004AgentId,
+  const sent = await sendAttributed(
+    identityRegistryWrite(),
+    'transferFrom',
+    [relayer.address, ethers.getAddress(identity.ownerWallet), identity.erc8004AgentId],
+    { revertReasonOf: revertReason },
   );
-  await tx.wait();
+  const tx = { hash: sent.txHash };
 
   return { txHash: tx.hash, to: ethers.getAddress(identity.ownerWallet) };
 }

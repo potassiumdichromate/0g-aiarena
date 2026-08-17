@@ -130,7 +130,7 @@ export async function fundJob(params: {
     toAuthTuple(params.authorization),
   ] as const;
 
-  const sent = await sendAttributed(write, 'fundWithAuthorization', args, revertReason);
+  const sent = await sendAttributed(write, 'fundWithAuthorization', args, { revertReasonOf: revertReason });
 
   return {
     txHash: sent.txHash,
@@ -178,7 +178,7 @@ export async function resolveDispute(jobId: string, toProviderBaseUnits: string,
 }
 
 async function relay(method: string, args: readonly unknown[]) {
-  const sent = await sendAttributed(jobEscrowWrite(), method, args, revertReason);
+  const sent = await sendAttributed(jobEscrowWrite(), method, args, { revertReasonOf: revertReason });
   return {
     txHash: sent.txHash,
     blockNumber: sent.blockNumber,

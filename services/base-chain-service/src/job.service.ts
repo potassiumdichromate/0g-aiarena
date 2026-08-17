@@ -89,7 +89,7 @@ export async function postJob(params: PostJobParams): Promise<PostJobResult> {
     params.executionWindowSeconds,
   ] as const;
 
-  const sent = await sendAttributed(write, 'postJob', args, revertReason);
+  const sent = await sendAttributed(write, 'postJob', args, { revertReasonOf: revertReason });
 
   return {
     jobId: params.jobId,
@@ -156,13 +156,8 @@ export async function readJob(jobId: string): Promise<{
 /** Withdraw a job that was never funded. */
 export async function cancelJob(jobId: string): Promise<{ txHash: string; explorer: string }> {
   const write = jobEscrowWrite();
-  try {
-    await write.cancelBeforeFunding.staticCall(jobId);
-  } catch (err) {
-    throw new Error(`cancelBeforeFunding would revert: ${revertReason(err)}`);
-  }
-
-  const tx = await write.cancelBeforeFunding(jobId);
-  await tx.wait();
-  return { txHash: tx.hash, explorer: basescanTx(tx.hash) };
+  const sent = await sendAttributed(write, 'cancelBeforeFunding', [jobId], {
+    revertReasonOf: revertReason,
+  });
+  return { txHash: sent.txHash, explorer: basescanTx(sent.txHash) };
 }

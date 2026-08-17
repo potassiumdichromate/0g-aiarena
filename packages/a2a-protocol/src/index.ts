@@ -5,3 +5,4 @@ export * from './jobid';
 export * from './eip712';
 export * from './negotiation';
 export * from './builderCode';
+export * from './attributedSend';

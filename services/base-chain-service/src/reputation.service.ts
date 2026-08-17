@@ -32,6 +32,7 @@ import ReputationRegistryAbi from './abi/ReputationRegistry.json';
 import { getProvider } from './contracts';
 import { decryptAgentKey } from './crypto';
 import { requireEnv, basescanTx } from './config';
+import { sendAttributed } from '@ai-arena/a2a-protocol';
 
 /** Tag namespace so KULT feedback is distinguishable from other clients'. */
 export const FEEDBACK_TAG_OUTCOME = 'kult.job.outcome';
@@ -137,15 +138,8 @@ export async function publishJobFeedback(jobId: string): Promise<{
     feedbackHash,
   ] as const;
 
-  try {
-    await contract.giveFeedback.staticCall(...args);
-  } catch (err) {
-    const e = err as { shortMessage?: string; message?: string };
-    throw new Error(`giveFeedback would revert: ${e.shortMessage ?? e.message}`);
-  }
-
-  const tx = await contract.giveFeedback(...args);
-  await tx.wait();
+  const sent = await sendAttributed(contract, 'giveFeedback', args);
+  const tx = { hash: sent.txHash };
 
   await prisma.a2AJob.update({
     where: { id: jobId },

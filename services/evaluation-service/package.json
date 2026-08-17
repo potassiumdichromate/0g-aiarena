@@ -14,7 +14,8 @@
     "@fastify/helmet": "^11.1.0",
     "@ai-arena/db-client": "workspace:*",
     "@ai-arena/zerog-client": "workspace:*",
-    "ethers": "^6.11.0"
+    "ethers": "^6.11.0",
+    "@ai-arena/a2a-protocol": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

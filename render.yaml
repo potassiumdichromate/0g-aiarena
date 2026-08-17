@@ -388,6 +388,10 @@ services:
         sync: false
       - key: A2A_VERIFIER_PRIVATE_KEY
         sync: false
+      # ERC-8021 attribution. Must match the value on aiarena-base-chain so
+      # verdict transactions are attributed to the same builder code.
+      - key: BASE_BUILDER_CODE
+        sync: false
       - key: INTERNAL_SERVICE_SECRET
         sync: false
       - key: ZEROG_NETWORK
