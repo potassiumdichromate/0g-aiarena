@@ -71,10 +71,74 @@ async function main(): Promise<void> {
   console.log('\nERC-8004 ReputationRegistry');
   await assertHasCode('ReputationRegistry', REPUTATION_REGISTRY);
 
+  // The reputation registry is bound to ONE identity registry. If it points at
+  // a different one, giveFeedback writes into a namespace where our agent ids
+  // mean nothing — feedback would land, cost gas, and attach to the wrong (or
+  // no) agent. Silent, and only discoverable by reading the chain.
+  const reputation = new ethers.Contract(
+    REPUTATION_REGISTRY,
+    ['function getIdentityRegistry() view returns (address)'],
+    ethers.provider,
+  );
+  try {
+    check(
+      'getIdentityRegistry()',
+      ethers.getAddress(await reputation.getIdentityRegistry()),
+      ethers.getAddress(IDENTITY_REGISTRY),
+    );
+  } catch (err) {
+    check('getIdentityRegistry()', `call failed: ${(err as Error).message}`, 'an address');
+  }
+
   console.log('\nUSDC');
   const usdc = new ethers.Contract(USDC, ERC20_ABI, ethers.provider);
   check('symbol()', await usdc.symbol(), 'USDC');
   check('decimals()', await usdc.decimals(), 6);
+
+  // EIP-3009 is what the whole funding path rests on: the creator signs an
+  // authorization and the relayer submits it, so neither agent needs ETH. If
+  // this token does not implement it, every fundWithAuthorization reverts and
+  // there is no fallback. Verify before deploying, not after.
+  const eip3009 = new ethers.Contract(
+    USDC,
+    [
+      'function authorizationState(address, bytes32) view returns (bool)',
+      'function RECEIVE_WITH_AUTHORIZATION_TYPEHASH() view returns (bytes32)',
+      'function DOMAIN_SEPARATOR() view returns (bytes32)',
+      'function version() view returns (string)',
+    ],
+    ethers.provider,
+  );
+
+  try {
+    // An unused nonce must read false. A token without EIP-3009 reverts here.
+    const unused = await eip3009.authorizationState(ethers.ZeroAddress, ethers.ZeroHash);
+    check('authorizationState() [EIP-3009]', unused, false);
+  } catch {
+    check('authorizationState() [EIP-3009]', 'NOT IMPLEMENTED', 'implemented');
+  }
+
+  // Pin the typehash: the escrow builds its authorization against this exact
+  // struct definition, and a mismatch fails signature recovery inside the token.
+  const EXPECTED_TYPEHASH = ethers.keccak256(
+    ethers.toUtf8Bytes(
+      'ReceiveWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)',
+    ),
+  );
+  try {
+    check('RECEIVE_WITH_AUTHORIZATION_TYPEHASH', await eip3009.RECEIVE_WITH_AUTHORIZATION_TYPEHASH(), EXPECTED_TYPEHASH);
+  } catch {
+    check('RECEIVE_WITH_AUTHORIZATION_TYPEHASH', 'not exposed', EXPECTED_TYPEHASH);
+  }
+
+  // The EIP-712 domain the client must sign against. Reported rather than
+  // asserted — the client reads it from the chain at signing time.
+  try {
+    console.log(`  INFO  version(): ${await eip3009.version()}`);
+    console.log(`  INFO  DOMAIN_SEPARATOR(): ${await eip3009.DOMAIN_SEPARATOR()}`);
+  } catch {
+    console.log('  INFO  version()/DOMAIN_SEPARATOR() not exposed');
+  }
 
   console.log(failures === 0 ? '\nAll checks passed.\n' : `\n${failures} check(s) FAILED.\n`);
   if (failures > 0) process.exitCode = 1;

@@ -49,6 +49,10 @@ const config: HardhatUserConfig = {
     // nothing that touches real USDC may reuse it.
     base: {
       url:      process.env.BASE_RPC_URL ?? 'https://mainnet.base.org',
+      // The public endpoint rate-limits and drops connections. A deploy that
+      // times out midway leaves the contract deployed but its roles ungranted,
+      // which is far worse than a slow deploy — see scripts/grant-a2a-roles.ts.
+      timeout: 120_000,
       accounts: BASE_DEPLOYER_KEY ? [BASE_DEPLOYER_KEY] : [],
       chainId:  8453,
       gasPrice: 'auto',
