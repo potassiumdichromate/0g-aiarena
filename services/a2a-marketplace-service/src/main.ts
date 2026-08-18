@@ -19,6 +19,7 @@ import { negotiationRoutes } from './routes/negotiation.routes';
 import { executionRoutes } from './routes/execution.routes';
 import { identityRoutes } from './routes/identity.routes';
 import { discoveryRoutes } from './routes/discovery.routes';
+import { autoBidRoutes } from './routes/autobid.routes';
 import { runDiscoveryTick } from './discovery.service';
 import { pollExecution } from './execution.service';
 
@@ -69,6 +70,7 @@ async function bootstrap(): Promise<void> {
   await app.register(negotiationRoutes, { prefix: '/negotiations' });
   await app.register(executionRoutes, { prefix: '/execution' });
   await app.register(identityRoutes, { prefix: '/agents' });
+  await app.register(autoBidRoutes, { prefix: '/agents' });
   await app.register(discoveryRoutes, { prefix: '/discovery' });
 
   // Advance delivered work on a tick. Without this a job sits at EXECUTING
