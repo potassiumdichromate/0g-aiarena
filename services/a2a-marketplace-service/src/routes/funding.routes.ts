@@ -25,6 +25,7 @@ import { FastifyInstance } from 'fastify';
 import { prisma } from '@ai-arena/db-client';
 import { formatUsdc } from '@ai-arena/a2a-protocol';
 import { requireAuth, assertOwnsJobCreator } from '../middleware/auth';
+import { signAgreement } from '../negotiation.service';
 
 const BASE_CHAIN_SERVICE_URL = process.env.BASE_CHAIN_SERVICE_URL ?? 'http://localhost:8051';
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
@@ -32,6 +33,30 @@ const BASE_CHAIN_ID = 8453;
 
 /** How long the signed authorization stays valid. */
 const AUTHORIZATION_TTL_SECONDS = 30 * 60;
+
+/**
+ * Re-sign an agreement whose expiry has passed.
+ *
+ * The expiry is inside the EIP-712 signature and enforced on-chain, so an
+ * expired agreement cannot be extended — it has to be signed again. Nothing
+ * about that is a decision: the price, the transcript and the terms are
+ * unchanged, and both signatures are produced by our own signing service from
+ * the agents' keys.
+ *
+ * Making the user perform it as a separate step just produced a screen saying
+ * "ready to fund" next to a button that always failed. Refreshing here means
+ * an agreement that went stale while the creator was away costs them nothing.
+ */
+async function refreshIfExpired(negotiation: { id: string; agreementExpiry: number | null }): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  // A small margin: an agreement expiring during the signing round-trip would
+  // otherwise be funded a few seconds after it died.
+  const EXPIRY_MARGIN_SECONDS = 120;
+
+  if (negotiation.agreementExpiry && negotiation.agreementExpiry > now + EXPIRY_MARGIN_SECONDS) return;
+
+  await signAgreement(negotiation.id);
+}
 
 export async function fundingRoutes(app: FastifyInstance): Promise<void> {
   /**
@@ -69,6 +94,16 @@ export async function fundingRoutes(app: FastifyInstance): Promise<void> {
     if (!negotiation.creatorSignature || !negotiation.providerSignature) {
       return reply.status(400).send({
         error: 'The agreement is not signed by both agents yet.',
+      });
+    }
+
+    // An expired agreement is refreshed rather than reported, so the payload
+    // handed to the wallet is always fundable.
+    try {
+      await refreshIfExpired(negotiation);
+    } catch (err) {
+      return reply.status(400).send({
+        error: `Could not refresh the expired agreement: ${(err as Error).message}`,
       });
     }
 
@@ -156,6 +191,19 @@ export async function fundingRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
+    // The signing round-trip in funding-request may have replaced the
+    // signatures, and the user may have sat on the page since. Refresh and
+    // re-read so the relayed agreement is the live one, never a stale copy.
+    try {
+      await refreshIfExpired(negotiation);
+    } catch (err) {
+      return reply.status(400).send({
+        error: `Could not refresh the expired agreement: ${(err as Error).message}`,
+      });
+    }
+
+    const current = await prisma.a2ANegotiation.findUniqueOrThrow({ where: { id: negotiation.id } });
+
     const creatorIdentity = await prisma.agentBaseIdentity.findUniqueOrThrow({
       where: { agentId: job.creatorAgentId },
     });
@@ -171,18 +219,18 @@ export async function fundingRoutes(app: FastifyInstance): Promise<void> {
           agreement: {
             jobId,
             creatorAgentId: job.creatorErc8004Id,
-            providerAgentId: negotiation.providerErc8004Id,
-            providerWallet: negotiation.providerWallet,
-            agreedPrice: negotiation.agreedPriceBaseUnits,
+            providerAgentId: current.providerErc8004Id,
+            providerWallet: current.providerWallet,
+            agreedPrice: current.agreedPriceBaseUnits,
             requirementsHash: job.requirementsHash,
             executionWindow: job.executionWindowSeconds,
-            transcriptHash: negotiation.transcriptHash,
-            expiry: negotiation.agreementExpiry,
+            transcriptHash: current.transcriptHash,
+            expiry: current.agreementExpiry,
           },
           creatorSigner: creatorIdentity.eoaAddress,
-          creatorSignature: negotiation.creatorSignature,
-          providerSigner: negotiation.providerWallet,
-          providerSignature: negotiation.providerSignature,
+          creatorSignature: current.creatorSignature,
+          providerSigner: current.providerWallet,
+          providerSignature: current.providerSignature,
           authorization: {
             from: job.creatorWallet,
             to: process.env.A2A_JOB_ESCROW_ADDRESS,
