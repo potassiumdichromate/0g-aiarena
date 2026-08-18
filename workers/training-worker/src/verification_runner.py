@@ -133,26 +133,44 @@ def _persist_verification_snapshot(
         return cur.fetchone()[0]
 
 
-def _fail_verification(conn: psycopg.Connection, job_id: str, reason: str) -> None:
+def _fail_verification(
+    conn: psycopg.Connection, job_id: str, reason: str, permanent: bool = False,
+) -> None:
     """
-    Record why verification could not proceed.
+    Record why verification could not proceed, and stop it spinning.
 
-    The job is deliberately left in DELIVERED rather than being failed outright:
-    the escrow's timeout refund is the creator's guaranteed exit, and marking a
-    terminal state off-chain would not move the money anyway. Releasing the
-    claim lets a later run retry after the underlying problem is fixed.
+    The claim timestamp is deliberately NOT cleared. Clearing it made the job
+    immediately re-claimable, and since the main loop continues straight into
+    the next iteration, an unverifiable job was retried every few milliseconds
+    — a hot loop against the database that never terminates. Leaving the
+    timestamp set reuses the existing 15-minute stale-claim window as backoff.
+
+    A permanent failure — an artifact that was never stored and cannot be
+    recreated — is parked far in the future instead, so it is never retried.
+    The escrow's timeout refund is the correct resolution for such a job: the
+    creator gets their money back because the work genuinely cannot be
+    verified.
+
+    The job stays in DELIVERED either way. Marking a terminal state off-chain
+    would not move any money, and the on-chain deadline is what actually
+    decides the outcome.
     """
-    logger.error('Verification failed for job %s: %s', job_id, reason)
+    logger.error(
+        'Verification %s for job %s: %s',
+        'permanently failed' if permanent else 'failed', job_id, reason,
+    )
     with conn.cursor() as cur:
         cur.execute(
             """
             UPDATE "A2AJob"
                SET "lastError" = %s,
-                   "verificationClaimedBy" = NULL,
-                   "verificationClaimedAt" = NULL
+                   "verificationClaimedAt" = CASE
+                       WHEN %s THEN NOW() + INTERVAL '100 years'
+                       ELSE NOW()
+                   END
              WHERE id = %s
             """,
-            (f'verification: {reason}', job_id),
+            (f'verification: {reason}', permanent, job_id),
         )
 
 
@@ -193,7 +211,11 @@ def execute_verification(
     training_job_id = job['trainingJobId']
 
     if not training_job_id:
-        _fail_verification(conn, job_id, 'no trainingJobId — nothing was ever executed for this job')
+        _fail_verification(
+            conn, job_id,
+            'no trainingJobId — nothing was ever executed for this job',
+            permanent=True,
+        )
         return None
 
     checkpoint_path = checkpoint_dir / f'{training_job_id}.pt'
@@ -201,7 +223,9 @@ def execute_verification(
         _fail_verification(
             conn, job_id,
             f'no stored artifact for training job {training_job_id}. The checkpoint was '
-            'never persisted, so the delivered work cannot be re-evaluated.',
+            'never persisted, so the delivered work cannot be re-evaluated. The escrow '
+            'will refund at its deadline.',
+            permanent=True,
         )
         return None
 
@@ -213,6 +237,7 @@ def execute_verification(
             conn, job_id,
             f'checkpoint digest {actual_digest} does not match the committed deliverableHash '
             f'{committed} — the artifact changed after delivery',
+            permanent=True,
         )
         return None
 
