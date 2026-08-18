@@ -37,7 +37,11 @@ import tempfile
 import time
 from pathlib import Path
 
-from verification_runner import claim_next_verification, execute_verification
+from verification_runner import (
+    claim_next_verification,
+    execute_verification,
+    record_verification_crash,
+)
 from trait_training_runner import (
     MARKETPLACE_ONLY,
     WORKER_ID,
@@ -126,6 +130,12 @@ def main() -> int:
                 # provider waiting to be paid.
                 pending = claim_next_verification(conn)
                 if pending is not None:
+                    # Commit the claim before doing the work. Rolling back after
+                    # a crash used to undo the claim as well, and since this
+                    # branch continues without sleeping, the job came straight
+                    # back and the worker span on it — invisibly, because the
+                    # rollback also discarded any error it had recorded.
+                    conn.commit()
                     try:
                         result = execute_verification(conn, pending, CHECKPOINT_DIR)
                         conn.commit()
@@ -135,9 +145,15 @@ def main() -> int:
                                 result["jobId"], result["targetMetric"],
                                 result["measuredValue"], result["targetValue"],
                             )
-                    except Exception:
+                    except Exception as exc:  # noqa: BLE001 — one job must not kill the worker
                         conn.rollback()
                         logger.exception("Verification pass failed for job %s", pending["id"])
+                        try:
+                            record_verification_crash(conn, pending["id"], exc)
+                            conn.commit()
+                        except Exception:
+                            conn.rollback()
+                            logger.exception("Could not record the verification crash")
                     continue
             if job is None:
                 time.sleep(POLL_INTERVAL_S)

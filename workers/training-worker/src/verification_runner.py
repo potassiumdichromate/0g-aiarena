@@ -174,6 +174,32 @@ def _fail_verification(
         )
 
 
+def record_verification_crash(conn: psycopg.Connection, job_id: str, exc: BaseException) -> None:
+    """
+    Record a verification that raised rather than merely failed a check.
+
+    execute_verification writes lastError for every failure it anticipates. An
+    unanticipated one — a corrupt checkpoint, a library error, schema drift —
+    used to leave no trace at all: the exception was logged on the worker and
+    the job looked untouched, lastError still null, apparently waiting for a
+    verification that had in fact already run and died.
+
+    The claim timestamp is refreshed rather than cleared, for the same reason
+    _fail_verification leaves it set: it doubles as the retry backoff.
+    """
+    logger.error('Verification crashed for job %s: %s', job_id, exc)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE "A2AJob"
+               SET "lastError" = %s,
+                   "verificationClaimedAt" = NOW()
+             WHERE id = %s
+            """,
+            (f'verification crashed: {str(exc)[:500]}', job_id),
+        )
+
+
 def _restore_artifact(conn: psycopg.Connection, training_job_id: str, dest: Path) -> bool:
     """
     Fetch the delivered checkpoint from storage onto this worker.
