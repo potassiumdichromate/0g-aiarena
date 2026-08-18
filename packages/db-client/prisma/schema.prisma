@@ -1545,3 +1545,27 @@ model F1SeasonStanding {
   @@unique([season, round, driverCode])
   @@index([driverCode, season])
 }
+
+/// The trained model produced by a marketplace job.
+///
+/// Checkpoints were written to the worker's local disk, which on Render is
+/// ephemeral: a deploy or restart between training and verification destroyed
+/// the artifact, and verification then had nothing to measure. Since the whole
+/// settlement decision rests on re-evaluating that exact file, it has to
+/// outlive the instance that produced it.
+///
+/// Stored as bytes here rather than on 0G Storage because the worker is Python
+/// and the 0G client is TypeScript; a few megabytes in Postgres needs no new
+/// service on the critical path. The digest is what is committed on-chain, so
+/// the artifact stays verifiable wherever it is held.
+model TrainingArtifact {
+  id            String   @id @default(uuid())
+  trainingJobId String   @unique
+  /// sha256:<hex> of the bytes below. Matches A2AJob.deliverableHash.
+  digest        String
+  sizeBytes     Int
+  bytes         Bytes
+  createdAt     DateTime @default(now())
+
+  @@index([digest])
+}

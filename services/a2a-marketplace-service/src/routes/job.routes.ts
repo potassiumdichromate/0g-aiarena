@@ -11,6 +11,7 @@ import { FastifyInstance } from 'fastify';
 import { requireAuth, assertOwnsAgent, assertOwnsJobCreator } from '../middleware/auth';
 import {
   confirmAndPost,
+  listJobs,
   createDraft,
   getJob,
   getRequirementsDocument,
@@ -60,8 +61,10 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
 
   /** GET /jobs — open job feed. */
   app.get('/', async (req) => {
-    const { gameId, limit } = req.query as { gameId?: string; limit?: string };
-    return listOpenJobs({ gameId, limit: limit ? Number(limit) : undefined });
+    const { gameId, limit, scope } = req.query as {
+      gameId?: string; limit?: string; scope?: 'open' | 'active' | 'completed' | 'all';
+    };
+    return listJobs({ gameId, limit: limit ? Number(limit) : undefined, scope });
   });
 
   /** GET /jobs/:jobId — off-chain record, hash verification, and the chain's view. */

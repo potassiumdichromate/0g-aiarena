@@ -229,6 +229,30 @@ def _report_digest(report: Dict[str, Any]) -> str:
     return f'sha256:{hashlib.sha256(encoded).hexdigest()}'
 
 
+def _persist_artifact(conn: psycopg.Connection, training_job_id: str, path: Path, digest: str) -> None:
+    """
+    Store the trained checkpoint so it outlives this instance.
+
+    Render's disk is ephemeral. A deploy between training and verification
+    destroyed the artifact, and verification then had nothing to measure —
+    which stalls settlement on a job whose escrow is already funded.
+    """
+    data = path.read_bytes()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO "TrainingArtifact" (id, "trainingJobId", digest, "sizeBytes", bytes, "createdAt")
+            VALUES (gen_random_uuid()::text, %s, %s, %s, %s, NOW())
+            ON CONFLICT ("trainingJobId") DO UPDATE
+               SET digest = EXCLUDED.digest,
+                   "sizeBytes" = EXCLUDED."sizeBytes",
+                   bytes = EXCLUDED.bytes
+            """,
+            (training_job_id, digest, len(data), data),
+        )
+    logger.info('Stored artifact for job %s (%s, %.1f KB)', training_job_id, digest[:19], len(data) / 1024)
+
+
 def execute_job(conn: psycopg.Connection, job: Dict[str, Any], checkpoint_dir: Path) -> Dict[str, Any]:
     """Run one claimed job to completion and record its results."""
     config = job['config'] if isinstance(job['config'], dict) else json.loads(job['config'])
@@ -247,6 +271,11 @@ def execute_job(conn: psycopg.Connection, job: Dict[str, Any], checkpoint_dir: P
     )
 
     summary = outcome.summary()
+
+    # Persist before marking COMPLETED: a job reported complete whose artifact
+    # was never stored cannot be verified, and its escrow would sit until it
+    # timed out.
+    _persist_artifact(conn, job['id'], Path(outcome.checkpoint_path), outcome.checkpoint_digest)
     _persist_snapshot(conn, job['agentId'], job['id'], 'BASELINE', outcome.baseline.to_dict())
     _persist_snapshot(conn, job['agentId'], job['id'], 'FINAL', outcome.final.to_dict())
 

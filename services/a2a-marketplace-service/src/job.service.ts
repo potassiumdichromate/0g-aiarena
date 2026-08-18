@@ -291,16 +291,59 @@ export async function getJob(jobId: string) {
   return { job: present(job), verification, onChain };
 }
 
-export async function listOpenJobs(params: { gameId?: string; limit?: number }) {
+/**
+ * List jobs by lifecycle scope.
+ *
+ * Previously this returned only POSTED and NEGOTIATING, so a job disappeared
+ * from the board the moment it was funded — the creator had no way to see work
+ * in progress, and no record at all of anything that had settled. The
+ * interesting half of the lifecycle was invisible.
+ */
+export async function listJobs(params: {
+  gameId?: string;
+  limit?: number;
+  scope?: 'open' | 'active' | 'completed' | 'all';
+}) {
+  const BY_SCOPE = {
+    open: ['POSTED', 'NEGOTIATING'],
+    active: ['ESCROWED', 'EXECUTING', 'DELIVERED'],
+    completed: ['SETTLED', 'REFUNDED', 'DISPUTED', 'CANCELLED'],
+  } as const;
+
+  const scope = params.scope ?? 'open';
+  const statuses = scope === 'all'
+    ? [...BY_SCOPE.open, ...BY_SCOPE.active, ...BY_SCOPE.completed]
+    : BY_SCOPE[scope];
+
   const jobs = await prisma.a2AJob.findMany({
     where: {
-      status: { in: ['POSTED', 'NEGOTIATING'] },
+      status: { in: statuses as never },
       ...(params.gameId ? { gameId: params.gameId } : {}),
     },
     orderBy: { createdAt: 'desc' },
     take: Math.min(params.limit ?? 50, 100),
   });
-  return { jobs: jobs.map(present) };
+
+  // Counts for the tab badges, so an empty tab is distinguishable from a tab
+  // the user has not looked at.
+  const grouped = await prisma.a2AJob.groupBy({ by: ['status'], _count: true });
+  const countFor = (list: readonly string[]) =>
+    grouped.filter((g) => list.includes(g.status)).reduce((n, g) => n + g._count, 0);
+
+  return {
+    jobs: jobs.map(present),
+    scope,
+    counts: {
+      open: countFor(BY_SCOPE.open),
+      active: countFor(BY_SCOPE.active),
+      completed: countFor(BY_SCOPE.completed),
+    },
+  };
+}
+
+/** @deprecated use listJobs — kept so existing callers keep working. */
+export async function listOpenJobs(params: { gameId?: string; limit?: number }) {
+  return listJobs({ ...params, scope: 'open' });
 }
 
 /** The exact canonical bytes whose hash is on-chain. Served verbatim. */

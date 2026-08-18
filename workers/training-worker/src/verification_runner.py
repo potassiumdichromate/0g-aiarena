@@ -156,6 +156,30 @@ def _fail_verification(conn: psycopg.Connection, job_id: str, reason: str) -> No
         )
 
 
+def _restore_artifact(conn: psycopg.Connection, training_job_id: str, dest: Path) -> bool:
+    """
+    Fetch the delivered checkpoint from storage onto this worker.
+
+    Verification routinely runs on a different instance than training — the
+    two are separated by minutes and often by a deploy — so the artifact must
+    be retrieved rather than assumed present.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            'SELECT bytes FROM "TrainingArtifact" WHERE "trainingJobId" = %s',
+            (training_job_id,),
+        )
+        row = cur.fetchone()
+
+    if row is None:
+        return False
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(bytes(row[0]))
+    logger.info('Restored artifact for job %s (%.1f KB)', training_job_id, dest.stat().st_size / 1024)
+    return True
+
+
 def execute_verification(
     conn: psycopg.Connection, job: Dict[str, Any], checkpoint_dir: Path,
 ) -> Optional[Dict[str, Any]]:
@@ -173,12 +197,11 @@ def execute_verification(
         return None
 
     checkpoint_path = checkpoint_dir / f'{training_job_id}.pt'
-    if not checkpoint_path.exists():
+    if not checkpoint_path.exists() and not _restore_artifact(conn, training_job_id, checkpoint_path):
         _fail_verification(
             conn, job_id,
-            f'delivered checkpoint {checkpoint_path.name} is not on this worker. '
-            'Checkpoints live on the instance that trained them; verification must run '
-            'where the artifact is, or the artifact must be fetched from 0G Storage first.',
+            f'no stored artifact for training job {training_job_id}. The checkpoint was '
+            'never persisted, so the delivered work cannot be re-evaluated.',
         )
         return None
 
