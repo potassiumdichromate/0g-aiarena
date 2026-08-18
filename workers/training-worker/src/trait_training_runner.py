@@ -77,13 +77,14 @@ def claim_next_job(conn: psycopg.Connection) -> Optional[Dict[str, Any]]:
                      FROM "TrainingJob" c
                     WHERE c.status = 'QUEUED'
                       AND c.type IN ('BEHAVIOUR_CLONING', 'REINFORCEMENT_LEARNING')
+                      AND (NOT %s OR c.config -> 'marketplaceJobId' IS NOT NULL)
                     ORDER BY c.priority ASC, c."createdAt" ASC
                     FOR UPDATE SKIP LOCKED
                     LIMIT 1
              )
             RETURNING j.id, j."agentId", j.type, j.config
             """,
-            (WORKER_ID,),
+            (WORKER_ID, MARKETPLACE_ONLY),
         )
         row = cur.fetchone()
 

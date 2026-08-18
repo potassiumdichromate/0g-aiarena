@@ -360,6 +360,12 @@ services:
         value: "300"
       - key: TRAINING_CHECKPOINT_DIR
         value: /tmp
+      # Serve paid marketplace work only. autonomous-loop has left a backlog of
+      # over a thousand background jobs; at ~25 min each a marketplace job with
+      # a six-hour escrow deadline would time out waiting behind them.
+      # Set false on a separate worker to drain that backlog.
+      - key: TRAINING_MARKETPLACE_ONLY
+        value: "true"
 
   # ── Evaluation Service (the verifier) ────────────────────────────────────────
   # Holds VERIFIER_ROLE and nothing else. Its key MUST differ from the base

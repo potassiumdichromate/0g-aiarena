@@ -39,6 +39,7 @@ from pathlib import Path
 
 from verification_runner import claim_next_verification, execute_verification
 from trait_training_runner import (
+    MARKETPLACE_ONLY,
     WORKER_ID,
     claim_next_job,
     execute_job,
@@ -100,15 +101,20 @@ def main() -> int:
                     cur.execute(
                         """
                         SELECT count(*) FILTER (WHERE status = 'QUEUED'),
-                               count(*) FILTER (WHERE status = 'RUNNING')
+                               count(*) FILTER (WHERE status = 'RUNNING'),
+                               count(*) FILTER (
+                                 WHERE status = 'QUEUED'
+                                   AND config -> 'marketplaceJobId' IS NOT NULL
+                               )
                           FROM "TrainingJob"
                          WHERE type IN ('BEHAVIOUR_CLONING', 'REINFORCEMENT_LEARNING')
                         """
                     )
-                    queued, running = cur.fetchone()
+                    queued, running, marketplace = cur.fetchone()
                 logger.info(
-                    'Worker %s alive — %s queued, %s running, claimable by this worker',
-                    WORKER_ID, queued, running,
+                    'Worker %s alive — %s queued (%s marketplace), %s running%s',
+                    WORKER_ID, queued, marketplace, running,
+                    '' if not MARKETPLACE_ONLY else ' — serving marketplace jobs only',
                 )
                 last_heartbeat = time.monotonic()
 
