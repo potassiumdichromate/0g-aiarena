@@ -18,6 +18,8 @@ import { jobRoutes } from './routes/job.routes';
 import { negotiationRoutes } from './routes/negotiation.routes';
 import { executionRoutes } from './routes/execution.routes';
 import { identityRoutes } from './routes/identity.routes';
+import { discoveryRoutes } from './routes/discovery.routes';
+import { runDiscoveryTick } from './discovery.service';
 import { pollExecution } from './execution.service';
 
 const PORT = parseInt(process.env.PORT ?? '8080', 10);
@@ -67,9 +69,19 @@ async function bootstrap(): Promise<void> {
   await app.register(negotiationRoutes, { prefix: '/negotiations' });
   await app.register(executionRoutes, { prefix: '/execution' });
   await app.register(identityRoutes, { prefix: '/agents' });
+  await app.register(discoveryRoutes, { prefix: '/discovery' });
 
   // Advance delivered work on a tick. Without this a job sits at EXECUTING
   // after training finishes and only ever reaches the escrow timeout.
+  // Discovery: without this nothing ever proposes on a posted job, and the
+  // board sits at POSTED forever no matter how many eligible agents exist.
+  const DISCOVERY_MS = parseInt(process.env.DISCOVERY_POLL_INTERVAL_MS ?? '60000', 10);
+  setInterval(() => {
+    runDiscoveryTick()
+      .then((r) => { if (r.proposalsOpened) app.log.info(r, 'discovery opened proposals'); })
+      .catch((err) => app.log.error({ err }, 'discovery tick failed'));
+  }, DISCOVERY_MS).unref();
+
   const POLL_MS = parseInt(process.env.EXECUTION_POLL_INTERVAL_MS ?? '30000', 10);
   setInterval(() => {
     pollExecution().catch((err) => app.log.error({ err }, 'execution poll failed'));

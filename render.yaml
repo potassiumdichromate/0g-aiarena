@@ -435,6 +435,10 @@ services:
       # job sits until the escrow times out.
       - key: EXECUTION_POLL_INTERVAL_MS
         value: "30000"
+      # Autonomous discovery. Without this nothing proposes on a posted job and
+      # the board never advances past POSTED.
+      - key: DISCOVERY_POLL_INTERVAL_MS
+        value: "60000"
       # 0G Compute assists requirement extraction; a deterministic parser is
       # always run alongside it, so an outage degrades quality, not uptime.
       - key: ZEROG_NETWORK
