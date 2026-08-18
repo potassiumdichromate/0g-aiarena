@@ -26,6 +26,7 @@ import { prisma } from '@ai-arena/db-client';
 import { formatUsdc } from '@ai-arena/a2a-protocol';
 import { requireAuth, assertOwnsJobCreator } from '../middleware/auth';
 import { signAgreement } from '../negotiation.service';
+import { startExecution } from '../execution.service';
 
 const BASE_CHAIN_SERVICE_URL = process.env.BASE_CHAIN_SERVICE_URL ?? 'http://localhost:8051';
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
@@ -261,6 +262,15 @@ export async function fundingRoutes(app: FastifyInstance): Promise<void> {
           lastError: null,
         },
       });
+
+      // Kick off the work immediately. Deliberately non-fatal: the USDC is
+      // already locked on-chain, so a failure here must not read as a failed
+      // funding. The sweep below retries anything that does not start.
+      try {
+        await startExecution(jobId);
+      } catch (err) {
+        app.log.error({ err, jobId }, 'funding succeeded but execution did not start');
+      }
 
       return body;
     } catch (err) {

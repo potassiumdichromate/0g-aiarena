@@ -250,3 +250,33 @@ export async function executionProgress(jobId: string) {
     lastError: job.lastError,
   };
 }
+
+/**
+ * Start work on any job that is funded but never began.
+ *
+ * Covers two cases the funding path cannot: a job funded before automatic
+ * start existed, and one where the start call failed after the USDC had
+ * already locked. Without this such a job sits at ESCROWED until its deadline
+ * and refunds, having done nothing.
+ *
+ * Idempotent — startExecution returns the existing training job rather than
+ * queueing a second one.
+ */
+export async function startPendingExecutions(limit = 10): Promise<Array<Record<string, unknown>>> {
+  const stranded = await prisma.a2AJob.findMany({
+    where: { status: 'ESCROWED', trainingJobId: null },
+    orderBy: { fundedAt: 'asc' },
+    take: limit,
+  });
+
+  const results: Array<Record<string, unknown>> = [];
+  for (const job of stranded) {
+    try {
+      const started = await startExecution(job.id);
+      results.push({ jobId: job.id, action: 'started', trainingJobId: started.trainingJobId });
+    } catch (err) {
+      results.push({ jobId: job.id, action: 'error', error: (err as Error).message });
+    }
+  }
+  return results;
+}

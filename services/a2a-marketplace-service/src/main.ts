@@ -22,6 +22,7 @@ import { discoveryRoutes } from './routes/discovery.routes';
 import { autoBidRoutes } from './routes/autobid.routes';
 import { fundingRoutes } from './routes/funding.routes';
 import { runDiscoveryTick } from './discovery.service';
+import { startPendingExecutions } from './execution.service';
 import { pollExecution } from './execution.service';
 
 const PORT = parseInt(process.env.PORT ?? '8080', 10);
@@ -88,6 +89,9 @@ async function bootstrap(): Promise<void> {
 
   const POLL_MS = parseInt(process.env.EXECUTION_POLL_INTERVAL_MS ?? '30000', 10);
   setInterval(() => {
+    startPendingExecutions()
+      .then((r) => { if (r.length) app.log.info({ r }, 'started pending executions'); })
+      .catch((err) => app.log.error({ err }, 'pending-execution sweep failed'));
     pollExecution().catch((err) => app.log.error({ err }, 'execution poll failed'));
   }, POLL_MS).unref();
 
