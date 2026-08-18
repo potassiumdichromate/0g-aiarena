@@ -46,9 +46,13 @@ export async function fundingRoutes(app: FastifyInstance): Promise<void> {
 
     const job = await prisma.a2AJob.findUniqueOrThrow({ where: { id: jobId } });
 
-    if (job.status !== 'POSTED') {
+    // NEGOTIATING is the normal state at funding time: the off-chain status
+    // moves there the moment a thread opens, while the ON-CHAIN status stays
+    // POSTED until fundWithAuthorization runs. Gating on POSTED alone made the
+    // funding step unreachable for every job that had actually been negotiated.
+    if (job.status !== 'POSTED' && job.status !== 'NEGOTIATING') {
       return reply.status(400).send({
-        error: `Job is ${job.status}. Only a POSTED job with a signed agreement can be funded.`,
+        error: `Job is ${job.status} and can no longer be funded.`,
       });
     }
 
