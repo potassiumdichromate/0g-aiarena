@@ -340,6 +340,54 @@ function present(job: JobRow) {
       confidence: job.parseConfidence,
       warnings: job.parseWarnings,
     },
+    // The later half of the lifecycle. Omitting these left a DELIVERED job
+
+    // looking empty in the UI while the chain already held its result hash.
+
+    agreedPrice: job.agreedPriceBaseUnits
+
+      ? { baseUnits: job.agreedPriceBaseUnits, display: formatUsdc(job.agreedPriceBaseUnits), currency: 'USDC' }
+
+      : null,
+
+    providerAgentId: job.providerAgentId,
+
+    providerErc8004Id: job.providerErc8004Id,
+
+    agreementHash: job.agreementHash,
+
+    deliverableHash: job.deliverableHash,
+
+    verifiedValue: job.verifiedValue,
+
+    verdict: job.verdictAccepted === null || job.verdictAccepted === undefined
+
+      ? null
+
+      : { accepted: job.verdictAccepted, reason: job.verdictReason, reportHash: job.verdictReportHash },
+
+    tx: {
+
+      post: job.postTxHash,
+
+      fund: job.fundTxHash,
+
+      executing: job.executingTxHash,
+
+      deliver: job.deliverTxHash,
+
+      verdict: job.verdictTxHash,
+
+      reputation: job.reputationTxHash,
+
+    },
+
+    fundedAt: job.fundedAt,
+
+    deliveredAt: job.deliveredAt,
+
+    settledAt: job.settledAt,
+
     postTxHash: job.postTxHash,
     postBlock: job.postBlock ? job.postBlock.toString() : null,
     explorer: job.postTxHash ? `https://basescan.org/tx/${job.postTxHash}` : null,
