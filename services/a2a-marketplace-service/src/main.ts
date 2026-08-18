@@ -20,6 +20,7 @@ import { executionRoutes } from './routes/execution.routes';
 import { identityRoutes } from './routes/identity.routes';
 import { discoveryRoutes } from './routes/discovery.routes';
 import { autoBidRoutes } from './routes/autobid.routes';
+import { fundingRoutes } from './routes/funding.routes';
 import { runDiscoveryTick } from './discovery.service';
 import { pollExecution } from './execution.service';
 
@@ -67,6 +68,7 @@ async function bootstrap(): Promise<void> {
   }));
 
   await app.register(jobRoutes, { prefix: '/jobs' });
+  await app.register(fundingRoutes, { prefix: '/jobs' });
   await app.register(negotiationRoutes, { prefix: '/negotiations' });
   await app.register(executionRoutes, { prefix: '/execution' });
   await app.register(identityRoutes, { prefix: '/agents' });

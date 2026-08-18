@@ -37,9 +37,29 @@ export interface ReceiveAuthorizationInput {
   validAfter: number | string;
   validBefore: number | string;
   nonce: string;
-  v: number;
-  r: string;
-  s: string;
+  /** Packed 65-byte signature from a wallet. Supply this OR v/r/s. */
+  signature?: string;
+  v?: number;
+  r?: string;
+  s?: string;
+}
+
+/**
+ * Wallets return a packed 65-byte signature; the token wants v, r and s.
+ *
+ * Accepting both means a browser can pass what `signTypedData` gave it
+ * verbatim, instead of every caller reimplementing the split and getting the
+ * v-value normalisation subtly wrong.
+ */
+function splitAuthorizationSignature(auth: ReceiveAuthorizationInput): { v: number; r: string; s: string } {
+  if (auth.signature) {
+    const sig = ethers.Signature.from(auth.signature);
+    return { v: sig.v, r: sig.r, s: sig.s };
+  }
+  if (auth.v === undefined || !auth.r || !auth.s) {
+    throw new Error('authorization needs either a packed signature or v, r and s');
+  }
+  return { v: auth.v, r: auth.r, s: auth.s };
 }
 
 /** Field order must match the Solidity struct exactly — ethers encodes positionally. */
@@ -65,9 +85,7 @@ function toAuthTuple(auth: ReceiveAuthorizationInput) {
     validAfter: BigInt(auth.validAfter),
     validBefore: BigInt(auth.validBefore),
     nonce: auth.nonce,
-    v: auth.v,
-    r: auth.r,
-    s: auth.s,
+    ...splitAuthorizationSignature(auth),
   };
 }
 
