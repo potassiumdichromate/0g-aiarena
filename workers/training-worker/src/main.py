@@ -50,6 +50,11 @@ logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_S = float(os.environ.get('TRAINING_POLL_INTERVAL_S', '5'))
 STALE_AFTER_S = int(os.environ.get('TRAINING_STALE_AFTER_S', '300'))
+# How often an idle worker says it is alive. Without this the log goes silent
+# after startup, and "the worker is not running" is indistinguishable from
+# "the worker is running and sees no work" — which is exactly the question
+# asked when a job sits at QUEUED.
+IDLE_HEARTBEAT_S = int(os.environ.get('TRAINING_IDLE_HEARTBEAT_S', '60'))
 CHECKPOINT_DIR = Path(os.environ.get('TRAINING_CHECKPOINT_DIR', tempfile.gettempdir())) / 'kult-checkpoints'
 
 _running = True
@@ -79,6 +84,7 @@ def main() -> int:
 
     conn = _connect()
     last_sweep = 0.0
+    last_heartbeat = 0.0
 
     while _running:
         try:
@@ -88,6 +94,23 @@ def main() -> int:
                 if requeued:
                     logger.warning('Requeued %d job(s) with stale heartbeats', requeued)
                 last_sweep = time.monotonic()
+
+            if time.monotonic() - last_heartbeat > IDLE_HEARTBEAT_S:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT count(*) FILTER (WHERE status = 'QUEUED'),
+                               count(*) FILTER (WHERE status = 'RUNNING')
+                          FROM "TrainingJob"
+                         WHERE type IN ('BEHAVIOUR_CLONING', 'REINFORCEMENT_LEARNING')
+                        """
+                    )
+                    queued, running = cur.fetchone()
+                logger.info(
+                    'Worker %s alive — %s queued, %s running, claimable by this worker',
+                    WORKER_ID, queued, running,
+                )
+                last_heartbeat = time.monotonic()
 
             job = claim_next_job(conn)
 
