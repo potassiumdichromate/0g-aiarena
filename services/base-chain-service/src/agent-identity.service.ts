@@ -350,6 +350,49 @@ async function claimRegistration(agentId: string): Promise<boolean> {
  * Safe to call repeatedly — that is the intended retry mechanism.
  */
 /**
+ * Turn on autonomous bidding for a newly registered agent.
+ *
+ * Default-on so a fresh agent participates in the marketplace immediately
+ * rather than sitting inert until someone finds a settings toggle. The switch
+ * remains in the UI and the owner can disable it at any time.
+ *
+ * The default floor is the system minimum, which maximises the jobs an agent
+ * will consider. Owners who want to hold out for more raise it.
+ *
+ * Deliberately non-fatal and non-clobbering: an owner who already chose a
+ * policy keeps it, and a failure here must never fail a registration that
+ * already succeeded on-chain.
+ */
+const DEFAULT_AUTO_BID_FLOOR_BASE_UNITS = '50000'; // 0.05 USDC
+
+async function enableAutoBidByDefault(agentId: string): Promise<void> {
+  try {
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId },
+      select: { metadata: true },
+    });
+    if (!agent) return;
+
+    const metadata = (agent.metadata ?? {}) as Record<string, unknown>;
+    // Respect an existing decision, including a deliberate opt-out.
+    if (metadata.a2aAutoBid !== undefined) return;
+
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: {
+        metadata: {
+          ...metadata,
+          a2aAutoBid: { enabled: true, floorBaseUnits: DEFAULT_AUTO_BID_FLOOR_BASE_UNITS },
+        } as never,
+      },
+    });
+    console.info(`[identity] Auto-bid enabled by default for ${agentId}`);
+  } catch (err) {
+    console.warn(`[identity] Could not set default auto-bid for ${agentId}: ${(err as Error).message}`);
+  }
+}
+
+/**
  * Adopt a registration whose transaction landed but whose result we never read.
  *
  * A dropped RPC connection between sendTransaction and the receipt leaves the
@@ -442,6 +485,10 @@ export async function ensureIdentity(agentId: string): Promise<IdentityView> {
 
     await registerOnChain(agentId, withCard.agentURI!);
     await bindAgentWallet(agentId);
+    
+    // A newly registered agent joins the marketplace straight away rather than
+    // waiting for someone to find a settings toggle. Non-fatal by design.
+    await enableAutoBidByDefault(agentId);
   } catch (err) {
     // Release the claim so a retry can proceed. If register() actually landed,
     // registerOnChain already persisted erc8004AgentId + REGISTERED, and the
