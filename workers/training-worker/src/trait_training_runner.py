@@ -39,6 +39,19 @@ logger = logging.getLogger(__name__)
 
 WORKER_ID = f'{socket.gethostname()}-{uuid.uuid4().hex[:8]}'
 
+# Serve only paid marketplace work.
+#
+# autonomous-loop.ts has been auto-queueing background training for every
+# autonomous agent with nothing consuming it, leaving a backlog of over a
+# thousand jobs. At roughly 25 minutes each on a starter dyno that is weeks of
+# compute, and a marketplace job entering that queue is starved regardless of
+# its priority — one whose escrow carries a six-hour deadline would time out
+# and refund while the worker ground through backlog.
+#
+# Paid work has a deadline and a counterparty; background training has neither.
+# Set TRAINING_MARKETPLACE_ONLY=false on a separate worker to drain the backlog.
+MARKETPLACE_ONLY = os.environ.get('TRAINING_MARKETPLACE_ONLY', 'true').lower() != 'false'
+
 # Heartbeats are what let the service distinguish "running" from "dead". Too
 # frequent and every PPO iteration becomes a write; too rare and a dead worker
 # holds its job for ages. One per stage step, rate-limited to this interval.
