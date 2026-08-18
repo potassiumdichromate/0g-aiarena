@@ -37,7 +37,19 @@ import {
 import { computeProfile, matchAgent } from '@ai-arena/capability';
 
 const BASE_CHAIN_SERVICE_URL = process.env.BASE_CHAIN_SERVICE_URL ?? 'http://localhost:8051';
-const AGREEMENT_TTL_SECONDS = 3600;
+/**
+ * How long a signed agreement stays fundable.
+ *
+ * The expiry is baked into the EIP-712 signature and enforced on-chain, so an
+ * expired agreement cannot be extended — it has to be re-signed by both agents.
+ * One hour was too short: funding is a human action requiring a wallet, and an
+ * agreement signed while the creator was away from their desk was dead before
+ * they returned.
+ *
+ * A day is long enough for that, and short enough that a price agreed on stale
+ * information does not stay fundable indefinitely.
+ */
+const AGREEMENT_TTL_SECONDS = 24 * 60 * 60;
 
 function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
