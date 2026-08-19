@@ -14,6 +14,7 @@ import Fastify, { FastifyRequest, FastifyReply, FastifyInstance } from 'fastify'
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import { pendingVerdicts, roleCheck, verifierAddress, verifyAndSettle } from './verifier.service';
+import { startSettlementLoop } from './settlement-loop';
 
 const PORT = parseInt(process.env.PORT ?? '8081', 10);
 const SERVICE_NAME = 'evaluation-service';
@@ -122,6 +123,16 @@ async function bootstrap(): Promise<void> {
 
   await app.listen({ port: PORT, host: '0.0.0.0' });
   app.log.info(`${SERVICE_NAME} listening on :${PORT} as verifier ${safeAddress()}`);
+
+  // Settle verified work on its own. /jobs/:jobId/verify stays as the manual
+  // override, but nothing should have to call it for a job to get paid.
+  const stopSettling = startSettlementLoop(app.log);
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.once(signal, () => {
+      stopSettling();
+      void app.close();
+    });
+  }
 }
 
 function safeAddress(): string {
