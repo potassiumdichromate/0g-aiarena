@@ -23,6 +23,7 @@ import { jobRoutes } from './routes/job.routes';
 import { settlementRoutes } from './routes/settlement.routes';
 import { attributionStatus } from './attribution';
 import { reputationRoutes } from './routes/reputation.routes';
+import { startFeedbackLoop } from './feedback-loop';
 import { assertEncryptionConfigured } from './crypto';
 import { getRelayerAddress, relayerBalanceEth, getProvider } from './contracts';
 import {
@@ -151,6 +152,17 @@ async function bootstrap(): Promise<void> {
 
   await app.listen({ port: PORT, host: '0.0.0.0' });
   app.log.info(`${SERVICE_NAME} listening on :${PORT} (Base mainnet, chainId ${BASE_CHAIN_ID})`);
+
+  // Author feedback on judged jobs. POST /reputation/jobs/:jobId/publish stays
+  // as the manual override, but an agent should not need someone to remember to
+  // call it before its work counts toward its reputation.
+  const stopFeedback = startFeedbackLoop(app.log);
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.once(signal, () => {
+      stopFeedback();
+      void app.close();
+    });
+  }
 }
 
 bootstrap().catch((err) => {

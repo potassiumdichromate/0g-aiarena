@@ -176,9 +176,30 @@ export async function readOnChainReputation(erc8004AgentId: string): Promise<{
 
   const clients: string[] = await contract.getClients(agentId);
 
-  // Empty filters mean "all tags"; passing our tag narrows to KULT job outcomes.
+  // An agent nobody has reviewed has no summary to ask for, and getSummary
+  // reverts rather than returning zero, so answer from here. "No feedback yet"
+  // is a real state — every newly registered agent is in it — and it must read
+  // as an empty profile, not as an error.
+  if (clients.length === 0) {
+    return {
+      agentId: erc8004AgentId,
+      totalFeedback: 0,
+      distinctClients: 0,
+      averageValue: null,
+      completionRatePercent: null,
+      registry: reputationRegistryAddress(),
+    };
+  }
+
+  // clientAddresses is NOT optional, whatever the tag arguments do: the
+  // registry requires an explicit set and reverts on an empty one. Passing
+  // every client it just reported gives the summary over all of them, which is
+  // what an empty filter was meant to express.
+  //
+  // The tag arguments genuinely are optional filters, and tag1 narrows this to
+  // KULT job outcomes so unrelated feedback on the same agent is not counted.
   const [count, summaryValue, summaryDecimals] = await contract.getSummary(
-    agentId, [], FEEDBACK_TAG_OUTCOME, '',
+    agentId, clients, FEEDBACK_TAG_OUTCOME, '',
   );
 
   const total = Number(count);
