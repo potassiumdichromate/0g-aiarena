@@ -56,7 +56,12 @@ async function publishOnce(log: FastifyBaseLogger): Promise<void> {
     const entry = backoff.get(id);
     return entry === undefined || Date.now() >= entry.retryAt;
   });
-  if (due.length === 0) return;
+  if (due.length === 0) {
+    if (judged.length > 0) {
+      log.info({ judged: judged.length }, 'feedback pending but all jobs are backing off');
+    }
+    return;
+  }
 
   log.info({ judged: judged.length, due: due.length }, 'publishing job feedback');
 
@@ -74,7 +79,18 @@ async function publishOnce(log: FastifyBaseLogger): Promise<void> {
       const failures = (backoff.get(id)?.failures ?? 0) + 1;
       const delay = Math.min(FIRST_BACKOFF_MS * 2 ** (failures - 1), MAX_BACKOFF_MS);
       backoff.set(id, { retryAt: Date.now() + delay, failures });
+      const message = (err as Error).message;
       log.warn({ err, jobId: id, retryInMs: delay }, 'feedback publish failed');
+
+      // Put it where it can be seen. Logging alone made a job that could not
+      // publish indistinguishable from one not yet attempted — reputation zero,
+      // lastError null, and the reason only in a log nobody was tailing.
+      await prisma.a2AJob
+        .update({
+          where: { id },
+          data: { lastError: `feedback: ${message}`.slice(0, 500) },
+        })
+        .catch(() => undefined);
     }
   }
 }
