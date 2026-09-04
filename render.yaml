@@ -1,4 +1,4 @@
-# Exported from Render on 2026-09-04T05:48:24Z
+# Exported from Render on 2026-09-04T05:52:06Z
 version: "1"
 projects:
 - name: AI-Arena
@@ -213,66 +213,6 @@ projects:
       dockerContext: services/nats
       dockerfilePath: services/nats/Dockerfile
       autoDeployTrigger: commit
-    - type: web
-      name: aiarena-token
-      runtime: node
-      repo: https://github.com/potassiumdichromate/0g-aiarena
-      plan: starter
-      envVars:
-      - key: NATS_URL
-        sync: false
-      - key: ARENA_RESERVE_PROGRAM_ID
-        sync: false
-      - key: ARENA_TOKEN_PROGRAM_ID
-        sync: false
-      - key: JWT_SECRET
-        sync: false
-      - key: SOLANA_RPC_URL
-        sync: false
-      - key: DATABASE_URL
-        fromDatabase:
-          name: aiarena-db
-          property: connectionString
-      - key: NODE_ENV
-        sync: false
-      - key: PORT
-        sync: false
-      region: oregon
-      buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma
-        generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo
-        run build --filter=@ai-arena/token-service...
-      startCommand: node dist/main.js
-      healthCheckPath: /health
-      autoDeployTrigger: "off"
-      rootDir: services/token-service
-    - type: web
-      name: aiarena-agent-bot
-      runtime: node
-      repo: https://github.com/potassiumdichromate/0g-aiarena
-      plan: starter
-      envVars:
-      - key: WARZONE_BACKEND_URL
-        sync: false
-      - key: MIN_INTERVAL_MINUTES
-        sync: false
-      - key: MAX_INTERVAL_MINUTES
-        sync: false
-      - key: MINT_ON_STARTUP
-        sync: false
-      - key: BOT_REGISTRATION_SECRET
-        sync: false
-      - key: GATEWAY_URL
-        sync: false
-      - key: NODE_ENV
-        sync: false
-      - key: PORT
-        sync: false
-      region: oregon
-      buildCommand: cd ../.. && pnpm install --ignore-scripts && node_modules/.bin/turbo
-        run build --filter=@ai-arena/agent-bot-service...
-      startCommand: node dist/main.js
-      autoDeployTrigger: commit
-      rootDir: services/agent-bot-service
     - type: web
       name: aiarena-memory
       runtime: node
