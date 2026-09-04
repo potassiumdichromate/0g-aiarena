@@ -1,796 +1,807 @@
-# AI Arena — Render Blueprint
-# Render Dashboard → New → Blueprint → connect repo → fill in secret values in the wizard
-#
-# After deploy: run DB migration once via Shell on aiarena-agent:
-#   npx prisma migrate deploy
-
-databases:
-  - name: aiarena-db
-    databaseName: aiarena
-    user: aiarena_user
-    plan: free
-    region: oregon
-
-services:
-  # ── NATS (private — internal messaging bus) ───────────────────────────────────
-  - type: pserv
-    name: aiarena-nats
-    env: docker
-    plan: starter
-    region: oregon
-    dockerfilePath: ./services/nats/Dockerfile
-    dockerContext: ./services/nats
-    envVars:
-      - key: NATS_USER
-        value: arena
-      - key: NATS_PASSWORD
+# Exported from Render on 2026-09-04T05:48:24Z
+version: "1"
+projects:
+- name: AI-Arena
+  environments:
+  - name: Production
+    services:
+    - type: web
+      name: aiarena-league
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
+      - key: F1_ACTIVE_GRAND_PRIX_ID
         sync: false
-
-  # ── Redis ─────────────────────────────────────────────────────────────────────
-  - type: redis
-    name: aiarena-redis
-    plan: starter
-    region: oregon
-    maxmemoryPolicy: allkeys-lru
-    ipAllowList: []
-
-  # ── Identity Service ──────────────────────────────────────────────────────────
-  - type: web
-    name: aiarena-identity
-    env: node
-    plan: starter
-    region: oregon
-    rootDir: services/identity-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/identity-service...
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
-      - key: PORT
-        value: "8001"
-      - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: aiarena-db
-          property: connectionString
+      - key: NATS_URL
+        sync: false
+      - key: LEAGUE_DATA_PROVIDER
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+      - key: F1_API_KEY
+        sync: false
+      - key: POLYMARKET_BUILDER_API_PASSPHRASE
+        sync: false
+      - key: POLYMARKET_BUILDER_API_SECRET
+        sync: false
+      - key: POLYMARKET_BUILDER_API_KEY
+        sync: false
+      - key: POLYMARKET_RELAYER_API_KEY_ADDRESS
+        sync: false
+      - key: POLYMARKET_RELAYER_API_KEY
+        sync: false
+      - key: API_FOOTBALL_API_KEY
+        sync: false
+      - key: SPORTMONKS_API_KEY
+        sync: false
+      - key: INFERENCE_SERVICE_URL
+        sync: false
+      - key: FINANCIAL_SERVICE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
       - key: REDIS_URL
         fromService:
           name: aiarena-redis
-          type: redis
+          type: keyvalue
           property: connectionString
-      - key: JWT_SECRET
-        sync: false
-      - key: JWT_ACCESS_EXPIRY
-        value: 15m
-      - key: JWT_REFRESH_EXPIRY
-        value: 7d
-      - key: PRIVY_APP_ID
-        sync: false
-      - key: PRIVY_APP_SECRET
-        sync: false
-      - key: CUSTODIAL_WALLET_ENCRYPTION_KEY
-        sync: false
-      - key: NATS_URL
-        sync: false
-      - key: SOLANA_RPC_URL
-        value: https://api.devnet.solana.com
-      - key: BOT_REGISTRATION_SECRET
-        sync: false
-
-  # ── Agent Service ─────────────────────────────────────────────────────────────
-  - type: web
-    name: aiarena-agent
-    env: node
-    plan: starter
-    region: oregon
-    rootDir: services/agent-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/agent-service...
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
-      - key: PORT
-        value: "8002"
-      - key: NODE_ENV
-        value: production
-      - key: ENABLE_AVATAR_GEN
-        value: "false"
       - key: DATABASE_URL
         fromDatabase:
           name: aiarena-db
           property: connectionString
-      - key: JWT_SECRET
-        sync: false
-      - key: NATS_URL
-        sync: false
-      - key: ZEROG_COMPUTE_BASE_URL
-        value: https://router-api.0g.ai/v1
-      - key: ZEROG_COMPUTE_API_KEY
-        sync: false
-      - key: ZEROG_MODEL_CHAT
-        value: zai-org/GLM-5.1-FP8
-      - key: ZEROG_MODEL_IMAGE
-        value: z-image
-      - key: ZEROG_NETWORK
-        value: mainnet
-      - key: ZEROG_STORAGE_PRIVATE_KEY
-        sync: false
-      - key: SOLANA_RPC_URL
-        value: https://api.devnet.solana.com
-      - key: FINANCIAL_SERVICE_URL
-        value: https://aiarena-financial.onrender.com
-      - key: INFT_SERVICE_URL
-        value: https://aiarena-inft.onrender.com
-      - key: INTERNAL_SERVICE_SECRET
-        sync: false
-      # OKX Agent Marketplace A2MCP bridge — checked by okxServiceMiddleware,
-      # issued/rotated independently of INTERNAL_SERVICE_SECRET. See docs/okx/.
-      - key: OKX_SERVICE_KEY
-        sync: false
-
-  # ── OKX Payment Proxy (x402 v2 gate in front of /okx/create-agent) ────────────
-  # Pure ESM, no Prisma/db-client dependency — standalone build.
-  # Protocol: x402 v2, eip155:196 (X Layer), EIP-3009 transferWithAuthorization.
-  - type: web
-    name: aiarena-okx-payment-proxy
-    env: node
-    plan: starter
-    region: oregon
-    rootDir: services/okx-payment-proxy
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && node_modules/.bin/turbo run build --filter=@ai-arena/okx-payment-proxy
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
-      - key: PORT
-        value: "8090"
       - key: NODE_ENV
-        value: production
+        sync: false
+      - key: PORT
+        sync: false
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma
+        generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo
+        run build --filter=@ai-arena/league-service...
+      startCommand: node dist/main.js
+      healthCheckPath: /health
+      autoDeployTrigger: commit
+      rootDir: services/league-service
+    - type: web
+      name: aiarena-okx-payment-proxy
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: standard
+      envVars:
       - key: OKX_PROXY_UPSTREAM_URL
-        value: https://aiarena-agent.onrender.com/okx/create-agent
-      # Must match aiarena-agent's OKX_SERVICE_KEY above exactly.
+        sync: false
       - key: OKX_SERVICE_KEY
         sync: false
-      # x402 v2 payment terms — defaults match OKX's specification for ASP #2170.
-      # OKX's facilitator executes transferWithAuthorization on-chain (gasless for us).
-      # Override here if OKX changes payTo or the USDT contract address.
-      - key: X402_ASSET
-        value: "0x779ded0c9e1022225f8e0630b35a9b54be713736"
-      - key: X402_PAY_TO
-        value: "0xaa1860e22184852ae8b1890169b732da23459990"
-      - key: X402_AMOUNT
-        value: "100000"
-      # OKX Developer Portal credentials — used to submit task deliverables after
-      # a successful create-agent call (OKX review issue #4, save deliverable).
-      # Set in Render dashboard; rotate when compromised.
-      - key: OKX_API_KEY
+      - key: OKX_PROVIDER_AGENT_ID
         sync: false
       - key: OKX_API_SECRET_KEY
         sync: false
       - key: OKX_API_PASSPHRASE
         sync: false
-      # Our ASP agent ID on OKX marketplace (ASP #2170).
-      - key: OKX_PROVIDER_AGENT_ID
-        value: "2170"
-
-  # ── Battle Service ────────────────────────────────────────────────────────────
-  - type: web
-    name: aiarena-battle
-    env: node
-    plan: starter
-    region: oregon
-    rootDir: services/battle-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/battle-service...
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
-      - key: PORT
-        value: "8003"
-      - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: aiarena-db
-          property: connectionString
-      - key: JWT_SECRET
+      - key: OKX_API_KEY
         sync: false
-      - key: NATS_URL
+      - key: MPPX_SECRET_KEY
         sync: false
-      - key: ZEROG_COMPUTE_BASE_URL
-        value: https://router-api.0g.ai/v1
-      - key: ZEROG_COMPUTE_API_KEY
-        sync: false
-      - key: ZEROG_STORAGE_PRIVATE_KEY
-        sync: false
-      - key: ZEROG_NETWORK
-        value: mainnet
-      - key: FINANCIAL_SERVICE_URL
-        value: https://aiarena-financial.onrender.com
-
-  # ── Matchmaking Service ───────────────────────────────────────────────────────
-  - type: web
-    name: aiarena-matchmaking
-    env: node
-    plan: starter
-    region: oregon
-    rootDir: services/matchmaking-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/matchmaking-service...
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
-      - key: PORT
-        value: "8004"
-      - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: aiarena-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          name: aiarena-redis
-          type: redis
-          property: connectionString
-      - key: JWT_SECRET
-        sync: false
-      - key: NATS_URL
-        sync: false
-      - key: FINANCIAL_SERVICE_URL
-        value: https://aiarena-financial.onrender.com
-      - key: BATTLE_SERVICE_URL
-        value: https://aiarena-battle.onrender.com
-      - key: AGENT_SERVICE_URL
-        value: https://aiarena-agent.onrender.com
-      - key: MEMORY_SERVICE_URL
-        value: https://aiarena-memory.onrender.com
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && node_modules/.bin/turbo
+        run build --filter=@ai-arena/okx-payment-proxy
+      startCommand: node dist/main.js
+      healthCheckPath: /health
+      autoDeployTrigger: commit
+      rootDir: services/okx-payment-proxy
+    - type: web
+      name: aiarena-evaluation
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
       - key: INTERNAL_SERVICE_SECRET
         sync: false
-      - key: WAGER_STAKE_AMOUNT
-        value: "5"
-
-  # ── Financial Service ─────────────────────────────────────────────────────────
-  - type: web
-    name: aiarena-financial
-    env: node
-    plan: starter
-    region: oregon
-    rootDir: services/financial-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/financial-service...
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
-      - key: PORT
-        value: "8005"
-      - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: aiarena-db
-          property: connectionString
-      - key: JWT_SECRET
-        sync: false
-      - key: NATS_URL
-        sync: false
-      - key: ZEROG_RPC_URL
-        value: https://evmrpc.0g.ai
-      - key: ARENA_TOKEN_ADDRESS
-        sync: false
-      - key: ARENA_TREASURY_ADDRESS
-        sync: false
-      - key: ARENA_REWARD_DISTRIBUTOR_ADDRESS
-        sync: false
-      - key: ARENA_ESCROW_ADDRESS
-        sync: false
-      - key: ARENA_TOURNAMENT_ADDRESS
-        sync: false
-      - key: ARENA_RELAYER_PRIVATE_KEY
-        sync: false
-      - key: ARENA_CHAIN_SERVICE_URL
-        value: https://aiarena-arena-chain.onrender.com
-      - key: INTERNAL_SERVICE_SECRET
-        sync: false
-
-  # ── $ARENA Chain Service (0G Chain relayer/indexer — replaces Solana token-service) ──
-  - type: web
-    name: aiarena-arena-chain
-    env: node
-    plan: starter
-    region: oregon
-    rootDir: services/arena-chain-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/arena-chain-service...
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
-      - key: PORT
-        value: "8050"
-      - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: aiarena-db
-          property: connectionString
-      - key: NATS_URL
-        sync: false
-      - key: ZEROG_RPC_URL
-        value: https://evmrpc.0g.ai
-      - key: ARENA_TOKEN_ADDRESS
-        sync: false
-      - key: ARENA_TREASURY_ADDRESS
-        sync: false
-      - key: ARENA_REWARD_DISTRIBUTOR_ADDRESS
-        sync: false
-      - key: ARENA_ESCROW_ADDRESS
-        sync: false
-      - key: ARENA_TOURNAMENT_ADDRESS
-        sync: false
-      - key: ARENA_RELAYER_PRIVATE_KEY
-        sync: false
-      - key: INTERNAL_SERVICE_SECRET
-        sync: false
-
-  # ── Training Worker (real trait training) ────────────────────────────────────
-  # Executes the ml/trait_training pipeline: the trainer donates demonstrations
-  # from its own policy, the student learns by behaviour cloning, PPO refines it
-  # on the trainer's curriculum, and a seeded evaluation measures the result.
-  #
-  # A worker (not a web service): it has no HTTP surface and claims jobs from
-  # Postgres with FOR UPDATE SKIP LOCKED, so several replicas are safe and NATS
-  # delivery is never on the correctness path.
-  #
-  # CPU only. The environment is 32 features over 7 actions — no GPU plan needed.
-  # Scale to >1 replica for concurrent marketplace jobs; each claims a distinct
-  # row.
-  - type: worker
-    name: aiarena-training-worker
-    env: docker
-    plan: starter
-    region: oregon
-    dockerfilePath: ./workers/training-worker/Dockerfile
-    # Repo root: the worker imports ml/trait_training, which imports
-    # ml/reinforcement_learning and ml/behaviour_cloning.
-    dockerContext: .
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: aiarena-db
-          property: connectionString
-      - key: TRAINING_POLL_INTERVAL_S
-        value: "5"
-      # A RUNNING job whose heartbeat is older than this is treated as
-      # abandoned and requeued.
-      - key: TRAINING_STALE_AFTER_S
-        value: "300"
-      - key: TRAINING_CHECKPOINT_DIR
-        value: /tmp
-      # Serve paid marketplace work only. autonomous-loop has left a backlog of
-      # over a thousand background jobs; at ~25 min each a marketplace job with
-      # a six-hour escrow deadline would time out waiting behind them.
-      # Set false on a separate worker to drain that backlog.
-      - key: TRAINING_MARKETPLACE_ONLY
-        value: "true"
-
-  # ── Evaluation Service (the verifier) ────────────────────────────────────────
-  # Holds VERIFIER_ROLE and nothing else. Its key MUST differ from the base
-  # chain relayer key — one drives job state, the other judges outcomes (T3).
-  - type: web
-    name: aiarena-evaluation
-    env: node
-    plan: starter
-    region: oregon
-    rootDir: services/evaluation-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/evaluation-service...
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
-      - key: PORT
-        value: "8081"
-      - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: aiarena-db
-          property: connectionString
       - key: BASE_RPC_URL
-        value: https://mainnet.base.org
-      - key: A2A_JOB_ESCROW_ADDRESS
+        sync: false
+      - key: BASE_BUILDER_CODE
         sync: false
       - key: A2A_VERIFIER_PRIVATE_KEY
         sync: false
-      # ERC-8021 attribution. Must match the value on aiarena-base-chain so
-      # verdict transactions are attributed to the same builder code.
-      - key: BASE_BUILDER_CODE
-        sync: false
-      - key: INTERNAL_SERVICE_SECRET
-        sync: false
-      - key: ZEROG_NETWORK
-        value: mainnet
       - key: ZEROG_STORAGE_PRIVATE_KEY
         sync: false
-
-  # ── A2A Marketplace Service (job meaning) ────────────────────────────────────
-  # Owns prompts, requirement parsing and negotiation. Holds NO chain key —
-  # every on-chain action is delegated to aiarena-base-chain.
-  - type: web
-    name: aiarena-a2a-marketplace
-    env: node
-    plan: starter
-    region: oregon
-    rootDir: services/a2a-marketplace-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/a2a-marketplace-service...
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
-      - key: PORT
-        value: "8080"
-      - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: aiarena-db
-          property: connectionString
-      - key: BASE_CHAIN_SERVICE_URL
-        value: https://aiarena-base-chain.onrender.com
-      - key: INTERNAL_SERVICE_SECRET
+      - key: ZEROG_NETWORK
         sync: false
-      # EIP-712 signatures are bound to one escrow on one chain. Without
-      # these the service refuses to sign rather than guessing a domain, so
-      # negotiation fails closed instead of producing junk signatures.
       - key: A2A_JOB_ESCROW_ADDRESS
         sync: false
-      - key: BASE_CHAIN_ID
-        value: "8453"
-      # Advances EXECUTING jobs once training finishes. Without the tick a
-      # job sits until the escrow times out.
-      - key: EXECUTION_POLL_INTERVAL_MS
-        value: "30000"
-      # Autonomous discovery. Without this nothing proposes on a posted job and
-      # the board never advances past POSTED.
-      - key: DISCOVERY_POLL_INTERVAL_MS
-        value: "60000"
-      # 0G Compute assists requirement extraction; a deterministic parser is
-      # always run alongside it, so an outage degrades quality, not uptime.
-      - key: ZEROG_NETWORK
-        value: mainnet
-      - key: ZEROG_COMPUTE_API_KEY
-        sync: false
-      - key: ZEROG_STORAGE_PRIVATE_KEY
-        sync: false
-
-  # ── Base Chain Service (A2A agent commerce on Base mainnet) ──────────────────
-  # Sole relayer/signer for Base. Holds BASE_RELAYER_PRIVATE_KEY and the agent
-  # signing-key encryption secret. See docs/architecture/A2A_MARKETPLACE_BASE.md.
-  #
-  # A2A_PUBLIC_BASE_URL must be this service's own public origin: it becomes the
-  # ERC-8004 tokenURI, which foreign agents resolve without any credentials. If
-  # it is wrong, registered agent identities point at a dead URL and fixing it
-  # costs an on-chain setAgentURI per agent.
-  - type: web
-    name: aiarena-base-chain
-    env: node
-    plan: starter
-    region: oregon
-    rootDir: services/base-chain-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/base-chain-service...
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
-      - key: PORT
-        value: "8051"
-      - key: NODE_ENV
-        value: production
       - key: DATABASE_URL
         fromDatabase:
           name: aiarena-db
           property: connectionString
+      - key: NODE_ENV
+        sync: false
+      - key: PORT
+        sync: false
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma
+        generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo
+        run build --filter=@ai-arena/evaluation-service...
+      startCommand: node dist/main.js
+      healthCheckPath: /health
+      autoDeployTrigger: commit
+      rootDir: services/evaluation-service
+    - type: web
+      name: aiarena-base-chain
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
       - key: BASE_RPC_URL
-        value: https://mainnet.base.org
-      # Gas-payer for every Base transaction. Must NOT reuse the 0G deployer key
-      # (that one is in this repo's public git history).
+        sync: false
       - key: BASE_RELAYER_PRIVATE_KEY
         sync: false
-      # Rotating this without re-encrypting existing rows permanently orphans
-      # every stored agent signing key.
-      - key: AGENT_WALLET_ENCRYPTION_KEY
-        sync: false
-      - key: A2A_PUBLIC_BASE_URL
-        value: https://aiarena-base-chain.onrender.com
-      - key: ERC8004_REPUTATION_REGISTRY_ADDRESS
-        value: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"
-      # ERC-8021 attribution. Claim at base.dev; empty means unattributed.
       - key: BASE_BUILDER_CODE
+        sync: false
+      - key: ZEROG_STORAGE_PRIVATE_KEY
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: ZEROG_NETWORK
         sync: false
       - key: A2A_JOB_ESCROW_ADDRESS
         sync: false
-      - key: INTERNAL_SERVICE_SECRET
+      - key: ERC8004_REPUTATION_REGISTRY_ADDRESS
         sync: false
-      # 0G Storage — publishes the agent registration file whose Merkle root is
-      # committed alongside the on-chain registration. Indexer/RPC endpoints
-      # come from getZeroGConfig()'s per-network defaults, not env, so only the
-      # signing key and network selector are set here.
-      - key: ZEROG_NETWORK
-        value: mainnet
-      - key: ZEROG_STORAGE_PRIVATE_KEY
+      - key: A2A_PUBLIC_BASE_URL
         sync: false
-
-  # ── Leaderboard Service ───────────────────────────────────────────────────────
-  - type: web
-    name: aiarena-leaderboard
-    env: node
-    plan: starter
-    region: oregon
-    rootDir: services/leaderboard-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/leaderboard-service...
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
-      - key: PORT
-        value: "8008"
+      - key: AGENT_WALLET_ENCRYPTION_KEY
+        sync: false
       - key: NODE_ENV
-        value: production
+        sync: false
+      - key: PORT
+        sync: false
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma
+        generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo
+        run build --filter=@ai-arena/base-chain-service...
+      startCommand: node dist/main.js
+      healthCheckPath: /health
+      autoDeployTrigger: commit
+      rootDir: services/base-chain-service
+    - type: pserv
+      name: aiarena-nats
+      runtime: docker
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
+      - key: NATS_USER
+        sync: false
+      region: oregon
+      dockerContext: ./services/nats
+      dockerfilePath: ./services/nats/Dockerfile
+      autoDeployTrigger: commit
+    - type: worker
+      name: aiarena-training-worker
+      runtime: docker
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: standard
+      envVars:
+      - key: TRAINING_CHECKPOINT_DIR
+        sync: false
+      - key: TRAINING_STALE_AFTER_S
+        sync: false
+      - key: TRAINING_POLL_INTERVAL_S
+        sync: false
       - key: DATABASE_URL
         fromDatabase:
           name: aiarena-db
           property: connectionString
-      - key: JWT_SECRET
+      region: oregon
+      dockerContext: .
+      dockerfilePath: ./workers/training-worker/Dockerfile
+      autoDeployTrigger: commit
+    - type: pserv
+      name: 0g-aiarena
+      runtime: docker
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
+      - key: NATS_PASSWORD
         sync: false
+      - key: NATS_USER
+        sync: false
+      region: oregon
+      dockerContext: services/nats
+      dockerfilePath: services/nats/Dockerfile
+      autoDeployTrigger: commit
+    - type: web
+      name: aiarena-token
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
       - key: NATS_URL
         sync: false
-
-  # ── API Gateway (public entry point) ─────────────────────────────────────────
-  - type: web
-    name: aiarena-gateway
-    env: node
-    plan: starter
-    region: oregon
-    rootDir: services/api-gateway
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/api-gateway...
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
-      - key: PORT
-        value: "8000"
-      - key: NODE_ENV
-        value: production
-      - key: REDIS_URL
-        fromService:
-          name: aiarena-redis
-          type: redis
-          property: connectionString
+      - key: ARENA_RESERVE_PROGRAM_ID
+        sync: false
+      - key: ARENA_TOKEN_PROGRAM_ID
+        sync: false
       - key: JWT_SECRET
         sync: false
-      - key: ALLOWED_ORIGINS
-        value: "https://kult-browser-rust-l2lwg.ondigitalocean.app,https://warzonewarriors.xyz,https://www.warzonewarriors.xyz,https://pub-2c48e58780b648b7a2a77316f7b0aa2c.r2.dev,http://localhost:3000,http://localhost:5173,http://localhost:8080"
-      - key: IDENTITY_SERVICE_URL
-        value: https://aiarena-identity.onrender.com
-      - key: AGENT_SERVICE_URL
-        value: https://aiarena-agent.onrender.com
-      - key: BATTLE_SERVICE_URL
-        value: https://aiarena-battle.onrender.com
-      - key: MATCHMAKING_SERVICE_URL
-        value: https://aiarena-matchmaking.onrender.com
-      - key: FINANCIAL_SERVICE_URL
-        value: https://aiarena-financial.onrender.com
-      - key: ARENA_CHAIN_SERVICE_URL
-        value: https://aiarena-arena-chain.onrender.com
-      - key: LEADERBOARD_SERVICE_URL
-        value: https://aiarena-leaderboard.onrender.com
-      - key: INFT_SERVICE_URL
-        value: https://aiarena-inft.onrender.com
-      - key: INFERENCE_SERVICE_URL
-        value: https://aiarena-inference.onrender.com
-      - key: MEMORY_SERVICE_URL
-        value: https://aiarena-memory.onrender.com
-      - key: LEAGUE_SERVICE_URL
-        value: https://aiarena-league.onrender.com
-      - key: OKX_PAYMENT_PROXY_URL
-        value: https://aiarena-okx-payment-proxy.onrender.com
-      # A2A agent commerce on Base. Serves the public ERC-8004 tokenURI via
-      # /v1/a2a/identity/agents/:id/registration.json — must stay unauthenticated.
-      - key: BASE_CHAIN_SERVICE_URL
-        value: https://aiarena-base-chain.onrender.com
-      # Without this, /v1/marketplace/* falls back to http://localhost:8080 and
-      # 500s in production — the gateway routing table has a localhost default.
-      - key: A2A_MARKETPLACE_SERVICE_URL
-        value: https://aiarena-a2a-marketplace.onrender.com
-
-  # ── INFT Service (ERC-7857 Living NFT on 0G Chain) ───────────────────────────
-  - type: web
-    name: aiarena-inft
-    env: node
-    plan: starter
-    region: oregon
-    rootDir: services/inft-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/inft-service...
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
-      - key: PORT
-        value: "8032"
-      - key: NODE_ENV
-        value: production
-      - key: JWT_SECRET
+      - key: SOLANA_RPC_URL
         sync: false
-      - key: ZEROG_NETWORK
-        value: mainnet
-      - key: ZEROG_EVM_RPC
-        value: https://evmrpc.0g.ai
-      - key: ZEROG_INFT_CONTRACT_ADDRESS
-        value: 0x67493Bb91e904840d39397E350f4A7865B779E10
-      - key: ZEROG_STORAGE_PRIVATE_KEY
-        sync: false
-      - key: INTERNAL_SERVICE_SECRET
-        sync: false
-
-  # ── Inference Service (AI battle commentary via 0G Compute) ──────────────────
-  - type: web
-    name: aiarena-inference
-    env: node
-    plan: starter
-    region: oregon
-    rootDir: services/inference-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/inference-service...
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
-      - key: PORT
-        value: "8013"
-      - key: NODE_ENV
-        value: production
       - key: DATABASE_URL
         fromDatabase:
           name: aiarena-db
           property: connectionString
-      - key: JWT_SECRET
-        sync: false
-      - key: ZEROG_COMPUTE_BASE_URL
-        value: https://router-api.0g.ai/v1
-      - key: ZEROG_COMPUTE_API_KEY
-        sync: false
-      - key: ZEROG_MODEL_CHAT
-        value: zai-org/GLM-5.1-FP8
-      - key: ZEROG_NETWORK
-        value: mainnet
-      - key: INTERNAL_SERVICE_SECRET
-        sync: false
-
-  # ── Memory Service (agent episode storage on 0G Storage) ─────────────────────
-  - type: web
-    name: aiarena-memory
-    env: node
-    plan: starter
-    region: oregon
-    rootDir: services/memory-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/memory-service...
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
-      - key: PORT
-        value: "8014"
       - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: aiarena-db
-          property: connectionString
-      - key: JWT_SECRET
         sync: false
-      - key: NATS_URL
-        sync: false
-      - key: ZEROG_NETWORK
-        value: mainnet
-      - key: ZEROG_STORAGE_PRIVATE_KEY
-        sync: false
-      - key: INTERNAL_SERVICE_SECRET
-        sync: false
-
-  # ── League Service (KULT Agent League — predictions, battles, leaderboards) ──
-  - type: web
-    name: aiarena-league
-    env: node
-    plan: starter
-    region: oregon
-    rootDir: services/league-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/league-service...
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
       - key: PORT
-        value: "8060"
-      - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: aiarena-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          name: aiarena-redis
-          type: redis
-          property: connectionString
-      - key: JWT_SECRET
         sync: false
-      - key: NATS_URL
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma
+        generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo
+        run build --filter=@ai-arena/token-service...
+      startCommand: node dist/main.js
+      healthCheckPath: /health
+      autoDeployTrigger: "off"
+      rootDir: services/token-service
+    - type: web
+      name: aiarena-agent-bot
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
+      - key: WARZONE_BACKEND_URL
         sync: false
-      - key: INTERNAL_SERVICE_SECRET
+      - key: MIN_INTERVAL_MINUTES
         sync: false
-      - key: FINANCIAL_SERVICE_URL
-        value: https://aiarena-financial.onrender.com
-      - key: INFERENCE_SERVICE_URL
-        value: https://aiarena-inference.onrender.com
-      - key: ARENA_CHAIN_SERVICE_URL
-        value: https://aiarena-arena-chain.onrender.com
-      - key: LEAGUE_DATA_PROVIDER
-        value: internal-admin
-      - key: SPORTMONKS_API_KEY
+      - key: MAX_INTERVAL_MINUTES
         sync: false
-      - key: API_FOOTBALL_API_KEY
+      - key: MINT_ON_STARTUP
         sync: false
-
-  # ── League Worker (KULT Agent League — pre-gen, settlement, leaderboard cron) ─
-  - type: web
-    name: aiarena-league-worker
-    env: node
-    plan: starter
-    region: oregon
-    rootDir: services/league-worker
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo run build --filter=@ai-arena/league-worker...
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
-      - key: PORT
-        value: "8061"
-      - key: NODE_ENV
-        value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: aiarena-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          name: aiarena-redis
-          type: redis
-          property: connectionString
-      - key: NATS_URL
-        sync: false
-      - key: INTERNAL_SERVICE_SECRET
-        sync: false
-      - key: FINANCIAL_SERVICE_URL
-        value: https://aiarena-financial.onrender.com
-      - key: INFERENCE_SERVICE_URL
-        value: https://aiarena-inference.onrender.com
-      - key: ARENA_CHAIN_SERVICE_URL
-        value: https://aiarena-arena-chain.onrender.com
-      - key: LEAGUE_DATA_PROVIDER
-        value: internal-admin
-      - key: SPORTMONKS_API_KEY
-        sync: false
-      - key: API_FOOTBALL_API_KEY
-        sync: false
-
-  # ── Agent Bot Service (trickle-mints filler agents so real players always ────
-  # have opponents; one agent per cycle, random 30-60min interval, 24/7. No DB
-  # access -- talks to the public gateway exactly like a real client would.) ───
-  - type: web
-    name: aiarena-agent-bot
-    env: node
-    plan: starter
-    region: oregon
-    rootDir: services/agent-bot-service
-    buildCommand: cd ../.. && pnpm install --ignore-scripts && node_modules/.bin/turbo run build --filter=@ai-arena/agent-bot-service...
-    startCommand: node dist/main.js
-    healthCheckPath: /health
-    envVars:
-      - key: PORT
-        value: "8070"
-      - key: NODE_ENV
-        value: production
-      - key: GATEWAY_URL
-        value: https://aiarena-gateway.onrender.com
       - key: BOT_REGISTRATION_SECRET
         sync: false
-      - key: WARZONE_BACKEND_URL
-        value: https://zerog-warzonewarriors.onrender.com
-      - key: MIN_INTERVAL_MINUTES
-        value: "30"
-      - key: MAX_INTERVAL_MINUTES
-        value: "60"
-      - key: MINT_ON_STARTUP
-        value: "true"
+      - key: GATEWAY_URL
+        sync: false
+      - key: NODE_ENV
+        sync: false
+      - key: PORT
+        sync: false
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && node_modules/.bin/turbo
+        run build --filter=@ai-arena/agent-bot-service...
+      startCommand: node dist/main.js
+      autoDeployTrigger: commit
+      rootDir: services/agent-bot-service
+    - type: web
+      name: aiarena-memory
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
+      - key: ZEROG_COMPUTE_API_KEY
+        sync: false
+      - key: ZEROG_STORAGE_PRIVATE_KEY
+        sync: false
+      - key: ZEROG_NETWORK
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: NODE_ENV
+        sync: false
+      - key: PORT
+        sync: false
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma
+        generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo
+        run build --filter=@ai-arena/memory-service...
+      startCommand: node dist/main.js
+      healthCheckPath: /health
+      autoDeployTrigger: commit
+      rootDir: services/memory-service
+    - type: web
+      name: aiarena-arena-chain
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
+      - key: ARENA_TREASURY_ADDRESS
+        sync: false
+      - key: ARENA_TOURNAMENT_ADDRESS
+        sync: false
+      - key: ARENA_TOKEN_ADDRESS
+        sync: false
+      - key: ARENA_REWARD_DISTRIBUTOR_ADDRESS
+        sync: false
+      - key: ARENA_ESCROW_ADDRESS
+        sync: false
+      - key: ARENA_CHAIN_SERVICE_URL
+        sync: false
+      - key: NATS_URL
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+      - key: ARENA_RELAYER_PRIVATE_KEY
+        sync: false
+      - key: ZEROG_RPC_URL
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: NODE_ENV
+        sync: false
+      - key: PORT
+        sync: false
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma
+        generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo
+        run build --filter=@ai-arena/arena-chain-service...
+      startCommand: node dist/main.js
+      healthCheckPath: /health
+      autoDeployTrigger: commit
+      rootDir: services/arena-chain-service
+    - type: web
+      name: aiarena-league-worker
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
+      - key: API_FOOTBALL_API_KEY
+        sync: false
+      - key: LEAGUE_DATA_PROVIDER
+        sync: false
+      - key: SPORTMONKS_API_KEY
+        sync: false
+      - key: INFERENCE_SERVICE_URL
+        sync: false
+      - key: FINANCIAL_SERVICE_URL
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+      - key: NATS_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: aiarena-redis
+          type: keyvalue
+          property: connectionString
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: NODE_ENV
+        sync: false
+      - key: PORT
+        sync: false
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma
+        generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo
+        run build --filter=@ai-arena/league-worker...
+      startCommand: "\tnode dist/main.js"
+      healthCheckPath: /health
+      autoDeployTrigger: commit
+      rootDir: services/league-worker
+    - type: web
+      name: aiarena-leaderboard
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
+      - key: NATS_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: NODE_ENV
+        sync: false
+      - key: PORT
+        sync: false
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma
+        generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo
+        run build --filter=@ai-arena/leaderboard-service...
+      startCommand: node dist/main.js
+      healthCheckPath: /health
+      autoDeployTrigger: commit
+      rootDir: services/leaderboard-service
+    - type: web
+      name: aiarena-inft
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
+      - key: ZEROG_INFT_CONTRACT_ADDRESS
+        sync: false
+      - key: ARENA_CHAIN_SERVICE_URL
+        sync: false
+      - key: ZEROG_STORAGE_PRIVATE_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+      - key: ZEROG_EVM_RPC
+        sync: false
+      - key: ZEROG_NETWORK
+        sync: false
+      - key: NODE_ENV
+        sync: false
+      - key: PORT
+        sync: false
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma
+        generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo
+        run build --filter=@ai-arena/inft-service...
+      startCommand: node dist/main.js
+      healthCheckPath: /health
+      autoDeployTrigger: commit
+      rootDir: services/inft-service
+    - type: web
+      name: aiarena-inference
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
+      - key: ZEROG_MODEL_CHAT
+        sync: false
+      - key: ZEROG_COMPUTE_BASE_URL
+        sync: false
+      - key: ZEROG_COMPUTE_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: ZEROG_STORAGE_PRIVATE_KEY
+        sync: false
+      - key: ZEROG_NETWORK
+        sync: false
+      - key: NODE_ENV
+        sync: false
+      - key: PORT
+        sync: false
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma
+        generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo
+        run build --filter=@ai-arena/inference-service...
+      startCommand: node dist/main.js
+      healthCheckPath: /health
+      autoDeployTrigger: commit
+      rootDir: services/inference-service
+    - type: web
+      name: aiarena-identity
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
+      - key: BOT_REGISTRATION_SECRET
+        sync: false
+      - key: NATS_URL
+        sync: false
+      - key: PRIVY_APP_SECRET
+        sync: false
+      - key: PRIVY_APP_ID
+        sync: false
+      - key: CUSTODIAL_WALLET_ENCRYPTION_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: SOLANA_RPC_URL
+        sync: false
+      - key: JWT_REFRESH_EXPIRY
+        sync: false
+      - key: JWT_ACCESS_EXPIRY
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: aiarena-redis
+          type: keyvalue
+          property: connectionString
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: NODE_ENV
+        sync: false
+      - key: PORT
+        sync: false
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma
+        generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo
+        run build --filter=@ai-arena/identity-service...
+      startCommand: node dist/main.js
+      healthCheckPath: /health
+      autoDeployTrigger: commit
+      rootDir: services/identity-service
+    - type: web
+      name: aiarena-battle
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
+      - key: ZEROG_COMPUTE_API_KEY
+        sync: false
+      - key: ZEROG_STORAGE_PRIVATE_KEY
+        sync: false
+      - key: FINANCIAL_SERVICE_URL
+        sync: false
+      - key: NATS_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ZEROG_NETWORK
+        sync: false
+      - key: ZEROG_COMPUTE_BASE_URL
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: NODE_ENV
+        sync: false
+      - key: PORT
+        sync: false
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma
+        generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo
+        run build --filter=@ai-arena/battle-service...
+      startCommand: node dist/main.js
+      healthCheckPath: /health
+      autoDeployTrigger: commit
+      rootDir: services/battle-service
+    - type: web
+      name: aiarena-financial
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+      - key: ARENA_CHAIN_SERVICE_URL
+        sync: false
+      - key: SOLANA_PRIVATE_KEY
+        sync: false
+      - key: SOLANA_RPC_URL
+        sync: false
+      - key: ESCROW_VAULT_PROGRAM_ID
+        sync: false
+      - key: AGENT_WALLET_PROGRAM_ID
+        sync: false
+      - key: NATS_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: NODE_ENV
+        sync: false
+      - key: PORT
+        sync: false
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma
+        generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo
+        run build --filter=@ai-arena/financial-service...
+      startCommand: node dist/main.js
+      healthCheckPath: /health
+      autoDeployTrigger: "off"
+      rootDir: services/financial-service
+    - type: web
+      name: aiarena-agent
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
+      - key: ZEROG_MODEL_CHAT
+        sync: false
+      - key: ZEROG_COMPUTE_API_KEY
+        sync: false
+      - key: ARENA_CHAIN_SERVICE_URL
+        sync: false
+      - key: OKX_SERVICE_KEY
+        sync: false
+      - key: ZEROG_INFT_CONTRACT_ADDRESS
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+      - key: ZEROG_STORAGE_PRIVATE_KEY
+        sync: false
+      - key: ZEROG_NETWORK
+        sync: false
+      - key: ZEROG_MODEL_IMAGE
+        sync: false
+      - key: ZEROG_COMPUTE_BASE_URL
+        sync: false
+      - key: SOLANA_RPC_URL
+        sync: false
+      - key: PORT
+        sync: false
+      - key: NODE_ENV
+        sync: false
+      - key: NATS_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: INFT_SERVICE_URL
+        sync: false
+      - key: FINANCIAL_SERVICE_URL
+        sync: false
+      - key: ENABLE_AVATAR_GEN
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma
+        generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo
+        run build --filter=@ai-arena/agent-service...
+      startCommand: node dist/main.js
+      healthCheckPath: /health
+      autoDeployTrigger: commit
+      rootDir: services/agent-service
+    - type: web
+      name: aiarena-matchmaking
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
+      - key: MEMORY_SERVICE_URL
+        sync: false
+      - key: AGENT_SERVICE_URL
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+      - key: BATTLE_SERVICE_URL
+        sync: false
+      - key: NATS_URL
+        sync: false
+      - key: FINANCIAL_SERVICE_URL
+        sync: false
+      - key: WAGER_STAKE_AMOUNT
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: aiarena-redis
+          type: keyvalue
+          property: connectionString
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: NODE_ENV
+        sync: false
+      - key: PORT
+        sync: false
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma
+        generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo
+        run build --filter=@ai-arena/matchmaking-service...
+      startCommand: node dist/main.js
+      healthCheckPath: /health
+      autoDeployTrigger: commit
+      rootDir: services/matchmaking-service
+    - type: web
+      name: aiarena-a2a-marketplace
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
+      - key: BASE_RPC_URL
+        sync: false
+      - key: BASE_BUILDER_CODE
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ZEROG_STORAGE_PRIVATE_KEY
+        sync: false
+      - key: ZEROG_COMPUTE_API_KEY
+        sync: false
+      - key: ZEROG_NETWORK
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+      - key: BASE_CHAIN_ID
+        sync: false
+      - key: A2A_JOB_ESCROW_ADDRESS
+        sync: false
+      - key: BASE_CHAIN_SERVICE_URL
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aiarena-db
+          property: connectionString
+      - key: NODE_ENV
+        sync: false
+      - key: PORT
+        sync: false
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma
+        generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo
+        run build --filter=@ai-arena/a2a-marketplace-service...
+      startCommand: node dist/main.js
+      healthCheckPath: /health
+      autoDeployTrigger: commit
+      rootDir: services/a2a-marketplace-service
+    - type: web
+      name: aiarena-gateway
+      runtime: node
+      repo: https://github.com/potassiumdichromate/0g-aiarena
+      plan: starter
+      envVars:
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: A2A_MARKETPLACE_SERVICE_URL
+        sync: false
+      - key: BASE_CHAIN_SERVICE_URL
+        sync: false
+      - key: ARENA_CHAIN_SERVICE_URL
+        sync: false
+      - key: OKX_PAYMENT_PROXY_URL
+        sync: false
+      - key: LEAGUE_SERVICE_URL
+        sync: false
+      - key: MEMORY_SERVICE_URL
+        sync: false
+      - key: INFERENCE_SERVICE_URL
+        sync: false
+      - key: INFT_SERVICE_URL
+        sync: false
+      - key: LEADERBOARD_SERVICE_URL
+        sync: false
+      - key: TOKEN_SERVICE_URL
+        sync: false
+      - key: FINANCIAL_SERVICE_URL
+        sync: false
+      - key: MATCHMAKING_SERVICE_URL
+        sync: false
+      - key: BATTLE_SERVICE_URL
+        sync: false
+      - key: AGENT_SERVICE_URL
+        sync: false
+      - key: IDENTITY_SERVICE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: aiarena-redis
+          type: keyvalue
+          property: connectionString
+      - key: NODE_ENV
+        sync: false
+      - key: PORT
+        sync: false
+      region: oregon
+      buildCommand: cd ../.. && pnpm install --ignore-scripts && packages/db-client/node_modules/.bin/prisma
+        generate --schema=packages/db-client/prisma/schema.prisma && node_modules/.bin/turbo
+        run build --filter=@ai-arena/api-gateway...
+      startCommand: node dist/main.js
+      healthCheckPath: /health
+      autoDeployTrigger: commit
+      rootDir: services/api-gateway
+    - type: keyvalue
+      name: aiarena-redis
+      plan: starter
+      region: oregon
+      maxmemoryPolicy: allkeys-lru
+      persistenceMode: journal-snapshot
+      ipAllowList: []
+    databases:
+    - name: aiarena-db
+      databaseName: aiarena
+      user: aiarena_user
+      plan: basic-1gb
+      region: oregon
+      ipAllowList:
+      - source: 0.0.0.0/0
+        description: everywhere
+      postgresMajorVersion: "18"
+      diskSizeGB: 1
